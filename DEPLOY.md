@@ -158,6 +158,14 @@ GitHub. Подойдёт любой хостинг, умеющий запуск�
    | Polygon | `POLYGON_RPC_URL` |
    | BNB Chain | `BSC_RPC_URL` |
    | Avalanche | `AVALANCHE_RPC_URL` |
+   | Unichain | `UNICHAIN_RPC_URL` |
+   | Ink | `INK_RPC_URL` |
+   | Linea | `LINEA_RPC_URL` |
+   | World Chain | `WORLDCHAIN_RPC_URL` |
+   | Mode | `MODE_RPC_URL` |
+   | Berachain | `BERACHAIN_RPC_URL` |
+   | Blast | `BLAST_RPC_URL` |
+   | Celo | `CELO_RPC_URL` |
 
 Добавлять все сразу не обязательно, начни с Ethereum и той сети, которая
 нужна чаще всего.

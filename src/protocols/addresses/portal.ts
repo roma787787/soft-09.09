@@ -23,6 +23,13 @@ export const PORTAL_TOKEN_BRIDGE_BY_CHAIN: Partial<Record<string, Address>> = {
   // on-chain, which is more authoritative than any published list.
   base: "0x8d2de8d2f73F1F4cAB472AC9A881C9b123C79627",
   avalanche: "0x0e082F06FF657D94310cB8cE8B0D9a04541d8052",
+  // Wormhole is not deployed on every chain this bot supports: Linea, Mode
+  // and Blast have no Token Bridge, so they contribute Hyperlane rows only.
+  celo: "0x796Dff6D74F3E27060B71255Fe517BFb23C93eed",
+  berachain: "0x3Ff72741fd67D6AD0668d93B41a09248F4700560",
+  unichain: "0x3Ff72741fd67D6AD0668d93B41a09248F4700560",
+  ink: "0x3Ff72741fd67D6AD0668d93B41a09248F4700560",
+  worldchain: "0xc309275443519adca74c9136b02A38eF96E3a1f6",
 };
 
 /**

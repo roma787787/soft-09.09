@@ -82,7 +82,12 @@ Fly.io, обычный VPS) порядок один:
 - `/list` — список того, что отслеживается в этом чате.
 
 Поддерживаемые сети «из коробки»: Ethereum, Arbitrum, Optimism, Base,
-Polygon, BNB Chain, Avalanche (настраивается в `src/config/chains.ts`).
+Polygon, BNB Chain, Avalanche, Unichain, Ink, Linea, World Chain, Mode,
+Berachain, Blast, Celo (настраивается в `src/config/chains.ts`).
+
+Wormhole развёрнут не везде: у Linea, Mode и Blast нет контракта Token
+Bridge, поэтому по ним приходят только строки Hyperlane. Это видно и в
+самом отчёте — строки Wormhole там просто нет.
 
 ## Как собирается отчёт по ликвидности
 
