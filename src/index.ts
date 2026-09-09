@@ -11,9 +11,6 @@ async function main() {
   const bot = createBot();
   const stopTracker = startTracker(bot);
 
-  await bot.launch();
-  console.log("[startup] bot launched");
-
   const shutdown = (signal: string) => {
     console.log(`[shutdown] received ${signal}`);
     stopTracker();
@@ -21,8 +18,14 @@ async function main() {
     process.exit(0);
   };
 
+  // Registered BEFORE launch: telegraf's launch() promise only resolves once
+  // the bot stops, so anything after the await would never run while polling.
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+  await bot.launch(() => {
+    console.log("[startup] bot launched, long polling active");
+  });
 }
 
 main().catch((err) => {
