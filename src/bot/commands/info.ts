@@ -31,13 +31,29 @@ function notABridgeMessage(chainKey: string, address: string, profile: Array<[st
     for (const [k, v] of profile) lines.push(`• ${esc(k)}: <code>${esc(v)}</code>`);
   }
 
+  // The most common reason for landing here: the address is the token, but
+  // for a token that already existed the bridge is a SEPARATE contract (an
+  // OFT Adapter or a Warp Route) that locks it. The token itself knows
+  // nothing about bridging, so no probe on it can ever succeed.
+  if (profile?.some(([k]) => k.startsWith("Похож на токен"))) {
+    lines.push(
+      "",
+      "<b>Это обычный токен, а не мост.</b> Если токен ходит между сетями, за это отвечает отдельный контракт рядом с ним: OFT Adapter у LayerZero или Warp Route у Hyperlane. Он блокирует токен у себя, а сам токен о мостах ничего не знает.",
+      "",
+      "Найти его можно так: открой токен в эксплорере, вкладка Holders. Адрес контракта с самым большим балансом обычно и есть тот самый мост. Его и проверяй командой /info."
+    );
+  }
+
   lines.push(
     "",
     "Бот распознаёт только эти четыре протокола. Мосты вроде Across, Celer, Symbiosis, Meson и обычные токены он не определяет."
   );
 
   if (profile?.some(([k]) => k.startsWith("Это прокси"))) {
-    lines.push("", "Это прокси-контракт. Иногда полезно проверить адрес реализации отдельной командой /info.");
+    lines.push(
+      "",
+      "Контракт обновляемый: администратор прокси может заменить его логику. Проверять адрес реализации отдельно смысла нет, вызовы через прокси и так исполняют её код."
+    );
   }
 
   return lines.join("\n");
