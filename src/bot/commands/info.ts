@@ -107,7 +107,11 @@ export function registerInfoCommand(bot: Telegraf) {
         return;
       }
 
-      await ctx.reply(formatInfoCard(chainKey, address, outcome.results), REPLY_OPTS);
+      const card = formatInfoCard(chainKey, address, outcome.results);
+      const warning = outcome.degraded
+        ? "\n\n⚠️ Часть запросов к ноде не прошла, поэтому данных в карточке может не хватать. Повторите команду или проверьте сети через /diag."
+        : "";
+      await ctx.reply(card + warning, REPLY_OPTS);
       return;
     }
 

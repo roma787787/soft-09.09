@@ -1,5 +1,34 @@
 import type { Abi, Address, PublicClient } from "viem";
+import { BaseError, HttpRequestError, TimeoutError } from "viem";
 import { getChain } from "../config/chains";
+
+/** Raised when a read failed because the node did not answer, not because
+ * the contract lacks that function. */
+export class RpcTransportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RpcTransportError";
+  }
+}
+
+/**
+ * Distinguishes "the node refused or timed out" from "this contract has no
+ * such function". Both arrive here as an exception, and treating them alike
+ * is what makes a rate-limited node look like a contract that is not a
+ * bridge: the probes come back empty and the answer silently degrades.
+ * Only clear transport failures count, so a revert or an empty return still
+ * reads as "function absent".
+ */
+export function isTransportError(err: unknown): boolean {
+  if (err instanceof BaseError) {
+    const hit = err.walk((e) => e instanceof HttpRequestError || e instanceof TimeoutError);
+    if (hit) return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return /fetch failed|socket|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network|timed out|too many requests|rate limit/i.test(
+    message
+  );
+}
 
 /** Calls a view function and returns undefined instead of throwing on revert/missing function. */
 export async function safeRead<T>(
@@ -12,7 +41,10 @@ export async function safeRead<T>(
   try {
     const result = await client.readContract({ address, abi, functionName, args } as any);
     return result as T;
-  } catch {
+  } catch (err) {
+    if (isTransportError(err)) {
+      throw new RpcTransportError(`${functionName}(): нода не ответила`);
+    }
     return undefined;
   }
 }

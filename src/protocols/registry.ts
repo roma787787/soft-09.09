@@ -6,6 +6,7 @@ import { detectHyperlane } from "./hyperlane";
 import { detectPortal } from "./portal";
 import { detectTransporter } from "./transporter";
 import { matchKnownInfrastructure, describeInfrastructure } from "./infrastructure";
+import { RpcTransportError } from "./util";
 import { profileUnknownContract } from "./profile";
 
 export interface DetectionOutcome {
@@ -19,6 +20,11 @@ export interface DetectionOutcome {
    * learn about it, so the answer is never just "not recognized".
    */
   profile?: Array<[string, string]>;
+  /**
+   * Some probes failed on transport, so the card may be missing rows that
+   * the contract actually has. Never let that pass as a complete answer.
+   */
+  degraded?: boolean;
 }
 
 function describeRpcError(err: unknown): string {
@@ -56,8 +62,15 @@ export async function detectOnChain(chainKey: string, address: Address): Promise
   ]);
 
   const results: DetectionResult[] = [];
+  let degraded = false;
   for (const r of settled) {
-    if (r.status === "fulfilled" && r.value) results.push(r.value);
+    if (r.status === "fulfilled") {
+      if (r.value) results.push(r.value);
+    } else if (r.reason instanceof RpcTransportError) {
+      // The node dropped part of the probing, so an empty or thin result
+      // here is not evidence about the contract.
+      degraded = true;
+    }
   }
 
   // A protocol's own core contracts (Endpoint, Mailbox) don't implement the
@@ -76,11 +89,15 @@ export async function detectOnChain(chainKey: string, address: Address): Promise
     }
   }
 
+  if (results.length === 0 && degraded) {
+    return { results, rpcError: "часть запросов к ноде не прошла" };
+  }
+
   if (results.length === 0) {
     return { results, profile: await profileUnknownContract(client, address) };
   }
 
   const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
   results.sort((a, b) => order[a.confidence] - order[b.confidence]);
-  return { results };
+  return { results, degraded: degraded || undefined };
 }

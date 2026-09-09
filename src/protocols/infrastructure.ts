@@ -21,6 +21,20 @@ const ENDPOINT_ABI = [
   { type: "function", name: "eid", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
 ] as const;
 
+const PORTAL_ABI = [
+  { type: "function", name: "wormhole", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "chainId", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+] as const;
+
+const TYPE_AND_VERSION_ABI = [
+  { type: "function", name: "typeAndVersion", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+] as const;
+
+const CCTP_ABI = [
+  { type: "function", name: "localDomain", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+  { type: "function", name: "version", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+] as const;
+
 const MAILBOX_ABI = [
   { type: "function", name: "localDomain", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
   { type: "function", name: "nonce", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
@@ -61,6 +75,32 @@ export async function describeInfrastructure(
     if (defaultIsm && isNonZero(defaultIsm)) facts.push(["Модуль безопасности по умолчанию", defaultIsm]);
     if (defaultHook && isNonZero(defaultHook)) facts.push(["Хук по умолчанию", defaultHook]);
     if (owner && isNonZero(owner)) facts.push(["Владелец", owner]);
+    return facts;
+  }
+
+  if (match.kind === "portal-bridge") {
+    const [core, whChainId] = await Promise.all([
+      safeRead<Address>(client, address, PORTAL_ABI as any, "wormhole"),
+      safeRead<number>(client, address, PORTAL_ABI as any, "chainId"),
+    ]);
+    if (core && isNonZero(core)) facts.push(["Ядро Wormhole", core]);
+    if (whChainId !== undefined) facts.push(["Идентификатор сети (Wormhole)", String(whChainId)]);
+    return facts;
+  }
+
+  if (match.kind === "ccip-router") {
+    const tv = await safeRead<string>(client, address, TYPE_AND_VERSION_ABI as any, "typeAndVersion");
+    if (tv) facts.push(["Тип и версия контракта", tv]);
+    return facts;
+  }
+
+  if (match.kind === "cctp") {
+    const [localDomain, version] = await Promise.all([
+      safeRead<number>(client, address, CCTP_ABI as any, "localDomain"),
+      safeRead<number>(client, address, CCTP_ABI as any, "version"),
+    ]);
+    if (localDomain !== undefined) facts.push(["Идентификатор сети (CCTP domain)", String(localDomain)]);
+    if (version !== undefined) facts.push(["Версия протокола", version === 0 ? "CCTP v1" : "CCTP v2"]);
     return facts;
   }
 
