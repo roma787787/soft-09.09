@@ -54,8 +54,20 @@ export const env = {
   circleIrisApi: read("CIRCLE_IRIS_API") || "https://iris-api.circle.com/v2",
 };
 
-export function rpcUrlFor(chainKey: string): string {
+/**
+ * Endpoints to try for a chain, in order. A configured endpoint goes first
+ * and the public ones stay behind it as a safety net, so a rate-limited or
+ * expired key degrades instead of taking the chain down.
+ */
+export function rpcUrlsFor(chainKey: string): string[] {
   const chain = CHAINS.find((c) => c.key === chainKey);
   if (!chain) throw new Error(`Unknown chain "${chainKey}"`);
-  return read(chain.rpcEnvVar) || chain.defaultRpcUrl;
+  const configured = read(chain.rpcEnvVar);
+  return configured ? [configured, ...chain.defaultRpcUrls] : [...chain.defaultRpcUrls];
+}
+
+/** True when the operator supplied their own endpoint for this chain. */
+export function hasCustomRpc(chainKey: string): boolean {
+  const chain = CHAINS.find((c) => c.key === chainKey);
+  return !!chain && !!read(chain.rpcEnvVar);
 }

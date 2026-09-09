@@ -29,12 +29,12 @@ export function registerTrackCommand(bot: Telegraf) {
 
     if (!chainKey) {
       const perChain = await Promise.all(
-        CHAINS.map(async (c) => ({ chain: c.key, results: await detectOnChain(c.key, address) }))
+        CHAINS.map(async (c) => ({ chain: c.key, outcome: await detectOnChain(c.key, address) }))
       );
-      const withHits = perChain.filter((p) => p.results.length > 0);
+      const withHits = perChain.filter((p) => p.outcome.results.length > 0);
       if (withHits.length === 1) {
         chainKey = withHits[0].chain;
-        detected = withHits[0].results;
+        detected = withHits[0].outcome.results;
       } else if (withHits.length > 1) {
         await ctx.reply(
           `Этот адрес найден сразу на нескольких сетях (${withHits.map((h) => getChain(h.chain)?.label).join(", ")}). Укажите сеть явно: <code>/track ${address} arbitrum</code>`,
@@ -52,7 +52,7 @@ export function registerTrackCommand(bot: Telegraf) {
       }
     }
 
-    const results = detected ?? (await detectOnChain(chainKey, address));
+    const results = detected ?? (await detectOnChain(chainKey, address)).results;
     const client = getClient(chainKey);
     const currentBlock = await client.getBlockNumber();
 

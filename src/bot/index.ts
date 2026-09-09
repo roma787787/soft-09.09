@@ -5,6 +5,7 @@ import { registerInfoCommand } from "./commands/info";
 import { registerTrackCommand } from "./commands/track";
 import { registerUntrackCommand } from "./commands/untrack";
 import { registerListCommand } from "./commands/list";
+import { registerDiagCommand } from "./commands/diag";
 
 export function createBot(): Telegraf {
   const bot = new Telegraf(env.telegramBotToken);
@@ -14,6 +15,7 @@ export function createBot(): Telegraf {
   registerTrackCommand(bot);
   registerUntrackCommand(bot);
   registerListCommand(bot);
+  registerDiagCommand(bot);
 
   bot.catch((err, ctx) => {
     console.error(`[bot] error while handling update ${ctx.updateType}:`, err);

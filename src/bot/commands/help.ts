@@ -16,6 +16,7 @@ const HELP_TEXT = `🌉 <b>Bridge Contract Tracker</b>
 <code>/track &lt;адрес&gt; [сеть]</code> — включить оповещения о новых событиях этого контракта в этот чат.
 <code>/untrack &lt;адрес&gt; [сеть]</code> — выключить оповещения.
 <code>/list</code> — список того, что вы отслеживаете.
+<code>/diag</code> — проверить связь с нодами всех сетей.
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.
 

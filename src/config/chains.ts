@@ -13,7 +13,13 @@ export interface ChainDef {
   label: string;
   viemChain: Chain;
   rpcEnvVar: string;
-  defaultRpcUrl: string;
+  /**
+   * Public endpoints tried in order when no custom RPC is configured.
+   * More than one because a single free endpoint routinely refuses
+   * requests coming from a datacenter IP, which is exactly where this bot
+   * runs; viem's fallback transport moves on to the next one.
+   */
+  defaultRpcUrls: string[];
   explorerTxUrl: (hash: string) => string;
   explorerAddressUrl: (address: string) => string;
   /** Alternate names users may type after /info or /track. */
@@ -26,7 +32,12 @@ export const CHAINS: ChainDef[] = [
     label: "Ethereum",
     viemChain: mainnet,
     rpcEnvVar: "ETHEREUM_RPC_URL",
-    defaultRpcUrl: "https://eth.llamarpc.com",
+    defaultRpcUrls: [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.llamarpc.com",
+      "https://rpc.ankr.com/eth",
+      "https://cloudflare-eth.com",
+    ],
     explorerTxUrl: (h) => `https://etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://etherscan.io/address/${a}`,
     aliases: ["eth", "mainnet", "ethereum"],
@@ -36,7 +47,11 @@ export const CHAINS: ChainDef[] = [
     label: "Arbitrum One",
     viemChain: arbitrum,
     rpcEnvVar: "ARBITRUM_RPC_URL",
-    defaultRpcUrl: "https://arb1.arbitrum.io/rpc",
+    defaultRpcUrls: [
+      "https://arb1.arbitrum.io/rpc",
+      "https://arbitrum-one-rpc.publicnode.com",
+      "https://rpc.ankr.com/arbitrum",
+    ],
     explorerTxUrl: (h) => `https://arbiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://arbiscan.io/address/${a}`,
     aliases: ["arb", "arbitrum", "arbitrum-one"],
@@ -46,7 +61,11 @@ export const CHAINS: ChainDef[] = [
     label: "Optimism",
     viemChain: optimism,
     rpcEnvVar: "OPTIMISM_RPC_URL",
-    defaultRpcUrl: "https://mainnet.optimism.io",
+    defaultRpcUrls: [
+      "https://mainnet.optimism.io",
+      "https://optimism-rpc.publicnode.com",
+      "https://rpc.ankr.com/optimism",
+    ],
     explorerTxUrl: (h) => `https://optimistic.etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://optimistic.etherscan.io/address/${a}`,
     aliases: ["op", "optimism"],
@@ -56,7 +75,10 @@ export const CHAINS: ChainDef[] = [
     label: "Base",
     viemChain: base,
     rpcEnvVar: "BASE_RPC_URL",
-    defaultRpcUrl: "https://mainnet.base.org",
+    defaultRpcUrls: [
+      "https://mainnet.base.org",
+      "https://base-rpc.publicnode.com",
+    ],
     explorerTxUrl: (h) => `https://basescan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://basescan.org/address/${a}`,
     aliases: ["base"],
@@ -66,7 +88,11 @@ export const CHAINS: ChainDef[] = [
     label: "Polygon",
     viemChain: polygon,
     rpcEnvVar: "POLYGON_RPC_URL",
-    defaultRpcUrl: "https://polygon-rpc.com",
+    defaultRpcUrls: [
+      "https://polygon-rpc.com",
+      "https://polygon-bor-rpc.publicnode.com",
+      "https://rpc.ankr.com/polygon",
+    ],
     explorerTxUrl: (h) => `https://polygonscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://polygonscan.com/address/${a}`,
     aliases: ["polygon", "matic", "pol"],
@@ -76,7 +102,11 @@ export const CHAINS: ChainDef[] = [
     label: "BNB Chain",
     viemChain: bsc,
     rpcEnvVar: "BSC_RPC_URL",
-    defaultRpcUrl: "https://bsc-dataseed.binance.org",
+    defaultRpcUrls: [
+      "https://bsc-dataseed.binance.org",
+      "https://bsc-rpc.publicnode.com",
+      "https://rpc.ankr.com/bsc",
+    ],
     explorerTxUrl: (h) => `https://bscscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://bscscan.com/address/${a}`,
     aliases: ["bsc", "bnb", "binance"],
@@ -86,7 +116,10 @@ export const CHAINS: ChainDef[] = [
     label: "Avalanche C-Chain",
     viemChain: avalanche,
     rpcEnvVar: "AVALANCHE_RPC_URL",
-    defaultRpcUrl: "https://api.avax.network/ext/bc/C/C",
+    defaultRpcUrls: [
+      "https://api.avax.network/ext/bc/C/rpc",
+      "https://avalanche-c-chain-rpc.publicnode.com",
+    ],
     explorerTxUrl: (h) => `https://snowtrace.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://snowtrace.io/address/${a}`,
     aliases: ["avax", "avalanche"],
