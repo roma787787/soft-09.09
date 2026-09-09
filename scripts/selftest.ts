@@ -17,6 +17,7 @@ import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
+import { extractDeployments } from "../src/bridges/layerzero";
 
 let failures = 0;
 
@@ -507,6 +508,54 @@ check("it names the counts per bridge", scoped.includes("Hyperlane — 0") && sc
 check("it names the networks CoinMarketCap listed", scoped.includes("Ethereum, BNB Chain"));
 check("it names networks outside the bot's coverage", scoped.includes("TON"));
 check("the scoped report still fits the message limit", scoped.length < 4096);
+
+// --- LayerZero OFT registry parsing (real response shape) --------------------
+
+// Exactly the shape the live registry returned for DELABS.
+const delabs = [
+  {
+    name: "Delabs",
+    sharedDecimals: 6,
+    endpointVersion: "v2",
+    deployments: {
+      bsc: { address: "0x23ccab1de32e06a6235a7997c266f86440c2cbe6", localDecimals: 18, type: "OFT" },
+      klaytn: { address: "0x23ccab1de32e06a6235a7997c266f86440c2cbe6", localDecimals: 18, type: "OFT" },
+    },
+  },
+];
+const delabsOut = extractDeployments(delabs);
+check("reads a deployment out of the real registry shape", delabsOut.length === 1, `получено=${delabsOut.length}`);
+check("maps LayerZero's chain key onto ours", delabsOut[0]?.chainKey === "bsc");
+check("skips chains this bot does not support", !delabsOut.some((d) => d.chainKey === "klaytn"));
+check(
+  "a plain OFT is not treated as holding collateral",
+  delabsOut[0]?.locksCollateral === false,
+  `type=${delabsOut[0]?.rawType}`
+);
+
+const adapterEntry = [
+  {
+    name: "Example",
+    deployments: {
+      ethereum: { address: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585", type: "OFTAdapter" },
+      arbitrum: { address: "0x0b2402144Bb366A632D14B83F244D2e0e21bD39c", type: "NativeOFTAdapter" },
+      base: { address: "не адрес", type: "OFTAdapter" },
+      polygon: { address: "0x5a58505a96D1dbf8dF91cB21B54419FC36e93fdE", type: "SomethingNew" },
+    },
+  },
+];
+const adapterOut = extractDeployments(adapterEntry);
+check(
+  "an adapter is recognised as holding collateral",
+  adapterOut.filter((d) => d.locksCollateral).length === 2,
+  adapterOut.map((d) => `${d.chainKey}:${d.rawType}:${d.locksCollateral}`).join(" ")
+);
+check("a malformed address is skipped", !adapterOut.some((d) => d.chainKey === "base"));
+check(
+  "an unrecognised type is treated as not holding collateral",
+  adapterOut.find((d) => d.chainKey === "polygon")?.locksCollateral === false
+);
+check("a missing ticker yields nothing rather than throwing", extractDeployments(undefined).length === 0);
 
 // -----------------------------------------------------------------------------
 

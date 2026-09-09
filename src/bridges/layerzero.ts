@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Address } from "viem";
 import { isAddress } from "viem";
 import type { Custodian } from "./types";
-import { getChain } from "../config/chains";
+import { getChain, resolveChain } from "../config/chains";
 import { getClient } from "../services/rpcClient";
 import { LZ_ENDPOINT_V2 } from "../protocols/addresses/layerzero";
 
@@ -69,9 +69,140 @@ export async function probeLayerZeroToken(
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// LayerZero's public OFT registry
+// ---------------------------------------------------------------------------
+
+const OFT_REGISTRY_URL =
+  process.env.LAYERZERO_OFT_LIST_URL || "https://metadata.layerzero-api.com/v1/metadata/experiment/ofts/list";
+
+const REGISTRY_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface RegistryDeployment {
+  address?: string;
+  localDecimals?: number;
+  /** "OFT" mints its own supply; anything naming an adapter locks a token. */
+  type?: string;
+}
+
+interface RegistryEntry {
+  name?: string;
+  sharedDecimals?: number;
+  endpointVersion?: string;
+  deployments?: Record<string, RegistryDeployment>;
+}
+
+type OftRegistry = Record<string, RegistryEntry[]>;
+
+let registryCache: { at: number; data: OftRegistry } | undefined;
+let registryInFlight: Promise<OftRegistry | undefined> | undefined;
+
 /**
- * LayerZero has no public registry mapping a ticker to its OFT Adapter, so
- * these are maintained by hand. Shape:
+ * LayerZero publishes an OFT registry keyed by ticker. It is what makes
+ * LayerZero automatic rather than hand-maintained, so a failure to load it
+ * degrades to the manual config instead of failing the report.
+ */
+async function fetchOftRegistry(): Promise<OftRegistry | undefined> {
+  if (registryCache && Date.now() - registryCache.at < REGISTRY_TTL_MS) return registryCache.data;
+  if (registryInFlight) return registryInFlight;
+
+  registryInFlight = (async () => {
+    try {
+      const response = await fetch(OFT_REGISTRY_URL, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = (await response.json()) as OftRegistry;
+      registryCache = { at: Date.now(), data };
+      console.log(`[layerzero] реестр OFT загружен, тикеров: ${Object.keys(data).length}`);
+      return data;
+    } catch (err) {
+      console.error("[layerzero] не удалось загрузить реестр OFT:", err);
+      return registryCache?.data;
+    } finally {
+      registryInFlight = undefined;
+    }
+  })();
+
+  return registryInFlight;
+}
+
+export interface RegistryDeploymentInfo {
+  chainKey: string;
+  address: Address;
+  /** True when the contract locks a separate ERC-20 and so holds liquidity. */
+  locksCollateral: boolean;
+  rawType: string;
+}
+
+/**
+ * Looks a ticker up in LayerZero's registry.
+ *
+ * The `type` field decides everything downstream: a plain OFT mints and
+ * burns, so no contract holds anything and there is no balance to read; an
+ * adapter locks a real token and is exactly the custody contract this bot
+ * exists to measure. Unknown types are treated as non-locking, since
+ * inventing a balance for one would be worse than omitting it.
+ */
+export async function findLayerZeroRegistryDeployments(symbol: string): Promise<RegistryDeploymentInfo[]> {
+  const registry = await fetchOftRegistry();
+  if (!registry) return [];
+
+  const entries = registry[symbol.toUpperCase()] ?? registry[symbol];
+  return extractDeployments(entries);
+}
+
+/**
+ * Pure half of the registry lookup, so the real response shape is covered
+ * by a test rather than only by a live call.
+ */
+export function extractDeployments(entries: unknown): RegistryDeploymentInfo[] {
+  if (!Array.isArray(entries)) return [];
+
+  const found: RegistryDeploymentInfo[] = [];
+  for (const entry of entries as RegistryEntry[]) {
+    for (const [lzChainKey, deployment] of Object.entries(entry?.deployments ?? {})) {
+      const address = deployment?.address;
+      if (!address || !isAddress(address, { strict: false })) continue;
+
+      // LayerZero names chains its own way; resolveChain also matches our aliases.
+      const chain = resolveChain(lzChainKey);
+      if (!chain) continue;
+
+      const rawType = String(deployment.type ?? "");
+      found.push({
+        chainKey: chain.key,
+        address: address as Address,
+        locksCollateral: /adapter|lockbox|proxy/i.test(rawType),
+        rawType: rawType || "неизвестно",
+      });
+    }
+  }
+  return found;
+}
+
+/** Reads the ERC-20 an adapter locks. Authoritative, unlike guessing it. */
+export async function readAdapterUnderlying(
+  chainKey: string,
+  adapterAddress: Address
+): Promise<Address | undefined> {
+  try {
+    const underlying = (await getClient(chainKey).readContract({
+      address: adapterAddress,
+      abi: OAPP_ABI,
+      functionName: "token",
+    })) as Address;
+    if (!underlying || underlying.toLowerCase() === adapterAddress.toLowerCase()) return undefined;
+    return underlying;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A manual override for what the registry does not cover, or gets wrong. Shape:
  *
  * {
  *   "ARB": {

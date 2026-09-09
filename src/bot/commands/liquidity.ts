@@ -2,7 +2,11 @@ import type { Telegraf, Context } from "telegraf";
 import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians } from "../../bridges";
-import { probeLayerZeroToken } from "../../bridges/layerzero";
+import {
+  probeLayerZeroToken,
+  findLayerZeroRegistryDeployments,
+  readAdapterUnderlying,
+} from "../../bridges/layerzero";
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import type { Custodian } from "../../bridges/types";
 import { readCustodianBalances } from "../../services/balances";
@@ -32,23 +36,49 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     );
   }
 
-  let all = custodians;
-  const nativeOftChains: string[] = [];
-
-  // Ask the token contracts themselves about LayerZero. An adapter found
-  // this way is real liquidity nobody had to configure; a native OFT
-  // explains an empty report that would otherwise read as "not bridged".
-  const probes = await Promise.all(
-    token.platforms
-      .filter((p) => p.chainKey)
-      .map((p) => probeLayerZeroToken(p.chainKey!, p.tokenAddress))
+  const nativeOftChains = new Set<string>();
+  const found: Custodian[] = [];
+  const alreadyConfigured = new Set(
+    custodians.filter((c) => c.protocol === "layerzero").map((c) => c.chainKey)
   );
 
-  const found: Custodian[] = [];
+  // LayerZero's own registry, keyed by ticker. An adapter there locks a real
+  // token and is exactly the custody contract this report is about; a plain
+  // OFT holds nothing anywhere, which is why an empty result for it must not
+  // read as "not bridged". A chain already covered by the manual config is
+  // left alone: a hand-entered address is a deliberate override.
+  const deployments = await findLayerZeroRegistryDeployments(symbol);
+  for (const deployment of deployments) {
+    if (alreadyConfigured.has(deployment.chainKey)) continue;
+    if (!deployment.locksCollateral) {
+      nativeOftChains.add(deployment.chainKey);
+      continue;
+    }
+
+    const underlying =
+      (await readAdapterUnderlying(deployment.chainKey, deployment.address)) ??
+      token.platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
+    if (!underlying) continue;
+
+    found.push({
+      protocol: "layerzero",
+      chainKey: deployment.chainKey,
+      custodyAddress: deployment.address,
+      tokenAddress: underlying,
+      note: `из реестра LayerZero (${deployment.rawType})`,
+    });
+  }
+
+  // Fall back to asking the token contracts directly for chains the registry
+  // did not cover - it lists 358 tickers, not every token in existence.
+  const uncovered = token.platforms.filter(
+    (p) => p.chainKey && !deployments.some((d) => d.chainKey === p.chainKey) && !alreadyConfigured.has(p.chainKey)
+  );
+  const probes = await Promise.all(uncovered.map((p) => probeLayerZeroToken(p.chainKey!, p.tokenAddress)));
   for (const probe of probes) {
     if (!probe) continue;
     if (probe.kind === "native") {
-      nativeOftChains.push(probe.chainKey);
+      nativeOftChains.add(probe.chainKey);
       continue;
     }
     const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
@@ -58,11 +88,12 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
         chainKey: probe.chainKey,
         custodyAddress: platform.tokenAddress,
         tokenAddress: probe.wrappedToken,
-        note: "адаптер найден автоматически",
+        note: "адаптер определён по контракту",
       });
     }
   }
-  if (found.length > 0) all = [...custodians, ...found];
+
+  const all = found.length > 0 ? [...custodians, ...found] : custodians;
 
   const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(all);
 
@@ -80,7 +111,7 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     checkedCount: all.length,
     failuresByChain,
     attemptsByChain,
-    nativeOftChains,
+    nativeOftChains: [...nativeOftChains],
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
     scope: {
       supportedChains,
