@@ -2,35 +2,14 @@ import type { Telegraf, Context } from "telegraf";
 import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians } from "../../bridges";
-import { readCustodianBalances, formatAmount, type CustodianBalance } from "../../services/balances";
-import { BRIDGE_LABELS } from "../../bridges/types";
+import { readCustodianBalances } from "../../services/balances";
+import { renderLiquidityReport } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 const REPLY_OPTS = { parse_mode: "HTML", link_preview_options: { is_disabled: true } } as const;
-
-/** Order chains by how much of the token they hold, biggest first. */
-function groupByChain(balances: CustodianBalance[]): Array<[string, CustodianBalance[]]> {
-  const byChain = new Map<string, CustodianBalance[]>();
-  for (const b of balances) {
-    if (!byChain.has(b.chainKey)) byChain.set(b.chainKey, []);
-    byChain.get(b.chainKey)!.push(b);
-  }
-
-  const scored = [...byChain.entries()].map(([chainKey, rows]) => {
-    const top = rows.reduce((max, r) => {
-      const scale = 10n ** BigInt(Math.max(0, 18 - r.decimals));
-      const normalised = r.amount * scale;
-      return normalised > max ? normalised : max;
-    }, 0n);
-    return { chainKey, rows, top };
-  });
-
-  scored.sort((a, b) => (b.top > a.top ? 1 : b.top < a.top ? -1 : 0));
-  return scored.map((s) => [s.chainKey, s.rows]);
-}
 
 export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
   const symbol = rawSymbol.trim().replace(/^\$/, "").toUpperCase();
@@ -51,37 +30,14 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
   }
 
   const { balances, failedChains } = await readCustodianBalances(custodians);
-  const withLiquidity = balances.filter((b) => b.amount > 0n);
 
-  const lines: string[] = [`Токен: <b>${esc(token.symbol)}</b> — ${esc(token.name)}`];
-
-  if (withLiquidity.length === 0) {
-    lines.push(
-      "",
-      `Проверено контрактов: ${balances.length}. Ни на одном из них токена сейчас нет.`,
-      "Это значит, что через известные боту мосты этот токен не заведён."
-    );
-  } else {
-    for (const [chainKey, rows] of groupByChain(withLiquidity)) {
-      const chainName = getChain(chainKey)?.label ?? chainKey;
-      lines.push("", `Сеть: <b>${esc(chainName)}</b>`);
-
-      rows.sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0));
-      for (const row of rows) {
-        const explorer = getChain(chainKey)?.explorerAddressUrl(row.custodyAddress);
-        const amount = `${formatAmount(row.amount, row.decimals)} ${esc(token.symbol)}`;
-        const link = explorer ? ` <a href="${explorer}">↗</a>` : "";
-        lines.push(` - ${esc(BRIDGE_LABELS[row.protocol])}: <b>${amount}</b>${link}`);
-      }
-    }
-  }
-
-  if (failedChains.length > 0) {
-    const names = failedChains.map((c) => getChain(c)?.label ?? c).join(", ");
-    lines.push("", `⚠️ Часть сетей проверить не удалось: ${esc(names)}. Их данных в отчёте нет.`);
-  }
-
-  return lines.join("\n");
+  return renderLiquidityReport({
+    symbol: token.symbol,
+    name: token.name,
+    balances,
+    checkedCount: custodians.length,
+    failedChains: failedChains.map((c) => getChain(c)?.label ?? c),
+  });
 }
 
 export function registerLiquidityCommand(bot: Telegraf) {
@@ -117,6 +73,10 @@ export async function replyWithLiquidity(ctx: Context, symbol: string): Promise<
       return;
     }
     console.error("[liquidity] непредвиденная ошибка:", err);
-    await ctx.reply("Произошла ошибка при сборе балансов. Попробуйте ещё раз.");
+    const detail = err instanceof Error ? err.message.split("\n")[0].slice(0, 200) : String(err).slice(0, 200);
+    await ctx.reply(
+      `Не удалось собрать отчёт.\n\n<code>${esc(detail)}</code>\n\nПришлите этот текст, по нему видно причину.`,
+      { parse_mode: "HTML" }
+    );
   }
 }

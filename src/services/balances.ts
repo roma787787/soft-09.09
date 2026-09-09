@@ -48,13 +48,16 @@ export interface BalanceReport {
  * report, and named separately: a missing row must never read as "there is
  * no liquidity here", which is the opposite of the truth.
  */
+/** A widely bridged token has 100+ custodians; firing them all at once is
+ * a reliable way to get rate-limited by every node at the same time. */
+const MAX_CONCURRENT_READS = 12;
+
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
   const failedChains = new Set<string>();
 
-  const settled = await Promise.all(
-    custodians.map(async (c): Promise<CustodianBalance | undefined> => {
-      try {
-        const [amount, decimals] = await Promise.all([
+  const readOne = async (c: Custodian): Promise<CustodianBalance | undefined> => {
+    try {
+      const [amount, decimals] = await Promise.all([
           getClient(c.chainKey).readContract({
             address: c.tokenAddress,
             abi: ERC20_ABI,
@@ -68,11 +71,16 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
         failedChains.add(c.chainKey);
         return undefined;
       }
-    })
-  );
+  };
+
+  const results: Array<CustodianBalance | undefined> = [];
+  for (let i = 0; i < custodians.length; i += MAX_CONCURRENT_READS) {
+    const batch = custodians.slice(i, i + MAX_CONCURRENT_READS);
+    results.push(...(await Promise.all(batch.map(readOne))));
+  }
 
   return {
-    balances: settled.filter((b): b is CustodianBalance => b !== undefined),
+    balances: results.filter((b): b is CustodianBalance => b !== undefined),
     failedChains: [...failedChains],
   };
 }

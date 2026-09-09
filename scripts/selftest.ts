@@ -16,6 +16,7 @@ import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain } from "../src/config/chains";
+import { renderLiquidityReport } from "../src/bot/render";
 
 let failures = 0;
 
@@ -307,6 +308,66 @@ check("returns no duplicate custody entries", (() => {
   const keys = custodians.map((c) => `${c.protocol}:${c.chainKey}:${c.custodyAddress.toLowerCase()}`);
   return new Set(keys).size === keys.length;
 })());
+
+// --- liquidity report rendering ----------------------------------------------
+
+function fakeBalance(chainKey: string, protocol: "wormhole" | "hyperlane" | "layerzero", amount: bigint): any {
+  return {
+    protocol,
+    chainKey,
+    custodyAddress: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585",
+    tokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    amount,
+    decimals: 6,
+  };
+}
+
+// The real shape of the problem: USDC resolves to well over a hundred
+// custody contracts, which printed in full is several times Telegram's cap.
+const manyChains = ["ethereum", "arbitrum", "base", "polygon", "bsc", "optimism", "avalanche"];
+const heavy = Array.from({ length: 137 }, (_, i) =>
+  fakeBalance(manyChains[i % manyChains.length], i % 9 === 0 ? "wormhole" : "hyperlane", BigInt((i + 1) * 1_000_000))
+);
+
+const heavyReport = renderLiquidityReport({
+  symbol: "USDC",
+  name: "USD Coin",
+  balances: heavy,
+  checkedCount: heavy.length,
+  failedChains: [],
+});
+check(
+  "a 137-custodian report fits inside Telegram's message limit",
+  heavyReport.length < 4096,
+  `length=${heavyReport.length}`
+);
+check("the heavy report still names several chains", (heavyReport.match(/Сеть:/g) ?? []).length >= 3);
+check("the heavy report summarises the routes it did not print", heavyReport.includes("и ещё"));
+check("the heavy report says how many contracts were checked", heavyReport.includes("проверено контрактов: 137"));
+check(
+  "the heavy report warns that routes are separate pools",
+  heavyReport.includes("нельзя складывать")
+);
+
+const smallReport = renderLiquidityReport({
+  symbol: "ARB",
+  name: "Arbitrum",
+  balances: [fakeBalance("arbitrum", "wormhole", 45_000_000_000n)],
+  checkedCount: 7,
+  failedChains: ["Polygon"],
+});
+check("a small report shows the amount", smallReport.includes("45 000") || smallReport.includes("45 000"));
+check("a small report names the chain that failed", smallReport.includes("Polygon"));
+
+const emptyReport = renderLiquidityReport({
+  symbol: "ZZZ",
+  name: "Nothing",
+  balances: [fakeBalance("ethereum", "wormhole", 0n)],
+  checkedCount: 7,
+  failedChains: [],
+});
+check("zero balances are reported as no liquidity, not as an error", emptyReport.includes("не заведён"));
+check("an empty report never claims a chain failed", !emptyReport.includes("не удалось"));
 
 // -----------------------------------------------------------------------------
 
