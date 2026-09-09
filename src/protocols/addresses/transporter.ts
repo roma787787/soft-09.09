@@ -14,6 +14,8 @@ export const CCIP_ROUTER_BY_CHAIN: Partial<Record<string, Address>> = {
   ethereum: "0x80226fc0EE2b096224EeAc085Bb9a8cba1146f7D",
   optimism: "0x3206695CaE29952f4b0c22a169725A865bc8Ce0f",
   base: "0x881e3A65B4d4a04dD529061dd0071cf975F58bCD",
+  arbitrum: "0x141fa059441E0ca23ce184B6A78bafD2A517DdE8",
+  polygon: "0x849c5ED5a80F5B408Dd4969b78c2C8fdf0565Bfe",
 };
 
 /**
