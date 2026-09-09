@@ -1,0 +1,122 @@
+import type { Address, PublicClient } from "viem";
+import type { DetectionResult, RemotePeer } from "./types";
+import { safeRead, isNonZero, bytes32ToAddress, chainLabel } from "./util";
+import { LZ_ENDPOINT_V2 } from "./addresses/layerzero";
+import { getLzEidMap } from "../services/idMaps";
+
+const OAPP_ABI = [
+  { type: "function", name: "endpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  {
+    type: "function",
+    name: "peers",
+    stateMutability: "view",
+    inputs: [{ type: "uint32" }],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    type: "function",
+    name: "oAppVersion",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint64" }, { type: "uint64" }],
+  },
+  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+const OAPP_V1_ABI = [
+  { type: "function", name: "lzEndpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  {
+    type: "function",
+    name: "getTrustedRemoteAddress",
+    stateMutability: "view",
+    inputs: [{ type: "uint16" }],
+    outputs: [{ type: "bytes" }],
+  },
+] as const;
+
+/**
+ * Detects LayerZero OApp / OFT (and OFT Adapter) contracts - the full,
+ * general-purpose LayerZero messaging standard, not just Stargate's
+ * particular usage of it. Works against both LayerZero V2 (verified via the
+ * well-known EndpointV2 constant) and, on a best-effort basis, legacy V1
+ * User Applications.
+ */
+export async function detectLayerZero(
+  client: PublicClient,
+  chainKey: string,
+  address: Address
+): Promise<DetectionResult | undefined> {
+  const endpointAddr = await safeRead<Address>(client, address, OAPP_ABI as any, "endpoint");
+
+  if (endpointAddr && isNonZero(endpointAddr)) {
+    const isKnownEndpoint = endpointAddr.toLowerCase() === LZ_ENDPOINT_V2.toLowerCase();
+    const oAppVersion = await safeRead<[bigint, bigint]>(client, address, OAPP_ABI as any, "oAppVersion");
+    const tokenAddr = await safeRead<Address>(client, address, OAPP_ABI as any, "token");
+    const symbol = await safeRead<string>(client, address, OAPP_ABI as any, "symbol");
+    const owner = await safeRead<Address>(client, address, OAPP_ABI as any, "owner");
+
+    let role: string;
+    if (tokenAddr && isNonZero(tokenAddr)) {
+      role = `OFT Adapter (wraps external ERC-20 ${tokenAddr})`;
+    } else if (symbol) {
+      role = `OFT - native omnichain token${symbol ? ` (${symbol})` : ""}`;
+    } else {
+      role = "OApp - generic cross-chain messaging contract";
+    }
+
+    const facts: Array<[string, string]> = [
+      ["Endpoint", endpointAddr],
+      ["Recognized LayerZero V2 EndpointV2", isKnownEndpoint ? "yes" : "no (unrecognized endpoint address)"],
+    ];
+    if (oAppVersion) facts.push(["OApp version", `sender=${oAppVersion[0]}, receiver=${oAppVersion[1]}`]);
+    if (owner && isNonZero(owner)) facts.push(["Owner", owner]);
+
+    const eidMap = await getLzEidMap();
+    const localEid = eidMap.chainKeyToId.get(chainKey);
+    if (localEid !== undefined) facts.push(["Local eid", String(localEid)]);
+
+    const peers: RemotePeer[] = [];
+    for (const [remoteId, remoteChainKey] of eidMap.idToChainKey) {
+      if (localEid !== undefined && remoteId === localEid) continue;
+      const peerValue = await safeRead<string>(client, address, OAPP_ABI as any, "peers", [remoteId]);
+      if (peerValue && isNonZero(peerValue)) {
+        peers.push({
+          chainKey: remoteChainKey,
+          chainLabel: chainLabel(remoteChainKey, `eid ${remoteId}`),
+          remoteId,
+          peerAddress: bytes32ToAddress(peerValue),
+        });
+      }
+    }
+
+    return {
+      protocol: "layerzero",
+      confidence: isKnownEndpoint ? "high" : oAppVersion ? "medium" : "low",
+      role,
+      facts,
+      peers,
+      notes: isKnownEndpoint
+        ? []
+        : ["Endpoint address does not match the known LayerZero V2 EndpointV2 constant - double-check this is really a LayerZero contract."],
+    };
+  }
+
+  // Fall back to legacy V1 detection.
+  const lzEndpointAddr = await safeRead<Address>(client, address, OAPP_V1_ABI as any, "lzEndpoint");
+  if (lzEndpointAddr && isNonZero(lzEndpointAddr)) {
+    return {
+      protocol: "layerzero",
+      confidence: "medium",
+      role: "LayerZero V1 User Application / OFT (legacy)",
+      facts: [["Endpoint (V1)", lzEndpointAddr]],
+      peers: [],
+      notes: [
+        "This looks like a legacy LayerZero V1 contract. V1 endpoint addresses differ per chain and trusted remotes use per-chain uint16 chain IDs, so this tool does not enumerate V1 peers automatically - check getTrustedRemoteAddress(chainId) on a block explorer for specific chains.",
+      ],
+    };
+  }
+
+  return undefined;
+}
