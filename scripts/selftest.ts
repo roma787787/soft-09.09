@@ -557,6 +557,30 @@ check(
 );
 check("a missing ticker yields nothing rather than throwing", extractDeployments(undefined).length === 0);
 
+// --- Russian noun agreement --------------------------------------------------
+
+function scopedWith(hyperlane: number, layerzero: number, omitted = 0): string {
+  return renderLiquidityReport({
+    symbol: "T",
+    name: "Test",
+    balances: Array.from({ length: 4 + omitted * 3 }, (_, i) =>
+      fakeBalance(["ethereum", "bsc", "base", "polygon", "celo"][i % 5], "hyperlane", BigInt((i + 1) * 1_000000))
+    ),
+    checkedCount: 10,
+    failuresByChain: {},
+    attemptsByChain: {},
+    scope: { supportedChains: [], unsupportedPlatforms: [], wormhole: 1, hyperlane, layerzero },
+  });
+}
+check("one route reads as одна", scopedWith(1, 1).includes("Hyperlane — 1 маршрут,"));
+check("two routes read as два", scopedWith(2, 2).includes("Hyperlane — 2 маршрута,"));
+check("five routes read as пять", scopedWith(5, 5).includes("Hyperlane — 5 маршрутов,"));
+check("eleven routes take the exception", scopedWith(11, 11).includes("Hyperlane — 11 маршрутов,"));
+check("twenty-one routes go back to singular", scopedWith(21, 21).includes("Hyperlane — 21 маршрут,"));
+check("one network agrees", scopedWith(1, 1).includes("Wormhole — 1 сеть"));
+check("adapters are no longer described as living in the config", !scopedWith(1, 1).includes("в конфиге"));
+check("adapters are counted as adapters", scopedWith(1, 1).includes("LayerZero — 1 адаптер"));
+
 // -----------------------------------------------------------------------------
 
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);

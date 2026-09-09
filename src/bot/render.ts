@@ -12,6 +12,19 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Russian noun agreement: 1 сеть, 2 сети, 5 сетей, with the 11-14 exception.
+ * The whole interface is Russian, and "1 сетей" reads as a broken product.
+ */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
 export interface ReportInput {
   symbol: string;
   name: string;
@@ -44,9 +57,11 @@ export interface ReportInput {
 function scopeLines(scope: ReportInput["scope"]): string[] {
   if (!scope) return [];
   const parts = [
-    `Wormhole — ${scope.wormhole} ${scope.wormhole === 1 ? "сеть" : "сетей"}`,
-    `Hyperlane — ${scope.hyperlane} ${scope.hyperlane === 1 ? "маршрут" : "маршрутов"}`,
-    `LayerZero — ${scope.layerzero} в конфиге`,
+    `Wormhole — ${scope.wormhole} ${plural(scope.wormhole, "сеть", "сети", "сетей")}`,
+    `Hyperlane — ${scope.hyperlane} ${plural(scope.hyperlane, "маршрут", "маршрута", "маршрутов")}`,
+    // Adapters come from LayerZero's registry now, not from the config; the
+    // old wording said otherwise and was simply untrue.
+    `LayerZero — ${scope.layerzero} ${plural(scope.layerzero, "адаптер", "адаптера", "адаптеров")}`,
   ];
   const lines = [`Откуда взялись контракты: ${parts.join(", ")}.`];
 
@@ -232,10 +247,11 @@ export function renderLiquidityReport(input: ReportInput): string {
       if (rest.length > 0) {
         // Summed on the common scale, so formatted with its decimals.
         const total = formatAmount(sumOf(rest), 18);
-        block.push(
-          `   и ещё ${rest.length} ${protocol === "hyperlane" ? "маршрутов" : "контрактов"}` +
-            ` поменьше, суммарно ${total} ${esc(symbol)}`
-        );
+        const noun =
+          protocol === "hyperlane"
+            ? plural(rest.length, "маршрут", "маршрута", "маршрутов")
+            : plural(rest.length, "контракт", "контракта", "контрактов");
+        block.push(`   и ещё ${rest.length} ${noun} поменьше, суммарно ${total} ${esc(symbol)}`);
       }
     }
 
@@ -255,7 +271,9 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
   }
   if (omittedChains > 0) {
-    notes.push(`Ещё ${omittedChains} сетей не поместились в сообщение.`);
+    notes.push(
+      `Ещё ${omittedChains} ${plural(omittedChains, "сеть не поместилась", "сети не поместились", "сетей не поместилось")} в сообщение.`
+    );
   }
   if (unreachable.length > 0) {
     notes.push(`⚠️ Не ответили совсем: ${esc(unreachable.join(", "))}. Этих сетей в отчёте нет.`);
