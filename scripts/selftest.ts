@@ -349,6 +349,49 @@ check(
   heavyReport.includes("нельзя складывать")
 );
 
+// Routes under one ticker hold different contracts with different decimals.
+// Comparing or adding the raw integers ranks an 18-decimal balance above any
+// 6-decimal one regardless of real value, which is what shipped and showed
+// USDT rows out of order with a wrong tail total.
+function mixed(decimals: number, human: number): any {
+  return {
+    protocol: "hyperlane",
+    chainKey: "ethereum",
+    custodyAddress: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585",
+    tokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    amount: BigInt(human) * 10n ** BigInt(decimals),
+    decimals,
+  };
+}
+
+const mixedReport = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether USDt",
+  // Real value order is 492987 > 37477 > 12625 > 900 > 800, but the
+  // 18-decimal row has by far the largest raw integer.
+  balances: [mixed(18, 12625), mixed(6, 492987), mixed(6, 37477), mixed(6, 900), mixed(18, 800)],
+  checkedCount: 5,
+  failedChains: [],
+});
+const orderedRows = (mixedReport.match(/<b>([\d\s\u00a0,]+) USDT<\/b>/g) ?? []).map((m) =>
+  Number(m.replace(/[^\d,]/g, "").replace(",", "."))
+);
+check(
+  "ranks rows by real value, not by raw integer, across mixed decimals",
+  orderedRows.length >= 3 && orderedRows[0] > orderedRows[1] && orderedRows[1] > orderedRows[2],
+  `порядок=${orderedRows.join(" > ")}`
+);
+check(
+  "the largest row is the 6-decimal one, not the 18-decimal one",
+  orderedRows[0] === 492987,
+  `первый=${orderedRows[0]}`
+);
+check(
+  "totals the tail on a common scale rather than adding raw integers",
+  mixedReport.includes("суммарно 1 700") || mixedReport.includes("суммарно 1 700"),
+  mixedReport.split("\n").find((l) => l.includes("суммарно")) ?? "строки с суммой нет"
+);
+
 const smallReport = renderLiquidityReport({
   symbol: "ARB",
   name: "Arbitrum",

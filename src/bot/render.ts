@@ -20,14 +20,27 @@ export interface ReportInput {
   failedChains: string[];
 }
 
-/** Normalises to 18 decimals so amounts from different tokens can be ranked. */
-function rank(b: CustodianBalance): bigint {
-  const shift = 18 - b.decimals;
-  return shift >= 0 ? b.amount * 10n ** BigInt(shift) : b.amount / 10n ** BigInt(-shift);
+/**
+ * Normalises an amount to 18 decimals.
+ *
+ * Routes under one ticker do not all hold the same contract, and those
+ * contracts do not all use the same number of decimals. Comparing or adding
+ * the raw integers then produces nonsense - an 18-decimal balance outranks
+ * any 6-decimal one by a factor of a trillion regardless of its real value.
+ * Every comparison and every total goes through this first.
+ */
+function toCommonScale(amount: bigint, decimals: number): bigint {
+  const shift = 18 - decimals;
+  return shift >= 0 ? amount * 10n ** BigInt(shift) : amount / 10n ** BigInt(-shift);
 }
 
+function rank(b: CustodianBalance): bigint {
+  return toCommonScale(b.amount, b.decimals);
+}
+
+/** Total of a group, on the common 18-decimal scale. */
 function sumOf(rows: CustodianBalance[]): bigint {
-  return rows.reduce((total, r) => total + r.amount, 0n);
+  return rows.reduce((total, r) => total + rank(r), 0n);
 }
 
 /**
@@ -89,7 +102,10 @@ export function renderLiquidityReport(input: ReportInput): string {
     }
 
     for (const [protocol, protocolRows] of byProtocol) {
-      protocolRows.sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0));
+      protocolRows.sort((a, b) => {
+        const [ra, rb] = [rank(a), rank(b)];
+        return rb > ra ? 1 : rb < ra ? -1 : 0;
+      });
       const shown = protocolRows.slice(0, MAX_ROWS_PER_GROUP);
       const rest = protocolRows.slice(MAX_ROWS_PER_GROUP);
 
@@ -101,7 +117,8 @@ export function renderLiquidityReport(input: ReportInput): string {
       }
 
       if (rest.length > 0) {
-        const total = formatAmount(sumOf(rest), rest[0].decimals);
+        // Summed on the common scale, so formatted with its decimals.
+        const total = formatAmount(sumOf(rest), 18);
         block.push(
           `   и ещё ${rest.length} ${protocol === "hyperlane" ? "маршрутов" : "контрактов"}` +
             ` поменьше, суммарно ${total} ${esc(symbol)}`

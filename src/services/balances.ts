@@ -50,12 +50,12 @@ export interface BalanceReport {
  */
 /** A widely bridged token has 100+ custodians; firing them all at once is
  * a reliable way to get rate-limited by every node at the same time. */
-const MAX_CONCURRENT_READS = 12;
+const MAX_CONCURRENT_READS = 6;
 
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
   const failedChains = new Set<string>();
 
-  const readOne = async (c: Custodian): Promise<CustodianBalance | undefined> => {
+  const readOne = async (c: Custodian, attempt = 0): Promise<CustodianBalance | undefined> => {
     try {
       const [amount, decimals] = await Promise.all([
           getClient(c.chainKey).readContract({
@@ -68,6 +68,13 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
         ]);
         return { ...c, amount, decimals };
       } catch (err) {
+        // One retry: a public node under load refuses a request that
+        // succeeds moments later, and a dropped row reads as "no liquidity
+        // here", which is the opposite of what it means.
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          return readOne(c, 1);
+        }
         failedChains.add(c.chainKey);
         return undefined;
       }
