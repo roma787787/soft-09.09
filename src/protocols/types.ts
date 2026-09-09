@@ -5,8 +5,8 @@ export type ProtocolId = "layerzero" | "hyperlane" | "transporter" | "portal";
 export const PROTOCOL_LABELS: Record<ProtocolId, string> = {
   layerzero: "LayerZero",
   hyperlane: "Hyperlane",
-  transporter: "Transporter (Chainlink CCIP / Circle CCTP)",
-  portal: "Portal (Wormhole Token Bridge)",
+  transporter: "Transporter (на базе Chainlink CCIP и Circle CCTP)",
+  portal: "Portal (мост Wormhole)",
 };
 
 export type Confidence = "high" | "medium" | "low";

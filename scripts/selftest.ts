@@ -186,7 +186,7 @@ check("treats an all-zero bytes32 as not an address", !isEvmAddressBytes32("0x" 
 const sample: DetectionResult = {
   protocol: "portal",
   confidence: "high",
-  role: "Portal Token Bridge (Wormhole)",
+  role: "Token Bridge: контракт самого моста",
   facts: [["Wormhole core bridge", "0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B"]],
   peers: [
     { chainKey: "polygon", chainLabel: "Polygon", remoteId: 5, peerAddress: "0x5a58505a96D1dbf8dF91cB21B54419FC36e93fdE" },
@@ -195,7 +195,7 @@ const sample: DetectionResult = {
 };
 
 const card = formatInfoCard("ethereum", PORTAL_ETH as `0x${string}`, [sample]);
-check("info card contains the role and a peer", card.includes("Portal Token Bridge") && card.includes("Polygon"));
+check("info card contains the role and a peer", card.includes("контракт самого моста") && card.includes("Polygon"));
 check("info card stays within Telegram's message limit", card.length < 4096, `length=${card.length}`);
 check(
   "empty detection renders a helpful message rather than a blank card",

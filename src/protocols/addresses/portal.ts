@@ -19,6 +19,10 @@ export const PORTAL_TOKEN_BRIDGE_BY_CHAIN: Partial<Record<string, Address>> = {
   arbitrum: "0x0b2402144Bb366A632D14B83F244D2e0e21bD39c",
   optimism: "0x1D68124e65faFC907325E3EDbF8c4d84499DAa8b",
   bsc: "0xB6F6D86a8f9879A9c87f643768d9efc38c1Da6E7",
+  // Read from the Ethereum Token Bridge's own bridgeContracts registry
+  // on-chain, which is more authoritative than any published list.
+  base: "0x8d2de8d2f73F1F4cAB472AC9A881C9b123C79627",
+  avalanche: "0x0e082F06FF657D94310cB8cE8B0D9a04541d8052",
 };
 
 /**

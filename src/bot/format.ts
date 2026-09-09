@@ -8,6 +8,11 @@ function esc(s: string): string {
 }
 
 const CONFIDENCE_EMOJI: Record<string, string> = { high: "🟢", medium: "🟡", low: "🟠" };
+const CONFIDENCE_LABEL: Record<string, string> = {
+  high: "уверенно",
+  medium: "вероятно",
+  low: "под вопросом",
+};
 
 export function formatInfoCard(chainKey: string, address: Address, results: DetectionResult[]): string {
   const chain = getChain(chainKey);
@@ -30,7 +35,9 @@ export function formatInfoCard(chainKey: string, address: Address, results: Dete
 
   const blocks = results.map((r) => {
     const lines: string[] = [];
-    lines.push(`${CONFIDENCE_EMOJI[r.confidence]} <b>${esc(PROTOCOL_LABELS[r.protocol])}</b> (${esc(r.confidence)} confidence)`);
+    lines.push(
+      `${CONFIDENCE_EMOJI[r.confidence]} <b>${esc(PROTOCOL_LABELS[r.protocol])}</b> — ${esc(CONFIDENCE_LABEL[r.confidence] ?? r.confidence)}`
+    );
     lines.push(esc(r.role));
     if (r.facts.length) {
       lines.push("");

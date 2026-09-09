@@ -65,25 +65,25 @@ export async function detectLayerZero(
 
     let role: string;
     if (wrapsExternalToken) {
-      role = `OFT Adapter (wraps external ERC-20 ${tokenAddr})`;
+      role = `OFT Adapter: обёртка над внешним токеном ERC-20 ${tokenAddr}`;
     } else if (tokenAddr && isNonZero(tokenAddr)) {
-      role = `OFT - native omnichain token${symbol ? ` (${symbol})` : ""}`;
+      role = `OFT: собственный омничейн-токен${symbol ? ` (${symbol})` : ""}`;
     } else if (symbol) {
-      role = `OApp with ERC-20 interface${symbol ? ` (${symbol})` : ""}`;
+      role = `OApp с интерфейсом ERC-20${symbol ? ` (${symbol})` : ""}`;
     } else {
-      role = "OApp - generic cross-chain messaging contract";
+      role = "OApp: контракт кросс-чейн сообщений";
     }
 
     const facts: Array<[string, string]> = [
       ["Endpoint", endpointAddr],
-      ["Recognized LayerZero V2 EndpointV2", isKnownEndpoint ? "yes" : "no (unrecognized endpoint address)"],
+      ["Официальный Endpoint LayerZero V2", isKnownEndpoint ? "да" : "нет, адрес не совпадает с известным"],
     ];
-    if (oAppVersion) facts.push(["OApp version", `sender=${oAppVersion[0]}, receiver=${oAppVersion[1]}`]);
-    if (owner && isNonZero(owner)) facts.push(["Owner", owner]);
+    if (oAppVersion) facts.push(["Версия OApp", `отправка ${oAppVersion[0]}, приём ${oAppVersion[1]}`]);
+    if (owner && isNonZero(owner)) facts.push(["Владелец", owner]);
 
     const eidMap = await getLzEidMap();
     const localEid = eidMap.chainKeyToId.get(chainKey);
-    if (localEid !== undefined) facts.push(["Local eid", String(localEid)]);
+    if (localEid !== undefined) facts.push(["Идентификатор сети (eid)", String(localEid)]);
 
     const peers: RemotePeer[] = [];
     for (const [remoteId, remoteChainKey] of eidMap.idToChainKey) {
@@ -107,7 +107,7 @@ export async function detectLayerZero(
       peers,
       notes: isKnownEndpoint
         ? []
-        : ["Endpoint address does not match the known LayerZero V2 EndpointV2 constant - double-check this is really a LayerZero contract."],
+        : ["Адрес Endpoint не совпадает с официальным адресом LayerZero V2. Стоит перепроверить, действительно ли это контракт LayerZero."],
     };
   }
 
@@ -117,11 +117,11 @@ export async function detectLayerZero(
     return {
       protocol: "layerzero",
       confidence: "medium",
-      role: "LayerZero V1 User Application / OFT (legacy)",
+      role: "Контракт LayerZero V1 (устаревшая версия протокола)",
       facts: [["Endpoint (V1)", lzEndpointAddr]],
       peers: [],
       notes: [
-        "This looks like a legacy LayerZero V1 contract. V1 endpoint addresses differ per chain and trusted remotes use per-chain uint16 chain IDs, so this tool does not enumerate V1 peers automatically - check getTrustedRemoteAddress(chainId) on a block explorer for specific chains.",
+        "Похоже на контракт первой версии LayerZero. В ней адреса Endpoint у каждой сети свои, а связи хранятся в устаревшем формате, поэтому список связанных сетей автоматически не собирается. Посмотреть его можно вручную через функцию getTrustedRemoteAddress в эксплорере.",
       ],
     };
   }

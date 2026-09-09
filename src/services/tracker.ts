@@ -80,15 +80,15 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
           .join("\n");
         body = `<b>${escapeHtml(decoded.eventName)}</b>\n${argLines}`;
       } else {
-        body = `New event (${log.topics.length} topics, undecoded)`;
+        body = "<b>Новое событие</b>\n  структуру разобрать не удалось, подробности в транзакции";
       }
 
-      const label = row.label || row.protocol || "bridge contract";
+      const label = row.label || row.protocol || "контракт моста";
       const text =
         `🔔 <b>${escapeHtml(chain.label)}</b> — ${escapeHtml(label)}\n` +
         `<a href="${addrUrl}">${escapeHtml(row.address)}</a>\n\n` +
         `${body}\n\n` +
-        `<a href="${txUrl}">tx ↗</a> · block ${log.blockNumber}`;
+        `<a href="${txUrl}">транзакция ↗</a> · блок ${log.blockNumber}`;
 
       try {
         await bot.telegram.sendMessage(row.chat_id, text, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });

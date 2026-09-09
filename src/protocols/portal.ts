@@ -42,10 +42,10 @@ export async function detectPortal(
     const isKnownBridge = !!known && known.toLowerCase() === address.toLowerCase();
 
     const facts: Array<[string, string]> = [
-      ["Wormhole core bridge", coreAddr],
-      ["Recognized canonical Token Bridge for this chain", isKnownBridge ? "yes" : "no / not in our address book"],
+      ["Ядро Wormhole", coreAddr],
+      ["Официальный Token Bridge этой сети", isKnownBridge ? "да" : "нет, адреса нет в справочнике"],
     ];
-    if (whChainId !== undefined) facts.push(["Wormhole chain id", String(whChainId)]);
+    if (whChainId !== undefined) facts.push(["Идентификатор сети (Wormhole)", String(whChainId)]);
 
     const whMap = await getWormholeChainIdMap();
     const peers: RemotePeer[] = [];
@@ -57,7 +57,7 @@ export async function detectPortal(
       if (peerValue && isNonZero(peerValue)) {
         peers.push({
           chainKey: remoteChainKey,
-          chainLabel: chainLabel(remoteChainKey, `Wormhole chain ${remoteId}`),
+          chainLabel: chainLabel(remoteChainKey, `сеть Wormhole ${remoteId}`),
           remoteId,
           peerAddress: bytes32ToAddress(peerValue),
         });
@@ -67,12 +67,12 @@ export async function detectPortal(
     return {
       protocol: "portal",
       confidence: isKnownBridge ? "high" : whChainId !== undefined ? "medium" : "low",
-      role: "Portal Token Bridge (Wormhole)",
+      role: "Token Bridge: контракт самого моста",
       facts,
       peers,
       notes: isKnownBridge
         ? []
-        : ["Address is not in this bot's known Token Bridge list - verify manually before trusting this result."],
+        : ["Этого адреса нет в справочнике мостов Portal. Стоит перепроверить результат вручную."],
     };
   }
 
@@ -86,7 +86,7 @@ export async function detectPortal(
     // when the value really is one, otherwise show the raw bytes32.
     const facts: Array<[string, string]> = [
       [
-        "Native (origin) contract",
+        "Исходный контракт токена",
         isEvmAddressBytes32(nativeContractVal) ? bytes32ToAddress(nativeContractVal) : nativeContractVal,
       ],
     ];
@@ -94,17 +94,17 @@ export async function detectPortal(
     if (originWhChainId !== undefined) {
       const whMap = await getWormholeChainIdMap();
       const originChainKey = whMap.idToChainKey.get(originWhChainId);
-      originLabel = chainLabel(originChainKey, `Wormhole chain ${originWhChainId}`);
-      facts.push(["Native chain", `${originLabel} (Wormhole chain id ${originWhChainId})`]);
+      originLabel = chainLabel(originChainKey, `сеть Wormhole ${originWhChainId}`);
+      facts.push(["Исходная сеть", `${originLabel} (идентификатор Wormhole ${originWhChainId})`]);
     }
 
     return {
       protocol: "portal",
       confidence: "medium",
-      role: `Wrapped token minted by Portal Token Bridge${symbol ? ` (${symbol})` : ""}`,
+      role: `Обёрнутый токен, выпущенный мостом Portal${symbol ? ` (${symbol})` : ""}`,
       facts,
       peers: [],
-      notes: ["This is a wrapped asset produced by Portal, not the bridge contract itself."],
+      notes: ["Это токен-обёртка, выпущенная мостом Portal, а не сам контракт моста."],
     };
   }
 

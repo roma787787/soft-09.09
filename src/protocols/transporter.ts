@@ -55,14 +55,14 @@ export async function detectTransporter(
     return {
       protocol: "transporter",
       confidence: isKnownRouter ? "high" : "medium",
-      role: `Chainlink CCIP Router (Transporter's routing layer) - ${typeAndVersion}`,
+      role: `Router Chainlink CCIP: маршрутизатор, через который работает Transporter`,
       facts: [
-        ["typeAndVersion()", typeAndVersion],
-        ["Recognized canonical CCIP Router for this chain", isKnownRouter ? "yes" : "no / not in our address book"],
+        ["Тип и версия контракта", typeAndVersion],
+        ["Официальный Router CCIP этой сети", isKnownRouter ? "да" : "нет, адреса нет в справочнике"],
       ],
       peers: [],
       notes: [
-        "Chainlink CCIP Router. Per-lane peers (onRamp/offRamp per destination chain selector) are not enumerated here - see the Chainlink CCIP directory for this chain's supported lanes.",
+        "Список направлений у CCIP хранится в отдельных контрактах для каждой пары сетей, поэтому здесь он не выводится. Посмотреть поддерживаемые направления можно в каталоге Chainlink CCIP.",
       ],
     };
   }
@@ -92,21 +92,21 @@ export async function detectTransporter(
       if (peerValue && isNonZero(peerValue)) {
         peers.push({
           chainKey: remoteChainKey,
-          chainLabel: chainLabel(remoteChainKey, `CCTP domain ${remoteId}`),
+          chainLabel: chainLabel(remoteChainKey, `домен CCTP ${remoteId}`),
           remoteId,
           peerAddress: bytes32ToAddress(peerValue),
         });
       }
     }
 
-    const facts: Array<[string, string]> = [["Local MessageTransmitter", localTransmitter]];
-    if (bodyVersion !== undefined) facts.push(["Message body version", bodyVersion === 0 ? "CCTP v1" : "CCTP v2"]);
-    if (localDomain !== undefined) facts.push(["Local CCTP domain", String(localDomain)]);
+    const facts: Array<[string, string]> = [["Контракт MessageTransmitter", localTransmitter]];
+    if (bodyVersion !== undefined) facts.push(["Версия протокола", bodyVersion === 0 ? "CCTP v1" : "CCTP v2"]);
+    if (localDomain !== undefined) facts.push(["Идентификатор сети (CCTP domain)", String(localDomain)]);
 
     return {
       protocol: "transporter",
       confidence: "high",
-      role: "Circle CCTP TokenMessenger (native USDC rail used by Transporter)",
+      role: "TokenMessenger Circle CCTP: канал перевода нативного USDC, который использует Transporter",
       facts,
       peers,
       notes: [],
@@ -122,10 +122,10 @@ export async function detectTransporter(
     return {
       protocol: "transporter",
       confidence: matches ? "high" : "medium",
-      role: "Circle CCTP MessageTransmitter (native USDC rail used by Transporter)",
+      role: "MessageTransmitter Circle CCTP: канал перевода нативного USDC, который использует Transporter",
       facts: [
-        ["Local CCTP domain", String(localDomainSelf)],
-        ["Matches expected domain for this chain", matches ? "yes" : "no - double-check chain selection"],
+        ["Идентификатор сети (CCTP domain)", String(localDomainSelf)],
+        ["Совпадает с ожидаемым для этой сети", matches ? "да" : "нет, стоит перепроверить выбранную сеть"],
       ],
       peers: [],
       notes: [],

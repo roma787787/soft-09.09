@@ -55,7 +55,7 @@ export async function detectHyperlane(
     if (routerValue && isNonZero(routerValue)) {
       peers.push({
         chainKey: remoteChainKey,
-        chainLabel: chainLabel(remoteChainKey, `domain ${remoteId}`),
+        chainLabel: chainLabel(remoteChainKey, `домен ${remoteId}`),
         remoteId,
         peerAddress: bytes32ToAddress(routerValue),
       });
@@ -64,16 +64,16 @@ export async function detectHyperlane(
 
   const facts: Array<[string, string]> = [
     ["Mailbox", mailboxAddr],
-    ["Recognized canonical Mailbox for this chain", isKnownMailbox ? "yes" : "no / not in our address book"],
+    ["Официальный Mailbox этой сети", isKnownMailbox ? "да" : "нет, адреса нет в справочнике"],
   ];
-  if (localDomain !== undefined) facts.push(["Local domain", String(localDomain)]);
-  if (ism && isNonZero(ism)) facts.push(["Interchain Security Module", ism]);
-  if (owner && isNonZero(owner)) facts.push(["Owner", owner]);
+  if (localDomain !== undefined) facts.push(["Идентификатор сети (domain)", String(localDomain)]);
+  if (ism && isNonZero(ism)) facts.push(["Модуль безопасности (ISM)", ism]);
+  if (owner && isNonZero(owner)) facts.push(["Владелец", owner]);
 
   const role =
     peers.length > 0
-      ? `Hyperlane Warp Route TokenRouter${symbol ? ` (${symbol})` : ""}`
-      : "Hyperlane MailboxClient (message recipient / router with no configured remotes)";
+      ? `Warp Route: маршрутизатор токена${symbol ? ` (${symbol})` : ""}`
+      : "Контракт Hyperlane без настроенных связей с другими сетями";
 
   let confidence: DetectionResult["confidence"];
   if (isKnownMailbox && peers.length > 0) confidence = "high";
@@ -88,6 +88,6 @@ export async function detectHyperlane(
     peers,
     notes: isKnownMailbox
       ? []
-      : ["Mailbox address is not in this bot's known-address list for this chain - verify manually before trusting this result."],
+      : ["Адреса этого Mailbox нет в справочнике бота для данной сети. Стоит перепроверить результат вручную."],
   };
 }
