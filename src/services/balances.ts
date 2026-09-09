@@ -37,8 +37,16 @@ async function readDecimals(chainKey: string, token: Address): Promise<number> {
 
 export interface BalanceReport {
   balances: CustodianBalance[];
-  /** Chains whose node did not answer, so their rows are missing. */
-  failedChains: string[];
+  /**
+   * How many reads failed per chain. A count, not a flag: one contract
+   * timing out on a chain whose other twenty answered is a very different
+   * fact from the whole chain being unreachable, and reporting both as
+   * "could not check this chain" tells the user their data is missing when
+   * most of it is right there in the report.
+   */
+  failuresByChain: Record<string, number>;
+  /** How many reads were attempted per chain. */
+  attemptsByChain: Record<string, number>;
 }
 
 /**
@@ -53,7 +61,11 @@ export interface BalanceReport {
 const MAX_CONCURRENT_READS = 6;
 
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
-  const failedChains = new Set<string>();
+  const failuresByChain: Record<string, number> = {};
+  const attemptsByChain: Record<string, number> = {};
+  for (const c of custodians) {
+    attemptsByChain[c.chainKey] = (attemptsByChain[c.chainKey] ?? 0) + 1;
+  }
 
   const readOne = async (c: Custodian, attempt = 0): Promise<CustodianBalance | undefined> => {
     try {
@@ -75,7 +87,7 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
           await new Promise((resolve) => setTimeout(resolve, 400));
           return readOne(c, 1);
         }
-        failedChains.add(c.chainKey);
+        failuresByChain[c.chainKey] = (failuresByChain[c.chainKey] ?? 0) + 1;
         return undefined;
       }
   };
@@ -88,7 +100,8 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
 
   return {
     balances: results.filter((b): b is CustodianBalance => b !== undefined),
-    failedChains: [...failedChains],
+    failuresByChain,
+    attemptsByChain,
   };
 }
 

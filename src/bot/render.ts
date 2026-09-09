@@ -17,7 +17,41 @@ export interface ReportInput {
   name: string;
   balances: CustodianBalance[];
   checkedCount: number;
-  failedChains: string[];
+  failuresByChain: Record<string, number>;
+  attemptsByChain: Record<string, number>;
+}
+
+function chainName(chainKey: string): string {
+  return getChain(chainKey)?.label ?? chainKey;
+}
+
+/**
+ * Splits chains with failed reads into the two cases that need different
+ * wording: nothing came back at all, versus part of the chain came back and
+ * is in the report above.
+ */
+function describeFailures(
+  balances: CustodianBalance[],
+  failuresByChain: Record<string, number>,
+  attemptsByChain: Record<string, number>
+): { unreachable: string[]; partial: string[] } {
+  const succeededByChain: Record<string, number> = {};
+  for (const b of balances) succeededByChain[b.chainKey] = (succeededByChain[b.chainKey] ?? 0) + 1;
+
+  const unreachable: string[] = [];
+  const partial: string[] = [];
+
+  for (const [chainKey, failures] of Object.entries(failuresByChain)) {
+    if (failures === 0) continue;
+    const succeeded = succeededByChain[chainKey] ?? 0;
+    if (succeeded === 0) {
+      unreachable.push(chainName(chainKey));
+    } else {
+      partial.push(`${chainName(chainKey)} (${failures} из ${attemptsByChain[chainKey] ?? failures})`);
+    }
+  }
+
+  return { unreachable, partial };
 }
 
 /**
@@ -57,18 +91,19 @@ function sumOf(rows: CustodianBalance[]): bigint {
  * through. The tail total is shown as context, clearly labelled.
  */
 export function renderLiquidityReport(input: ReportInput): string {
-  const { symbol, name, balances, checkedCount, failedChains } = input;
+  const { symbol, name, balances, checkedCount, failuresByChain, attemptsByChain } = input;
   const withLiquidity = balances.filter((b) => b.amount > 0n);
+  const { unreachable, partial } = describeFailures(balances, failuresByChain, attemptsByChain);
 
   const header = `Токен: <b>${esc(symbol)}</b> — ${esc(name)}`;
 
   if (withLiquidity.length === 0) {
     const lines = [header, "", `Проверено контрактов: ${checkedCount}. Ни на одном из них токена сейчас нет.`];
-    if (failedChains.length === 0) {
+    if (unreachable.length === 0 && partial.length === 0) {
       lines.push("Через известные боту мосты этот токен не заведён.");
     }
-    if (failedChains.length > 0) {
-      lines.push("", `⚠️ Часть сетей проверить не удалось: ${esc(failedChains.join(", "))}.`);
+    if (unreachable.length > 0) {
+      lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
     return lines.join("\n");
   }
@@ -92,8 +127,7 @@ export function renderLiquidityReport(input: ReportInput): string {
   let omittedChains = 0;
 
   for (const { chainKey, rows } of chains) {
-    const chainName = getChain(chainKey)?.label ?? chainKey;
-    const block: string[] = ["", `Сеть: <b>${esc(chainName)}</b>`];
+    const block: string[] = ["", `Сеть: <b>${esc(chainName(chainKey))}</b>`];
 
     const byProtocol = new Map<BridgeProtocol, CustodianBalance[]>();
     for (const r of rows) {
@@ -144,8 +178,13 @@ export function renderLiquidityReport(input: ReportInput): string {
   if (omittedChains > 0) {
     notes.push(`Ещё ${omittedChains} сетей не поместились в сообщение.`);
   }
-  if (failedChains.length > 0) {
-    notes.push(`⚠️ Часть сетей проверить не удалось: ${esc(failedChains.join(", "))}. Их данных в отчёте нет.`);
+  if (unreachable.length > 0) {
+    notes.push(`⚠️ Не ответили совсем: ${esc(unreachable.join(", "))}. Этих сетей в отчёте нет.`);
+  }
+  if (partial.length > 0) {
+    notes.push(
+      `⚠️ Ответили не полностью: ${esc(partial.join(", "))}. Эти сети в отчёте есть, но часть их контрактов пропущена.`
+    );
   }
   notes.push(`Всего проверено контрактов: ${checkedCount}.`);
 

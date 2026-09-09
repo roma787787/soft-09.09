@@ -334,7 +334,8 @@ const heavyReport = renderLiquidityReport({
   name: "USD Coin",
   balances: heavy,
   checkedCount: heavy.length,
-  failedChains: [],
+  failuresByChain: {},
+  attemptsByChain: {},
 });
 check(
   "a 137-custodian report fits inside Telegram's message limit",
@@ -371,7 +372,8 @@ const mixedReport = renderLiquidityReport({
   // 18-decimal row has by far the largest raw integer.
   balances: [mixed(18, 12625), mixed(6, 492987), mixed(6, 37477), mixed(6, 900), mixed(18, 800)],
   checkedCount: 5,
-  failedChains: [],
+  failuresByChain: {},
+  attemptsByChain: {},
 });
 const orderedRows = (mixedReport.match(/<b>([\d\s\u00a0,]+) USDT<\/b>/g) ?? []).map((m) =>
   Number(m.replace(/[^\d,]/g, "").replace(",", "."))
@@ -397,7 +399,8 @@ const smallReport = renderLiquidityReport({
   name: "Arbitrum",
   balances: [fakeBalance("arbitrum", "wormhole", 45_000_000_000n)],
   checkedCount: 7,
-  failedChains: ["Polygon"],
+  failuresByChain: { polygon: 1 },
+  attemptsByChain: { arbitrum: 1, polygon: 1 },
 });
 check("a small report shows the amount", smallReport.includes("45 000") || smallReport.includes("45 000"));
 check("a small report names the chain that failed", smallReport.includes("Polygon"));
@@ -407,9 +410,41 @@ const emptyReport = renderLiquidityReport({
   name: "Nothing",
   balances: [fakeBalance("ethereum", "wormhole", 0n)],
   checkedCount: 7,
-  failedChains: [],
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
 });
 check("zero balances are reported as no liquidity, not as an error", emptyReport.includes("не заведён"));
+
+// A chain where one read of twenty failed still has its data in the report,
+// so calling it unchecked tells the user their numbers are missing when they
+// are printed right above.
+const partialReport = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether USDt",
+  balances: [
+    fakeBalance("ethereum", "wormhole", 3_820_756_000000n),
+    fakeBalance("ethereum", "hyperlane", 492_987_000000n),
+    fakeBalance("base", "hyperlane", 6_887_000000n),
+  ],
+  checkedCount: 25,
+  failuresByChain: { ethereum: 2, avalanche: 3 },
+  attemptsByChain: { ethereum: 20, base: 2, avalanche: 3 },
+});
+check(
+  "a chain that answered partially is not reported as unchecked",
+  !/Не ответили совсем:[^\n]*Ethereum/.test(partialReport),
+  partialReport.split("\n").find((l) => l.includes("Не ответили совсем")) ?? "(нет строки)"
+);
+check(
+  "a partially read chain is named as incomplete, with counts",
+  /Ответили не полностью:[^\n]*Ethereum \(2 из 20\)/.test(partialReport),
+  partialReport.split("\n").find((l) => l.includes("не полностью")) ?? "(нет строки)"
+);
+check(
+  "a chain where every read failed is reported as unreachable",
+  /Не ответили совсем:[^\n]*Avalanche/.test(partialReport)
+);
+check("the partially read chain still shows its balances", partialReport.includes("3 820 756") || partialReport.includes("3 820 756"));
 check("an empty report never claims a chain failed", !emptyReport.includes("не удалось"));
 
 // -----------------------------------------------------------------------------

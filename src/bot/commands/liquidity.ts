@@ -29,14 +29,15 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     );
   }
 
-  const { balances, failedChains } = await readCustodianBalances(custodians);
+  const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(custodians);
 
   return renderLiquidityReport({
     symbol: token.symbol,
     name: token.name,
     balances,
     checkedCount: custodians.length,
-    failedChains: failedChains.map((c) => getChain(c)?.label ?? c),
+    failuresByChain,
+    attemptsByChain,
   });
 }
 
