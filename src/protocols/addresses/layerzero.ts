@@ -6,7 +6,7 @@ import type { Address } from "viem";
  * Ethereum/Polygon/BSC/Linea/Taiko explorers.
  * Source: https://docs.layerzero.network/v2/deployments/deployed-contracts
  */
-export const LZ_ENDPOINT_V2: Address = "0x1a44076050125825900e736c501f859c50fE728";
+export const LZ_ENDPOINT_V2: Address = "0x1a44076050125825900e736c501f859c50fE728c";
 
 /**
  * Best-effort static table of LayerZero V2 Endpoint IDs (eid), used only to

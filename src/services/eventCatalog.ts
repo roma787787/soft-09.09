@@ -1,4 +1,4 @@
-import { decodeEventLog, type Log } from "viem";
+import { decodeEventLog, parseAbi, type Log } from "viem";
 
 /**
  * Best-effort catalog of event shapes emitted by contracts of the protocols
@@ -6,7 +6,7 @@ import { decodeEventLog, type Log } from "viem";
  * filters eth_getLogs by topic, so a wrong/missing signature here just means
  * a plainer (but still delivered) alert, never a silently dropped event.
  */
-const CANDIDATE_EVENTS = [
+const CANDIDATE_EVENT_SIGNATURES = [
   // LayerZero OFT
   "event OFTSent(bytes32 indexed guid, uint32 dstEid, address indexed fromAddress, uint256 amountSentLD, uint256 amountReceivedLD)",
   "event OFTReceived(bytes32 indexed guid, uint32 indexed srcEid, address indexed toAddress, uint256 amountReceivedLD)",
@@ -22,18 +22,27 @@ const CANDIDATE_EVENTS = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 ] as const;
 
+/**
+ * Parsed once at module load. decodeEventLog needs a real ABI - handing it
+ * the human-readable signature strings makes every decode throw, which would
+ * quietly turn every alert into an undecoded one.
+ */
+const CANDIDATE_ABI = parseAbi(CANDIDATE_EVENT_SIGNATURES as unknown as string[]);
+
 export function tryDecodeEvent(log: Log): { eventName: string; args: Record<string, unknown> } | undefined {
-  for (const sig of CANDIDATE_EVENTS) {
-    try {
-      const decoded: any = decodeEventLog({
-        abi: [sig] as any,
-        data: log.data,
-        topics: log.topics,
-      });
-      return { eventName: decoded.eventName as string, args: decoded.args as Record<string, unknown> };
-    } catch {
-      // not this shape, try next
-    }
+  try {
+    // decodeEventLog selects the matching event by topic0 and throws when
+    // nothing in the ABI matches the log.
+    const decoded: any = decodeEventLog({
+      abi: CANDIDATE_ABI,
+      data: log.data,
+      topics: log.topics,
+    });
+    return {
+      eventName: decoded.eventName as string,
+      args: (decoded.args ?? {}) as Record<string, unknown>,
+    };
+  } catch {
+    return undefined;
   }
-  return undefined;
 }

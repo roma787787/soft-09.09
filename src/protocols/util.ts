@@ -23,10 +23,21 @@ export function isNonZero(value: string | undefined): value is string {
   return /[1-9a-f]/i.test(value.replace(/^0x/, ""));
 }
 
-/** Decodes a LayerZero/Hyperlane style bytes32 peer value (right-padded... actually left-padded) EVM address. */
+/** Decodes a bytes32 peer value holding a 20-byte EVM address, left-padded. */
 export function bytes32ToAddress(value: string): Address {
-  // Peer values store a 20-byte EVM address left-padded to 32 bytes.
   return `0x${value.slice(-40)}` as Address;
+}
+
+/**
+ * True when a bytes32 value actually holds a left-padded EVM address, i.e.
+ * its leading 12 bytes are zero. Cross-chain protocols store addresses of
+ * non-EVM chains (Solana, Aptos, Sui) in the full 32 bytes, and truncating
+ * those to 20 bytes yields a plausible-looking but meaningless address.
+ */
+export function isEvmAddressBytes32(value: string): boolean {
+  const hex = value.replace(/^0x/, "").padStart(64, "0");
+  if (hex.length !== 64) return false;
+  return /^0{24}$/.test(hex.slice(0, 24)) && isNonZero(hex.slice(24));
 }
 
 export function chainLabel(chainKey: string | undefined, fallback: string): string {

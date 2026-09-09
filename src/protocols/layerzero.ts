@@ -57,11 +57,19 @@ export async function detectLayerZero(
     const symbol = await safeRead<string>(client, address, OAPP_ABI as any, "symbol");
     const owner = await safeRead<Address>(client, address, OAPP_ABI as any, "owner");
 
+    // LayerZero V2 OFT.sol returns address(this) from token(), while
+    // OFTAdapter.sol returns the external ERC-20 it wraps - so the address
+    // comparison, not the mere presence of token(), is what tells them apart.
+    const wrapsExternalToken =
+      !!tokenAddr && isNonZero(tokenAddr) && tokenAddr.toLowerCase() !== address.toLowerCase();
+
     let role: string;
-    if (tokenAddr && isNonZero(tokenAddr)) {
+    if (wrapsExternalToken) {
       role = `OFT Adapter (wraps external ERC-20 ${tokenAddr})`;
-    } else if (symbol) {
+    } else if (tokenAddr && isNonZero(tokenAddr)) {
       role = `OFT - native omnichain token${symbol ? ` (${symbol})` : ""}`;
+    } else if (symbol) {
+      role = `OApp with ERC-20 interface${symbol ? ` (${symbol})` : ""}`;
     } else {
       role = "OApp - generic cross-chain messaging contract";
     }

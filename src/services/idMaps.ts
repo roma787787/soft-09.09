@@ -22,10 +22,14 @@ interface CachedMap {
   idToChainKey: Map<number, string>;
 }
 
-let lzCache: CachedMap | undefined;
-let hyperlaneCache: CachedMap | undefined;
-let wormholeCache: CachedMap | undefined;
-let cctpCache: CachedMap | undefined;
+interface CacheSlot {
+  builtAt: number;
+  value?: CachedMap;
+  /** Set while a build is in progress, so concurrent callers share one build. */
+  inFlight?: Promise<CachedMap>;
+}
+
+const slots = new Map<string, CacheSlot>();
 
 const EID_ABI = [
   { type: "function", name: "eid", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
@@ -70,64 +74,102 @@ async function buildMap(
   return { builtAt: Date.now(), chainKeyToId, idToChainKey };
 }
 
-function isFresh(cache: CachedMap | undefined): cache is CachedMap {
-  return !!cache && Date.now() - cache.builtAt < TTL_MS;
+/**
+ * Cached with single-flight semantics: an /info that scans every chain runs
+ * all four detectors on all seven chains at once, and each of them asks for
+ * these maps. Without sharing the in-flight promise, that first call would
+ * kick off dozens of duplicate builds and hammer rate-limited public RPCs.
+ */
+async function cachedMap(
+  key: string,
+  fetcher: (chainKey: string) => Promise<number | undefined>,
+  fallback: Record<string, number>
+): Promise<CachedMap> {
+  let slot = slots.get(key);
+  if (!slot) {
+    slot = { builtAt: 0 };
+    slots.set(key, slot);
+  }
+
+  if (slot.value && Date.now() - slot.builtAt < TTL_MS) return slot.value;
+  if (slot.inFlight) return slot.inFlight;
+
+  const build = buildMap(fetcher, fallback)
+    .then((map) => {
+      slot!.value = map;
+      slot!.builtAt = Date.now();
+      return map;
+    })
+    .finally(() => {
+      slot!.inFlight = undefined;
+    });
+
+  slot.inFlight = build;
+  return build;
 }
 
 export async function getLzEidMap(): Promise<CachedMap> {
-  if (isFresh(lzCache)) return lzCache;
-  lzCache = await buildMap(async (chainKey) => {
-    const client = getClient(chainKey);
-    return (await client.readContract({
-      address: LZ_ENDPOINT_V2,
-      abi: EID_ABI,
-      functionName: "eid",
-    })) as number;
-  }, LZ_V2_EID_BY_CHAIN);
-  return lzCache;
+  return cachedMap(
+    "layerzero",
+    async (chainKey) => {
+      const client = getClient(chainKey);
+      return (await client.readContract({
+        address: LZ_ENDPOINT_V2,
+        abi: EID_ABI,
+        functionName: "eid",
+      })) as number;
+    },
+    LZ_V2_EID_BY_CHAIN
+  );
 }
 
 export async function getHyperlaneDomainMap(): Promise<CachedMap> {
-  if (isFresh(hyperlaneCache)) return hyperlaneCache;
-  hyperlaneCache = await buildMap(async (chainKey) => {
-    const mailbox = HYPERLANE_MAILBOX_BY_CHAIN[chainKey];
-    if (!mailbox) return undefined;
-    const client = getClient(chainKey);
-    return (await client.readContract({
-      address: mailbox,
-      abi: LOCAL_DOMAIN_ABI,
-      functionName: "localDomain",
-    })) as number;
-  }, HYPERLANE_DOMAIN_BY_CHAIN);
-  return hyperlaneCache;
+  return cachedMap(
+    "hyperlane",
+    async (chainKey) => {
+      const mailbox = HYPERLANE_MAILBOX_BY_CHAIN[chainKey];
+      if (!mailbox) return undefined;
+      const client = getClient(chainKey);
+      return (await client.readContract({
+        address: mailbox,
+        abi: LOCAL_DOMAIN_ABI,
+        functionName: "localDomain",
+      })) as number;
+    },
+    HYPERLANE_DOMAIN_BY_CHAIN
+  );
 }
 
 export async function getWormholeChainIdMap(): Promise<CachedMap> {
-  if (isFresh(wormholeCache)) return wormholeCache;
-  wormholeCache = await buildMap(async (chainKey) => {
-    const bridge = PORTAL_TOKEN_BRIDGE_BY_CHAIN[chainKey];
-    if (!bridge) return undefined;
-    const client = getClient(chainKey);
-    return (await client.readContract({
-      address: bridge,
-      abi: WH_CHAIN_ID_ABI,
-      functionName: "chainId",
-    })) as number;
-  }, WORMHOLE_CHAIN_ID_BY_CHAIN);
-  return wormholeCache;
+  return cachedMap(
+    "wormhole",
+    async (chainKey) => {
+      const bridge = PORTAL_TOKEN_BRIDGE_BY_CHAIN[chainKey];
+      if (!bridge) return undefined;
+      const client = getClient(chainKey);
+      return (await client.readContract({
+        address: bridge,
+        abi: WH_CHAIN_ID_ABI,
+        functionName: "chainId",
+      })) as number;
+    },
+    WORMHOLE_CHAIN_ID_BY_CHAIN
+  );
 }
 
 export async function getCctpDomainMap(): Promise<CachedMap> {
-  if (isFresh(cctpCache)) return cctpCache;
-  cctpCache = await buildMap(async (chainKey) => {
-    const transmitter = CCTP_MESSAGE_TRANSMITTER_BY_CHAIN[chainKey];
-    if (!transmitter) return undefined;
-    const client = getClient(chainKey);
-    return (await client.readContract({
-      address: transmitter,
-      abi: LOCAL_DOMAIN_ABI,
-      functionName: "localDomain",
-    })) as number;
-  }, CCTP_DOMAIN_BY_CHAIN);
-  return cctpCache;
+  return cachedMap(
+    "cctp",
+    async (chainKey) => {
+      const transmitter = CCTP_MESSAGE_TRANSMITTER_BY_CHAIN[chainKey];
+      if (!transmitter) return undefined;
+      const client = getClient(chainKey);
+      return (await client.readContract({
+        address: transmitter,
+        abi: LOCAL_DOMAIN_ABI,
+        functionName: "localDomain",
+      })) as number;
+    },
+    CCTP_DOMAIN_BY_CHAIN
+  );
 }

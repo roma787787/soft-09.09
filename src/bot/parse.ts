@@ -18,7 +18,11 @@ export function parseAddressChainArgs(text: string): ParsedArgs {
   }
 
   const rawAddress = args[0];
-  if (!isAddress(rawAddress)) {
+  // strict:false skips EIP-55 checksum validation. Length and hex shape are
+  // still enforced; without this, an address pasted with non-canonical
+  // capitalisation (common when copying from chats or docs) is rejected as
+  // "invalid", which is confusing and not actually true.
+  if (!isAddress(rawAddress, { strict: false })) {
     return { error: `«${rawAddress}» не похож на корректный EVM-адрес.` };
   }
 

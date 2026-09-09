@@ -5,8 +5,38 @@ import { getChain } from "../config/chains";
 import { env } from "../config/env";
 import { tryDecodeEvent } from "./eventCatalog";
 
+/** Max individual event alerts sent per contract per polling round. */
+const MAX_ALERTS_PER_POLL = 5;
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Works out which block range to scan next for one tracked contract.
+ *
+ * Returns undefined when there is nothing new to scan. Kept pure and
+ * exported so the off-by-one behaviour (which would either miss events or
+ * re-send duplicates) is testable without a live RPC.
+ */
+export function computePollRange(args: {
+  lastBlock: string | null;
+  currentBlock: bigint;
+  maxRange: bigint;
+  initialLookback: bigint;
+}): { fromBlock: bigint; toBlock: bigint } | undefined {
+  const { lastBlock, currentBlock, maxRange, initialLookback } = args;
+
+  // A recorded last_block was already scanned, so resume at the next block.
+  // With no record, start a bounded lookback behind the chain head.
+  const start = lastBlock !== null ? BigInt(lastBlock) + 1n : currentBlock - initialLookback;
+  const fromBlock = start < 0n ? 0n : start;
+
+  if (fromBlock > currentBlock) return undefined;
+
+  const cappedEnd = fromBlock + maxRange - 1n;
+  const toBlock = cappedEnd > currentBlock ? currentBlock : cappedEnd;
+  return { fromBlock, toBlock };
 }
 
 async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Promise<void> {
@@ -14,11 +44,14 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
   if (!chain) return;
   const client = getClient(row.chain);
 
-  const lastBlock = row.last_block ? BigInt(row.last_block) : currentBlock - env.trackInitialLookbackBlocks;
-  const fromBlock = lastBlock < 0n ? 0n : lastBlock + (row.last_block ? 1n : 0n);
-  if (fromBlock > currentBlock) return;
-
-  const toBlock = fromBlock + env.trackMaxBlockRange - 1n > currentBlock ? currentBlock : fromBlock + env.trackMaxBlockRange - 1n;
+  const range = computePollRange({
+    lastBlock: row.last_block,
+    currentBlock,
+    maxRange: env.trackMaxBlockRange,
+    initialLookback: env.trackInitialLookbackBlocks,
+  });
+  if (!range) return;
+  const { fromBlock, toBlock } = range;
 
   try {
     const logs = await client.getLogs({
@@ -27,7 +60,14 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
       toBlock,
     });
 
-    for (const log of logs) {
+    // A busy bridge can emit hundreds of events inside one polling window.
+    // Telegram throttles roughly a message per second per chat, so sending
+    // them all would get the bot rate-limited and bury the user in noise.
+    // Send a bounded number and summarise the rest.
+    const shown = logs.slice(0, MAX_ALERTS_PER_POLL);
+    const overflow = logs.length - shown.length;
+
+    for (const log of shown) {
       const decoded = tryDecodeEvent(log);
       const txUrl = chain.explorerTxUrl(log.transactionHash ?? "");
       const addrUrl = chain.explorerAddressUrl(row.address);
@@ -52,6 +92,20 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
 
       try {
         await bot.telegram.sendMessage(row.chat_id, text, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
+      } catch (err) {
+        console.error(`[tracker] failed to notify chat ${row.chat_id}:`, err);
+      }
+    }
+
+    if (overflow > 0) {
+      const addrUrl = chain.explorerAddressUrl(row.address);
+      try {
+        await bot.telegram.sendMessage(
+          row.chat_id,
+          `… и ещё ${overflow} событий этого контракта в блоках ${fromBlock}–${toBlock}. ` +
+            `Показаны первые ${MAX_ALERTS_PER_POLL}.\n<a href="${addrUrl}">Все события в эксплорере ↗</a>`,
+          { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
+        );
       } catch (err) {
         console.error(`[tracker] failed to notify chat ${row.chat_id}:`, err);
       }

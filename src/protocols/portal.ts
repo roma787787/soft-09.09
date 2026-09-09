@@ -1,6 +1,6 @@
 import type { Address, PublicClient } from "viem";
 import type { DetectionResult, RemotePeer } from "./types";
-import { safeRead, isNonZero, bytes32ToAddress, chainLabel } from "./util";
+import { safeRead, isNonZero, bytes32ToAddress, isEvmAddressBytes32, chainLabel } from "./util";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "./addresses/portal";
 import { getWormholeChainIdMap } from "../services/idMaps";
 
@@ -82,7 +82,14 @@ export async function detectPortal(
     const originWhChainId = await safeRead<number>(client, address, WRAPPED_TOKEN_ABI as any, "chainId");
     const symbol = await safeRead<string>(client, address, WRAPPED_TOKEN_ABI as any, "symbol");
 
-    const facts: Array<[string, string]> = [["Native (origin) contract", bytes32ToAddress(nativeContractVal)]];
+    // A Solana/Aptos origin fills all 32 bytes; only render an EVM address
+    // when the value really is one, otherwise show the raw bytes32.
+    const facts: Array<[string, string]> = [
+      [
+        "Native (origin) contract",
+        isEvmAddressBytes32(nativeContractVal) ? bytes32ToAddress(nativeContractVal) : nativeContractVal,
+      ],
+    ];
     let originLabel: string | undefined;
     if (originWhChainId !== undefined) {
       const whMap = await getWormholeChainIdMap();

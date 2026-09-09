@@ -4,7 +4,7 @@ import { detectOnChain } from "../../protocols/registry";
 import { getClient } from "../../services/rpcClient";
 import { addTracked } from "../../services/db";
 import { CHAINS, getChain } from "../../config/chains";
-import { PROTOCOL_LABELS } from "../../protocols/types";
+import { PROTOCOL_LABELS, type DetectionResult } from "../../protocols/types";
 
 export function registerTrackCommand(bot: Telegraf) {
   bot.command("track", async (ctx: Context) => {
@@ -24,6 +24,9 @@ export function registerTrackCommand(bot: Telegraf) {
 
     await ctx.sendChatAction("typing");
 
+    // Reused when the chain was auto-detected, so we don't run detection twice.
+    let detected: DetectionResult[] | undefined;
+
     if (!chainKey) {
       const perChain = await Promise.all(
         CHAINS.map(async (c) => ({ chain: c.key, results: await detectOnChain(c.key, address) }))
@@ -31,6 +34,7 @@ export function registerTrackCommand(bot: Telegraf) {
       const withHits = perChain.filter((p) => p.results.length > 0);
       if (withHits.length === 1) {
         chainKey = withHits[0].chain;
+        detected = withHits[0].results;
       } else if (withHits.length > 1) {
         await ctx.reply(
           `Этот адрес найден сразу на нескольких сетях (${withHits.map((h) => getChain(h.chain)?.label).join(", ")}). Укажите сеть явно: <code>/track ${address} arbitrum</code>`,
@@ -48,7 +52,7 @@ export function registerTrackCommand(bot: Telegraf) {
       }
     }
 
-    const results = await detectOnChain(chainKey, address);
+    const results = detected ?? (await detectOnChain(chainKey, address));
     const client = getClient(chainKey);
     const currentBlock = await client.getBlockNumber();
 

@@ -19,7 +19,8 @@ const HELP_TEXT = `🌉 <b>Bridge Contract Tracker</b>
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.
 
-Пример: <code>/info 0x1a44076050125825900e736c501f859c50fE728 ethereum</code>`;
+Пример (контракт моста Portal в Ethereum):
+<code>/info 0x3ee18B2214AFF97000D974cf647E7C347E8fa585 ethereum</code>`;
 
 export function registerHelpCommands(bot: Telegraf) {
   bot.start(async (ctx: Context) => ctx.reply(HELP_TEXT, { parse_mode: "HTML" }));
