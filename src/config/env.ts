@@ -49,6 +49,8 @@ export const env = {
   trackPollIntervalMs: positiveInt("TRACK_POLL_INTERVAL_MS", 60_000, MIN_POLL_INTERVAL_MS),
   trackMaxBlockRange: BigInt(positiveInt("TRACK_MAX_BLOCK_RANGE", 2000, 1)),
   trackInitialLookbackBlocks: BigInt(positiveInt("TRACK_INITIAL_LOOKBACK_BLOCKS", 1000, 1)),
+  cmcApiKey: read("CMC_API_KEY"),
+  cmcApiBase: read("CMC_API_BASE") || "https://pro-api.coinmarketcap.com",
   layerZeroScanApi: read("LAYERZERO_SCAN_API") || "https://scan.layerzero-api.com/v1",
   wormholescanApi: read("WORMHOLESCAN_API") || "https://api.wormholescan.io",
   circleIrisApi: read("CIRCLE_IRIS_API") || "https://iris-api.circle.com/v2",

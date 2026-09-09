@@ -24,6 +24,8 @@ export interface ChainDef {
   explorerAddressUrl: (address: string) => string;
   /** Alternate names users may type after /info or /track. */
   aliases: string[];
+  /** How CoinMarketCap spells this network in its platform field. */
+  cmcPlatformNames?: string[];
 }
 
 export const CHAINS: ChainDef[] = [
@@ -41,6 +43,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://etherscan.io/address/${a}`,
     aliases: ["eth", "mainnet", "ethereum"],
+    cmcPlatformNames: ["Ethereum", "ERC20"],
   },
   {
     key: "arbitrum",
@@ -55,6 +58,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://arbiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://arbiscan.io/address/${a}`,
     aliases: ["arb", "arbitrum", "arbitrum-one"],
+    cmcPlatformNames: ["Arbitrum", "Arbitrum One"],
   },
   {
     key: "optimism",
@@ -69,6 +73,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://optimistic.etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://optimistic.etherscan.io/address/${a}`,
     aliases: ["op", "optimism"],
+    cmcPlatformNames: ["Optimism", "OP Mainnet"],
   },
   {
     key: "base",
@@ -82,6 +87,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://basescan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://basescan.org/address/${a}`,
     aliases: ["base"],
+    cmcPlatformNames: ["Base"],
   },
   {
     key: "polygon",
@@ -96,6 +102,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://polygonscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://polygonscan.com/address/${a}`,
     aliases: ["polygon", "matic", "pol"],
+    cmcPlatformNames: ["Polygon", "Polygon PoS", "Polygon Ecosystem"],
   },
   {
     key: "bsc",
@@ -110,6 +117,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://bscscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://bscscan.com/address/${a}`,
     aliases: ["bsc", "bnb", "binance"],
+    cmcPlatformNames: ["BNB Smart Chain (BEP20)", "BNB Smart Chain", "Binance Smart Chain", "BNB"],
   },
   {
     key: "avalanche",
@@ -123,6 +131,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://snowtrace.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://snowtrace.io/address/${a}`,
     aliases: ["avax", "avalanche"],
+    cmcPlatformNames: ["Avalanche C-Chain", "Avalanche"],
   },
 ];
 

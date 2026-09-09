@@ -3,6 +3,8 @@ import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
 import { CHAINS, getChain } from "../../config/chains";
+import { isAddress } from "viem";
+import { replyWithLiquidity } from "./liquidity";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -64,10 +66,22 @@ const REPLY_OPTS = { parse_mode: "HTML", link_preview_options: { is_disabled: tr
 export function registerInfoCommand(bot: Telegraf) {
   bot.command("info", async (ctx: Context) => {
     const text = (ctx.message as any)?.text ?? "";
+
+    // /info takes a ticker (liquidity across bridges). An address argument
+    // keeps working and runs the contract identification instead, since
+    // that is a different question about a different kind of input.
+    const firstArg = text.trim().split(/\s+/)[1];
+    if (firstArg && !isAddress(firstArg, { strict: false })) {
+      await replyWithLiquidity(ctx, firstArg);
+      return;
+    }
+
     const parsed = parseAddressChainArgs(text);
     if (parsed.error || !parsed.address) {
       await ctx.reply(
-        `${parsed.error ?? "Неверные аргументы."}\n\nПример: <code>/info 0x1234...abcd arbitrum</code>`,
+        "Укажите тикер токена или адрес контракта.\n\n" +
+          "<code>/info ARB</code> — сколько ARB лежит в хранилищах мостов\n" +
+          "<code>/info 0x1234...abcd arbitrum</code> — что это за контракт",
         { parse_mode: "HTML" }
       );
       return;

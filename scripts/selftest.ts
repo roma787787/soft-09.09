@@ -11,6 +11,11 @@ import { tryDecodeEvent } from "../src/services/eventCatalog";
 import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
+import { parseCmcInfoResponse } from "../src/services/cmc";
+import { formatAmount } from "../src/services/balances";
+import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
+import { resolveCustodians } from "../src/bridges";
+import { getChain } from "../src/config/chains";
 
 let failures = 0;
 
@@ -201,6 +206,107 @@ check(
   "empty detection renders a helpful message rather than a blank card",
   formatInfoCard("ethereum", PORTAL_ETH as `0x${string}`, []).includes("не относится ни к LayerZero")
 );
+
+// --- CoinMarketCap response parsing ------------------------------------------
+
+const cmcBody = {
+  status: { error_code: 0 },
+  data: {
+    ARB: [
+      {
+        name: "Arbitrum",
+        symbol: "ARB",
+        platform: { name: "Ethereum", slug: "ethereum", token_address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1" },
+        contract_address: [
+          {
+            contract_address: "0x912CE59144191C1204E64559FE8253a0e49E6548",
+            platform: { name: "Arbitrum", coin: { slug: "arbitrum" } },
+          },
+          {
+            contract_address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1",
+            platform: { name: "Ethereum", coin: { slug: "ethereum" } },
+          },
+          {
+            contract_address: "0xf2c2b3d6a5b1d4b2c8e0a9f7d6c5b4a3e2d1c0b9",
+            platform: { name: "Some Chain We Do Not Support", coin: { slug: "whatever" } },
+          },
+          { contract_address: "not-an-address", platform: { name: "Broken", coin: { slug: "broken" } } },
+        ],
+      },
+    ],
+  },
+};
+
+const parsed = parseCmcInfoResponse(cmcBody, "ARB");
+check("parses the CMC payload", parsed?.symbol === "ARB" && parsed?.name === "Arbitrum");
+check(
+  "maps CMC platform names onto our chain keys",
+  parsed?.platforms.find((p) => p.chainKey === "arbitrum")?.tokenAddress ===
+    "0x912CE59144191C1204E64559FE8253a0e49E6548"
+);
+check(
+  "keeps an unsupported network without a chain key instead of dropping it",
+  parsed?.platforms.some((p) => p.chainKey === undefined && p.platformName.includes("Do Not Support")) === true
+);
+check("skips malformed addresses", parsed?.platforms.every((p) => p.tokenAddress.length === 42) === true);
+check(
+  "does not duplicate a platform present in both fields",
+  parsed?.platforms.filter((p) => p.chainKey === "ethereum").length === 1
+);
+check("returns undefined for an unknown ticker", parseCmcInfoResponse({ data: {} }, "NOPE") === undefined);
+
+check("maps the BNB Chain spelling CMC uses", (() => {
+  const body = {
+    data: {
+      X: [
+        {
+          name: "X",
+          symbol: "X",
+          contract_address: [
+            {
+              contract_address: "0x912CE59144191C1204E64559FE8253a0e49E6548",
+              platform: { name: "BNB Smart Chain (BEP20)", coin: { slug: "bnb" } },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  return parseCmcInfoResponse(body, "X")?.platforms[0]?.chainKey === "bsc";
+})());
+
+// --- amount formatting -------------------------------------------------------
+
+check("formats a whole amount with thousands separators", formatAmount(1_250_000n * 10n ** 18n, 18).replace(/\u00a0/g, " ") === "1 250 000");
+check("formats a six-decimal token", formatAmount(45_000_000_000n, 6) === "45 000".replace(/ /g, " ") || formatAmount(45_000_000_000n, 6).replace(/\u00a0/g, " ") === "45 000");
+check("keeps a fraction visible so dust is not shown as zero", formatAmount(1_500_000_000_000_000n, 18).includes(","));
+check("formats zero", formatAmount(0n, 18) === "0");
+
+// --- bridge custodian resolution (real Hyperlane registry, no network) -------
+
+const usdcRoutes = findHyperlaneCustodians("USDC");
+check("finds Hyperlane collateral routers for USDC in the real registry", usdcRoutes.length > 0, `found=${usdcRoutes.length}`);
+check(
+  "every Hyperlane custodian names a supported chain and two addresses",
+  usdcRoutes.every(
+    (c) => !!getChain(c.chainKey) && c.custodyAddress.length === 42 && c.tokenAddress.length === 42
+  )
+);
+check("a nonsense ticker matches no warp route", findHyperlaneCustodians("ZZZZNOTATOKEN").length === 0);
+
+const custodians = resolveCustodians("USDC", [
+  { chainKey: "ethereum", platformName: "Ethereum", tokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
+  { chainKey: "bsc", platformName: "BNB Smart Chain (BEP20)", tokenAddress: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" },
+]);
+check(
+  "adds a Wormhole custodian for every chain with a known Token Bridge",
+  custodians.filter((c) => c.protocol === "wormhole").length === 2,
+  `wormhole=${custodians.filter((c) => c.protocol === "wormhole").length}`
+);
+check("returns no duplicate custody entries", (() => {
+  const keys = custodians.map((c) => `${c.protocol}:${c.chainKey}:${c.custodyAddress.toLowerCase()}`);
+  return new Set(keys).size === keys.length;
+})());
 
 // -----------------------------------------------------------------------------
 

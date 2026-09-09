@@ -1,7 +1,7 @@
 {
-  "name": "bridge-contract-tracker",
+  "name": "bridge-liquidity-tracker",
   "version": "1.0.0",
-  "description": "Telegram bot that identifies and tracks cross-chain bridge contracts (LayerZero, Hyperlane, Transporter/CCIP+CCTP, Portal/Wormhole) via an /info command.",
+  "description": "Telegram bot that reports how much of a token each bridge custody contract holds (Wormhole/Portal, Hyperlane warp routes, LayerZero OFT adapters), plus contract identification by address.",
   "private": true,
   "type": "commonjs",
   "main": "dist/index.js",
@@ -14,6 +14,7 @@
     "selftest": "tsx scripts/selftest.ts"
   },
   "dependencies": {
+    "@hyperlane-xyz/registry": "^26.1.0",
     "better-sqlite3": "^11.9.1",
     "dotenv": "^16.4.5",
     "telegraf": "^4.16.3",
