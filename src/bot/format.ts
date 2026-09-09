@@ -26,10 +26,10 @@ export function formatInfoCard(chainKey: string, address: Address, results: Dete
   if (results.length === 0) {
     return (
       header +
-      "Не удалось распознать этот адрес как контракт LayerZero / Hyperlane / Transporter (CCIP или CCTP) / Portal на этой сети.\n\n" +
-      "Возможные причины: это не мост, это не контракт, либо мост развёрнут на другой сети — попробуйте указать сеть явно: <code>/info " +
+      "Адрес не относится ни к LayerZero, ни к Hyperlane, ни к Transporter, ни к Portal на этой сети.\n\n" +
+      "Попробуйте без указания сети, тогда бот проверит все: <code>/info " +
       esc(address) +
-      " arbitrum</code>."
+      "</code>"
     );
   }
 

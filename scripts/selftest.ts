@@ -199,7 +199,7 @@ check("info card contains the role and a peer", card.includes("контракт 
 check("info card stays within Telegram's message limit", card.length < 4096, `length=${card.length}`);
 check(
   "empty detection renders a helpful message rather than a blank card",
-  formatInfoCard("ethereum", PORTAL_ETH as `0x${string}`, []).includes("Не удалось распознать")
+  formatInfoCard("ethereum", PORTAL_ETH as `0x${string}`, []).includes("не относится ни к LayerZero")
 );
 
 // -----------------------------------------------------------------------------

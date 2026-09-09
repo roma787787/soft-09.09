@@ -4,6 +4,45 @@ import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
 import { CHAINS, getChain } from "../../config/chains";
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Reply for "the contract is there, but it is none of the four bridges".
+ * Reports what the probe did learn instead of leaving a dead end, and never
+ * repeats the old claim that the address might not be a contract - by this
+ * point we have read its bytecode.
+ */
+function notABridgeMessage(chainKey: string, address: string, profile: Array<[string, string]> | undefined): string {
+  const chain = getChain(chainKey);
+  const chainName = chain?.label ?? chainKey;
+  const link = chain ? `<a href="${chain.explorerAddressUrl(address)}">${esc(address)}</a>` : `<code>${esc(address)}</code>`;
+
+  const lines = [
+    `🔎 <b>${esc(chainName)}</b>`,
+    link,
+    "",
+    "Контракт по этому адресу есть, но он не относится ни к LayerZero, ни к Hyperlane, ни к Transporter, ни к Portal.",
+  ];
+
+  if (profile && profile.length > 0) {
+    lines.push("", "<b>Что удалось узнать:</b>");
+    for (const [k, v] of profile) lines.push(`• ${esc(k)}: <code>${esc(v)}</code>`);
+  }
+
+  lines.push(
+    "",
+    "Бот распознаёт только эти четыре протокола. Мосты вроде Across, Celer, Symbiosis, Meson и обычные токены он не определяет."
+  );
+
+  if (profile?.some(([k]) => k.startsWith("Это прокси"))) {
+    lines.push("", "Это прокси-контракт. Иногда полезно проверить адрес реализации отдельной командой /info.");
+  }
+
+  return lines.join("\n");
+}
+
 const REPLY_OPTS = { parse_mode: "HTML", link_preview_options: { is_disabled: true } } as const;
 
 export function registerInfoCommand(bot: Telegraf) {
@@ -47,6 +86,11 @@ export function registerInfoCommand(bot: Telegraf) {
         return;
       }
 
+      if (outcome.results.length === 0) {
+        await ctx.reply(notABridgeMessage(chainKey, address, outcome.profile), REPLY_OPTS);
+        return;
+      }
+
       await ctx.reply(formatInfoCard(chainKey, address, outcome.results), REPLY_OPTS);
       return;
     }
@@ -87,12 +131,13 @@ export function registerInfoCommand(bot: Telegraf) {
 
     let message =
       `🔎 <code>${address}</code>\n\n` +
-      `Не удалось распознать этот адрес как контракт LayerZero / Hyperlane / Transporter (CCIP или CCTP) / Portal.\n\n` +
+      `Ни на одной сети этот адрес не относится к LayerZero, Hyperlane, Transporter или Portal.\n\n` +
       `Проверено: ${checked.join(", ")}.`;
 
     if (contractFoundOn.length > 0) {
       message +=
-        `\n\nКонтракт по этому адресу есть (${contractFoundOn.join(", ")}), но он не похож ни на один из поддерживаемых мостов.`;
+        `\n\nКонтракт по этому адресу есть (${contractFoundOn.join(", ")}). ` +
+        `Чтобы посмотреть, что это, укажите сеть явно: <code>/info ${address} ${contractFoundOn.length === 1 ? (getChain(perChain.find((p) => !p.outcome.rpcError && !p.outcome.noContract)!.chain)?.key ?? "ethereum") : "bsc"}</code>`;
     }
 
     if (failed.length > 0) {

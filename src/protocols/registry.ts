@@ -5,6 +5,8 @@ import { detectLayerZero } from "./layerzero";
 import { detectHyperlane } from "./hyperlane";
 import { detectPortal } from "./portal";
 import { detectTransporter } from "./transporter";
+import { matchKnownInfrastructure } from "./infrastructure";
+import { profileUnknownContract } from "./profile";
 
 export interface DetectionOutcome {
   results: DetectionResult[];
@@ -12,6 +14,11 @@ export interface DetectionOutcome {
   rpcError?: string;
   /** The node answered and there is no contract at this address here. */
   noContract?: boolean;
+  /**
+   * Set when a contract exists but matched no protocol: what we could still
+   * learn about it, so the answer is never just "not recognized".
+   */
+  profile?: Array<[string, string]>;
 }
 
 function describeRpcError(err: unknown): string {
@@ -51,6 +58,26 @@ export async function detectOnChain(chainKey: string, address: Address): Promise
   const results: DetectionResult[] = [];
   for (const r of settled) {
     if (r.status === "fulfilled" && r.value) results.push(r.value);
+  }
+
+  // A protocol's own core contracts (Endpoint, Mailbox) don't implement the
+  // client-side interface the detectors probe for, so match them by address.
+  if (results.length === 0) {
+    const infra = matchKnownInfrastructure(chainKey, address);
+    if (infra) {
+      results.push({
+        protocol: infra.protocol,
+        confidence: "high",
+        role: infra.role,
+        facts: [["Инфраструктурный контракт протокола", "да"]],
+        peers: [],
+        notes: [],
+      });
+    }
+  }
+
+  if (results.length === 0) {
+    return { results, profile: await profileUnknownContract(client, address) };
   }
 
   const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
