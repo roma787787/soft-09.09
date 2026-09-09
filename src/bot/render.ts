@@ -23,6 +23,42 @@ export interface ReportInput {
   nativeOftChains?: string[];
   /** Chains with a Hyperlane route that mints instead of locking. */
   syntheticHyperlaneChains?: string[];
+  /** Where the check reached, so a small number is explained, not puzzling. */
+  scope?: {
+    /** Chains CoinMarketCap listed that this bot supports. */
+    supportedChains: string[];
+    /** Networks CoinMarketCap listed that this bot does not cover. */
+    unsupportedPlatforms: string[];
+    wormhole: number;
+    hyperlane: number;
+    layerzero: number;
+  };
+}
+
+/**
+ * Explains the size of the check. "Checked 2 contracts" invites the obvious
+ * question of why only two, and the answer is always the same three inputs:
+ * the chains CoinMarketCap knows the token on, the warp routes carrying that
+ * ticker, and the adapters someone entered by hand.
+ */
+function scopeLines(scope: ReportInput["scope"]): string[] {
+  if (!scope) return [];
+  const parts = [
+    `Wormhole — ${scope.wormhole} ${scope.wormhole === 1 ? "сеть" : "сетей"}`,
+    `Hyperlane — ${scope.hyperlane} ${scope.hyperlane === 1 ? "маршрут" : "маршрутов"}`,
+    `LayerZero — ${scope.layerzero} в конфиге`,
+  ];
+  const lines = [`Откуда взялись контракты: ${parts.join(", ")}.`];
+
+  if (scope.supportedChains.length > 0) {
+    lines.push(`CoinMarketCap знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
+  }
+  if (scope.unsupportedPlatforms.length > 0) {
+    lines.push(
+      `Ещё в этих сетях бот их не проверяет: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
+    );
+  }
+  return lines;
 }
 
 function chainName(chainKey: string): string {
@@ -104,6 +140,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     attemptsByChain,
     nativeOftChains = [],
     syntheticHyperlaneChains = [],
+    scope,
   } = input;
   const withLiquidity = balances.filter((b) => b.amount > 0n);
   const { unreachable, partial } = describeFailures(balances, failuresByChain, attemptsByChain);
@@ -145,6 +182,8 @@ export function renderLiquidityReport(input: ReportInput): string {
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
+    const scopeText = scopeLines(scope);
+    if (scopeText.length > 0) lines.push("", ...scopeText);
     return lines.join("\n");
   }
 
@@ -227,6 +266,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
   }
   notes.push(`Всего проверено контрактов: ${checkedCount}.`);
+  notes.push(...scopeLines(scope));
 
   return [...lines, "", ...notes].join("\n");
 }

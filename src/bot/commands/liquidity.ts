@@ -66,6 +66,13 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
 
   const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(all);
 
+  const supportedChains = [
+    ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
+  ];
+  const unsupportedPlatforms = [
+    ...new Set(token.platforms.filter((p) => !p.chainKey).map((p) => p.platformName)),
+  ];
+
   return renderLiquidityReport({
     symbol: token.symbol,
     name: token.name,
@@ -75,6 +82,13 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     attemptsByChain,
     nativeOftChains,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
+    scope: {
+      supportedChains,
+      unsupportedPlatforms,
+      wormhole: all.filter((c) => c.protocol === "wormhole").length,
+      hyperlane: all.filter((c) => c.protocol === "hyperlane").length,
+      layerzero: all.filter((c) => c.protocol === "layerzero").length,
+    },
   });
 }
 

@@ -485,6 +485,29 @@ const trulyNothing = renderLiquidityReport({
 check("a token with no bridge at all still says so plainly", trulyNothing.includes("не заведён"));
 check("and points at the manual LayerZero config", trulyNothing.includes("layerzero-lockboxes.json"));
 
+// "Checked 2 contracts" with no explanation invites exactly one question,
+// so the report answers it before it is asked.
+const scoped = renderLiquidityReport({
+  symbol: "GRAM",
+  name: "Gram",
+  balances: [fakeBalance("ethereum", "wormhole", 49_468_000000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1, bsc: 1 },
+  scope: {
+    supportedChains: ["Ethereum", "BNB Chain"],
+    unsupportedPlatforms: ["TON"],
+    wormhole: 2,
+    hyperlane: 0,
+    layerzero: 0,
+  },
+});
+check("the report breaks down where its contracts came from", scoped.includes("Откуда взялись контракты"));
+check("it names the counts per bridge", scoped.includes("Hyperlane — 0") && scoped.includes("Wormhole — 2"));
+check("it names the networks CoinMarketCap listed", scoped.includes("Ethereum, BNB Chain"));
+check("it names networks outside the bot's coverage", scoped.includes("TON"));
+check("the scoped report still fits the message limit", scoped.length < 4096);
+
 // -----------------------------------------------------------------------------
 
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
