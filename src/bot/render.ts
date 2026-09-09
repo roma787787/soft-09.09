@@ -133,7 +133,13 @@ export function renderLiquidityReport(input: ReportInput): string {
       lines.push(
         "Через известные боту мосты этот токен не заведён.",
         "",
-        "Если знаете адрес его адаптера LayerZero, добавьте в <code>config/layerzero-lockboxes.json</code> — единого реестра у LayerZero нет, автоматически такие адреса взять неоткуда."
+        "<b>Если он ходит через LayerZero</b>, у которого нет публичного реестра, адрес адаптера ищется так:",
+        "1. Открыть токен в эксплорере, вкладка Holders.",
+        "2. Найти контракт с самым большим балансом — обычно это и есть адаптер, он держит заблокированный запас.",
+        "3. Проверить его: <code>/info &lt;адрес&gt; &lt;сеть&gt;</code>. Бот подтвердит, что это OFT Adapter, и покажет связанные сети.",
+        "4. Добавить адрес в <code>config/layerzero-lockboxes.json</code>.",
+        "",
+        "Альтернатива — layerzeroscan.com, раздел Applications, и документация самого проекта."
       );
     }
     if (unreachable.length > 0) {
