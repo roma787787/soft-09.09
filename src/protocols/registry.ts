@@ -5,7 +5,7 @@ import { detectLayerZero } from "./layerzero";
 import { detectHyperlane } from "./hyperlane";
 import { detectPortal } from "./portal";
 import { detectTransporter } from "./transporter";
-import { matchKnownInfrastructure } from "./infrastructure";
+import { matchKnownInfrastructure, describeInfrastructure } from "./infrastructure";
 import { profileUnknownContract } from "./profile";
 
 export interface DetectionOutcome {
@@ -69,7 +69,7 @@ export async function detectOnChain(chainKey: string, address: Address): Promise
         protocol: infra.protocol,
         confidence: "high",
         role: infra.role,
-        facts: [["Инфраструктурный контракт протокола", "да"]],
+        facts: await describeInfrastructure(client, address, infra),
         peers: [],
         notes: [],
       });

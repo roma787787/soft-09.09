@@ -1,5 +1,6 @@
-import type { Address } from "viem";
+import type { Address, PublicClient } from "viem";
 import type { ProtocolId } from "./types";
+import { safeRead, isNonZero } from "./util";
 import { LZ_ENDPOINT_V2 } from "./addresses/layerzero";
 import { HYPERLANE_MAILBOX_BY_CHAIN } from "./addresses/hyperlane";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "./addresses/portal";
@@ -12,6 +13,58 @@ import {
 export interface InfrastructureMatch {
   protocol: ProtocolId;
   role: string;
+  /** Which core contract this is, so we know what to read from it. */
+  kind: "lz-endpoint" | "hyperlane-mailbox" | "portal-bridge" | "ccip-router" | "cctp";
+}
+
+const ENDPOINT_ABI = [
+  { type: "function", name: "eid", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+] as const;
+
+const MAILBOX_ABI = [
+  { type: "function", name: "localDomain", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+  { type: "function", name: "nonce", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+  { type: "function", name: "defaultIsm", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "defaultHook", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+/**
+ * Reads the live state worth showing for a core contract. Without this the
+ * card says only "yes, this is infrastructure", which answers nothing the
+ * user could not already see.
+ */
+export async function describeInfrastructure(
+  client: PublicClient,
+  address: Address,
+  match: InfrastructureMatch
+): Promise<Array<[string, string]>> {
+  const facts: Array<[string, string]> = [];
+
+  if (match.kind === "lz-endpoint") {
+    const eid = await safeRead<number>(client, address, ENDPOINT_ABI as any, "eid");
+    if (eid !== undefined) facts.push(["Идентификатор сети (eid)", String(eid)]);
+    facts.push(["Адрес одинаков во всех сетях LayerZero V2", "да"]);
+    return facts;
+  }
+
+  if (match.kind === "hyperlane-mailbox") {
+    const [localDomain, nonce, defaultIsm, defaultHook, owner] = await Promise.all([
+      safeRead<number>(client, address, MAILBOX_ABI as any, "localDomain"),
+      safeRead<number>(client, address, MAILBOX_ABI as any, "nonce"),
+      safeRead<Address>(client, address, MAILBOX_ABI as any, "defaultIsm"),
+      safeRead<Address>(client, address, MAILBOX_ABI as any, "defaultHook"),
+      safeRead<Address>(client, address, MAILBOX_ABI as any, "owner"),
+    ]);
+    if (localDomain !== undefined) facts.push(["Идентификатор сети (domain)", String(localDomain)]);
+    if (nonce !== undefined) facts.push(["Отправлено сообщений за всё время", String(nonce)]);
+    if (defaultIsm && isNonZero(defaultIsm)) facts.push(["Модуль безопасности по умолчанию", defaultIsm]);
+    if (defaultHook && isNonZero(defaultHook)) facts.push(["Хук по умолчанию", defaultHook]);
+    if (owner && isNonZero(owner)) facts.push(["Владелец", owner]);
+    return facts;
+  }
+
+  return facts;
 }
 
 /**
@@ -31,6 +84,7 @@ export function matchKnownInfrastructure(chainKey: string, address: Address): In
   if (is(LZ_ENDPOINT_V2)) {
     return {
       protocol: "layerzero",
+      kind: "lz-endpoint",
       role: "EndpointV2: ядро протокола, через которое проходят все сообщения LayerZero в этой сети",
     };
   }
@@ -38,24 +92,33 @@ export function matchKnownInfrastructure(chainKey: string, address: Address): In
   if (is(HYPERLANE_MAILBOX_BY_CHAIN[chainKey])) {
     return {
       protocol: "hyperlane",
+      kind: "hyperlane-mailbox",
       role: "Mailbox: ядро протокола, через которое проходят все сообщения Hyperlane в этой сети",
     };
   }
 
   if (is(PORTAL_TOKEN_BRIDGE_BY_CHAIN[chainKey])) {
-    return { protocol: "portal", role: "Token Bridge: контракт самого моста Portal в этой сети" };
+    return { protocol: "portal", kind: "portal-bridge", role: "Token Bridge: контракт самого моста Portal в этой сети" };
   }
 
   if (is(CCIP_ROUTER_BY_CHAIN[chainKey])) {
-    return { protocol: "transporter", role: "Router Chainlink CCIP: маршрутизатор, через который работает Transporter" };
+    return {
+      protocol: "transporter",
+      kind: "ccip-router",
+      role: "Router Chainlink CCIP: маршрутизатор, через который работает Transporter",
+    };
   }
 
   if (is(CCTP_TOKEN_MESSENGER_BY_CHAIN[chainKey])) {
-    return { protocol: "transporter", role: "TokenMessenger Circle CCTP: канал перевода нативного USDC" };
+    return { protocol: "transporter", kind: "cctp", role: "TokenMessenger Circle CCTP: канал перевода нативного USDC" };
   }
 
   if (is(CCTP_MESSAGE_TRANSMITTER_BY_CHAIN[chainKey])) {
-    return { protocol: "transporter", role: "MessageTransmitter Circle CCTP: канал перевода нативного USDC" };
+    return {
+      protocol: "transporter",
+      kind: "cctp",
+      role: "MessageTransmitter Circle CCTP: канал перевода нативного USDC",
+    };
   }
 
   return undefined;
