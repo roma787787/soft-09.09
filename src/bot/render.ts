@@ -19,6 +19,10 @@ export interface ReportInput {
   checkedCount: number;
   failuresByChain: Record<string, number>;
   attemptsByChain: Record<string, number>;
+  /** Chains where the token itself is a LayerZero OFT that mints its supply. */
+  nativeOftChains?: string[];
+  /** Chains with a Hyperlane route that mints instead of locking. */
+  syntheticHyperlaneChains?: string[];
 }
 
 function chainName(chainKey: string): string {
@@ -91,7 +95,16 @@ function sumOf(rows: CustodianBalance[]): bigint {
  * through. The tail total is shown as context, clearly labelled.
  */
 export function renderLiquidityReport(input: ReportInput): string {
-  const { symbol, name, balances, checkedCount, failuresByChain, attemptsByChain } = input;
+  const {
+    symbol,
+    name,
+    balances,
+    checkedCount,
+    failuresByChain,
+    attemptsByChain,
+    nativeOftChains = [],
+    syntheticHyperlaneChains = [],
+  } = input;
   const withLiquidity = balances.filter((b) => b.amount > 0n);
   const { unreachable, partial } = describeFailures(balances, failuresByChain, attemptsByChain);
 
@@ -99,8 +112,29 @@ export function renderLiquidityReport(input: ReportInput): string {
 
   if (withLiquidity.length === 0) {
     const lines = [header, "", `Проверено контрактов: ${checkedCount}. Ни на одном из них токена сейчас нет.`];
-    if (unreachable.length === 0 && partial.length === 0) {
-      lines.push("Через известные боту мосты этот токен не заведён.");
+    // "No balance anywhere" and "bridged by a design that holds nothing" are
+    // completely different answers, and only the first means the token is
+    // not bridged. Saying so without checking would be plainly wrong.
+    if (nativeOftChains.length > 0) {
+      lines.push(
+        "",
+        `<b>Это омничейн-токен LayerZero (OFT)</b> в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}.`,
+        "У такого токена нет контракта-хранилища: при переводе он сжигается в одной сети и чеканится в другой. Мерить там нечего, и запас ликвидности ему не нужен.",
+        "Ограничение на вывод задаёт не баланс, а настройки самого моста."
+      );
+    }
+    if (syntheticHyperlaneChains.length > 0) {
+      lines.push(
+        "",
+        `Есть маршруты Hyperlane в сетях ${esc(syntheticHyperlaneChains.map(chainName).join(", "))}, но они синтетические: тоже чеканят supply, а не блокируют его.`
+      );
+    }
+    if (nativeOftChains.length === 0 && syntheticHyperlaneChains.length === 0 && unreachable.length === 0 && partial.length === 0) {
+      lines.push(
+        "Через известные боту мосты этот токен не заведён.",
+        "",
+        "Если знаете адрес его адаптера LayerZero, добавьте в <code>config/layerzero-lockboxes.json</code> — единого реестра у LayerZero нет, автоматически такие адреса взять неоткуда."
+      );
     }
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);

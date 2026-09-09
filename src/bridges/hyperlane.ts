@@ -92,6 +92,29 @@ export function findHyperlaneCustodians(symbol: string): Custodian[] {
   return found;
 }
 
+/**
+ * Chains where a warp route exists for this ticker but mints its own supply
+ * instead of locking collateral. Nothing is held there by design, so the
+ * route is real even though no balance can be read - reporting the token as
+ * "not bridged" would be wrong.
+ */
+export function findSyntheticHyperlaneChains(symbol: string): string[] {
+  const registry = loadRegistry();
+  const wanted = symbol.toUpperCase();
+  const chains = new Set<string>();
+
+  for (const [routeId, config] of Object.entries(registry)) {
+    const routeSymbol = routeId.split("/")[0]?.toUpperCase();
+    for (const token of config.tokens ?? []) {
+      const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
+      if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
+      if (token.collateralAddressOrDenom) continue;
+      if (token.chainName && getChain(token.chainName)) chains.add(token.chainName);
+    }
+  }
+  return [...chains];
+}
+
 /** How many routes the registry holds, for the /sources report. */
 export function hyperlaneRouteCount(): number {
   return Object.keys(loadRegistry()).length;

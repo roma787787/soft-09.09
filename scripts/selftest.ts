@@ -447,6 +447,44 @@ check(
 check("the partially read chain still shows its balances", partialReport.includes("3 820 756") || partialReport.includes("3 820 756"));
 check("an empty report never claims a chain failed", !emptyReport.includes("не удалось"));
 
+// A native OFT holds nothing anywhere by design. Reporting that as "not
+// bridged" is not a softer wording of the same fact, it is the wrong answer.
+const oftReport = renderLiquidityReport({
+  symbol: "TAC",
+  name: "TAC Protocol",
+  balances: [],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { bsc: 2 },
+  nativeOftChains: ["bsc", "ethereum"],
+});
+check("a native OFT is explained, not called unbridged", !oftReport.includes("не заведён"));
+check("a native OFT report says there is no custody contract", oftReport.includes("нет контракта-хранилища"));
+check("a native OFT report names the chains", oftReport.includes("BNB Chain") && oftReport.includes("Ethereum"));
+
+const syntheticReport = renderLiquidityReport({
+  symbol: "XYZ",
+  name: "Example",
+  balances: [],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  syntheticHyperlaneChains: ["base"],
+});
+check("a synthetic warp route is reported as existing", syntheticReport.includes("синтетические"));
+check("a synthetic route report does not call the token unbridged", !syntheticReport.includes("не заведён"));
+
+const trulyNothing = renderLiquidityReport({
+  symbol: "NADA",
+  name: "Nothing At All",
+  balances: [],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: {},
+});
+check("a token with no bridge at all still says so plainly", trulyNothing.includes("не заведён"));
+check("and points at the manual LayerZero config", trulyNothing.includes("layerzero-lockboxes.json"));
+
 // -----------------------------------------------------------------------------
 
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);

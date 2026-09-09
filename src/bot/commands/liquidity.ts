@@ -2,6 +2,9 @@ import type { Telegraf, Context } from "telegraf";
 import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians } from "../../bridges";
+import { probeLayerZeroToken } from "../../bridges/layerzero";
+import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
+import type { Custodian } from "../../bridges/types";
 import { readCustodianBalances } from "../../services/balances";
 import { renderLiquidityReport } from "../render";
 
@@ -29,15 +32,49 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     );
   }
 
-  const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(custodians);
+  let all = custodians;
+  const nativeOftChains: string[] = [];
+
+  // Ask the token contracts themselves about LayerZero. An adapter found
+  // this way is real liquidity nobody had to configure; a native OFT
+  // explains an empty report that would otherwise read as "not bridged".
+  const probes = await Promise.all(
+    token.platforms
+      .filter((p) => p.chainKey)
+      .map((p) => probeLayerZeroToken(p.chainKey!, p.tokenAddress))
+  );
+
+  const found: Custodian[] = [];
+  for (const probe of probes) {
+    if (!probe) continue;
+    if (probe.kind === "native") {
+      nativeOftChains.push(probe.chainKey);
+      continue;
+    }
+    const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
+    if (probe.wrappedToken && platform) {
+      found.push({
+        protocol: "layerzero",
+        chainKey: probe.chainKey,
+        custodyAddress: platform.tokenAddress,
+        tokenAddress: probe.wrappedToken,
+        note: "адаптер найден автоматически",
+      });
+    }
+  }
+  if (found.length > 0) all = [...custodians, ...found];
+
+  const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(all);
 
   return renderLiquidityReport({
     symbol: token.symbol,
     name: token.name,
     balances,
-    checkedCount: custodians.length,
+    checkedCount: all.length,
     failuresByChain,
     attemptsByChain,
+    nativeOftChains,
+    syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
   });
 }
 

@@ -4,6 +4,70 @@ import type { Address } from "viem";
 import { isAddress } from "viem";
 import type { Custodian } from "./types";
 import { getChain } from "../config/chains";
+import { getClient } from "../services/rpcClient";
+import { LZ_ENDPOINT_V2 } from "../protocols/addresses/layerzero";
+
+const OAPP_ABI = [
+  { type: "function", name: "endpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+export interface OftProbe {
+  chainKey: string;
+  /**
+   * "adapter" locks a separate ERC-20 and therefore holds withdrawable
+   * liquidity. "native" mints and burns its own supply, so no contract
+   * holds anything - there is nothing to measure, which is a different
+   * answer from "this token is not bridged".
+   */
+  kind: "adapter" | "native";
+  /** The ERC-20 an adapter locks. */
+  wrappedToken?: Address;
+}
+
+/**
+ * Asks the token contract itself whether it is a LayerZero OFT.
+ *
+ * LayerZero publishes no ticker-to-adapter registry, which is why adapters
+ * are configured by hand. But when the token address CoinMarketCap gives us
+ * is itself the OFT, the contract answers for itself - and the answer
+ * decides whether "no custody balance" means no liquidity or means the
+ * design has no custody contract at all.
+ */
+export async function probeLayerZeroToken(
+  chainKey: string,
+  tokenAddress: Address
+): Promise<OftProbe | undefined> {
+  try {
+    const client = getClient(chainKey);
+    const endpoint = (await client.readContract({
+      address: tokenAddress,
+      abi: OAPP_ABI,
+      functionName: "endpoint",
+    })) as Address;
+
+    if (!endpoint || endpoint.toLowerCase() !== LZ_ENDPOINT_V2.toLowerCase()) return undefined;
+
+    let wrapped: Address | undefined;
+    try {
+      wrapped = (await client.readContract({
+        address: tokenAddress,
+        abi: OAPP_ABI,
+        functionName: "token",
+      })) as Address;
+    } catch {
+      wrapped = undefined;
+    }
+
+    // OFT.sol returns address(this); OFTAdapter.sol returns what it locks.
+    const isAdapter = !!wrapped && wrapped.toLowerCase() !== tokenAddress.toLowerCase();
+    return isAdapter
+      ? { chainKey, kind: "adapter", wrappedToken: wrapped }
+      : { chainKey, kind: "native" };
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * LayerZero has no public registry mapping a ticker to its OFT Adapter, so
