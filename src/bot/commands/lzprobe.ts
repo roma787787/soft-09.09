@@ -5,84 +5,67 @@ function esc(s: string): string {
 }
 
 /**
- * Candidate sources for a LayerZero OFT registry.
+ * The LayerZero OFT registry, confirmed live: an object keyed by ticker,
+ * each holding one or more entries with name, sharedDecimals,
+ * endpointVersion and deployments.
  *
- * The spec allowed automating LayerZero "if a suitable source is found".
- * These hosts are unreachable from the development environment, so the
- * deployed bot is asked to look instead: this command reports what each URL
- * actually returns, and the parser is then written against a real response
- * rather than a guessed one. The list is fixed on purpose - the bot never
- * fetches a URL someone hands it.
+ * The spec allowed automating LayerZero if a suitable source turned up.
+ * This is it. The host is unreachable from the development environment, so
+ * the deployed bot dumps one real entry and the parser is written against
+ * that rather than against a guess. The URL is fixed in source; the bot
+ * never fetches an address someone hands it.
  */
-const CANDIDATES = [
-  "https://metadata.layerzero-api.com/v1/metadata/experiment/ofts/list",
-  "https://metadata.layerzero-api.com/v1/metadata/experiment/ofts",
-  "https://metadata.layerzero-api.com/v1/metadata",
-];
-
-/** Describes a value's shape without dumping the whole thing into a chat. */
-function describe(value: unknown, depth = 0): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) {
-    return `массив[${value.length}]${value.length > 0 && depth < 2 ? ` из ${describe(value[0], depth + 1)}` : ""}`;
-  }
-  if (typeof value === "object") {
-    const keys = Object.keys(value as object);
-    const head = keys.slice(0, 12).join(", ");
-    return `объект{${keys.length} ключей: ${head}${keys.length > 12 ? ", …" : ""}}`;
-  }
-  const text = String(value);
-  return `${typeof value} "${text.length > 40 ? `${text.slice(0, 40)}…` : text}"`;
-}
-
-async function probeOne(url: string): Promise<string> {
-  try {
-    const response = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) return `❌ <code>${esc(url)}</code>\n   HTTP ${response.status}`;
-
-    const text = await response.text();
-    let parsed: any;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return `⚠️ <code>${esc(url)}</code>\n   HTTP 200, но это не JSON (${text.length} байт)`;
-    }
-
-    const lines = [`✅ <code>${esc(url)}</code>`, `   размер: ${text.length} байт`, `   верхний уровень: ${esc(describe(parsed))}`];
-
-    const firstKey = Array.isArray(parsed) ? "0" : Object.keys(parsed)[0];
-    if (firstKey !== undefined) {
-      const first = Array.isArray(parsed) ? parsed[0] : parsed[firstKey];
-      lines.push(`   первый ключ: <code>${esc(String(firstKey))}</code>`);
-      lines.push(`   его значение: ${esc(describe(first, 1))}`);
-
-      if (first && typeof first === "object" && !Array.isArray(first)) {
-        for (const [k, v] of Object.entries(first).slice(0, 6)) {
-          lines.push(`      ${esc(k)}: ${esc(describe(v, 2))}`);
-        }
-      }
-    }
-    return lines.join("\n");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return `❌ <code>${esc(url)}</code>\n   ${esc(message.slice(0, 120))}`;
-  }
-}
+const OFT_LIST_URL = "https://metadata.layerzero-api.com/v1/metadata/experiment/ofts/list";
 
 /**
- * One-off reconnaissance for wiring up an automatic LayerZero source.
- * Remove it once the source is either integrated or ruled out.
+ * Dumps one ticker's entry in full so every field of `deployments` is
+ * visible. Picks the smallest entry when no ticker is given, which keeps
+ * the reply inside Telegram's limit while still showing the whole shape.
  */
 export function registerLzProbeCommand(bot: Telegraf) {
   bot.command("lzprobe", async (ctx: Context) => {
     await ctx.sendChatAction("typing");
-    const results = await Promise.all(CANDIDATES.map(probeOne));
-    await ctx.reply(
-      `🔬 Проверка источников LayerZero\n\n${results.join("\n\n")}\n\nПришлите этот ответ — по структуре я напишу разбор.`,
-      { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
-    );
+
+    const wanted = ((ctx.message as any)?.text ?? "").trim().split(/\s+/)[1]?.toUpperCase();
+
+    try {
+      const response = await fetch(OFT_LIST_URL, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (!response.ok) {
+        await ctx.reply(`❌ HTTP ${response.status} от реестра OFT`);
+        return;
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      const keys = Object.keys(data);
+
+      let pick = wanted && data[wanted] !== undefined ? wanted : undefined;
+      if (!pick) {
+        // Smallest entry: shows every field without risking the size cap.
+        let best: { key: string; size: number } | undefined;
+        for (const k of keys) {
+          const size = JSON.stringify(data[k]).length;
+          if (size > 200 && (!best || size < best.size)) best = { key: k, size };
+        }
+        pick = best?.key ?? keys[0];
+      }
+
+      const entry = JSON.stringify(data[pick!], null, 1);
+      const shown = entry.length > 2600 ? `${entry.slice(0, 2600)}\n… обрезано` : entry;
+
+      await ctx.reply(
+        `🔬 Реестр OFT LayerZero\n\n` +
+          `Тикеров всего: ${keys.length}\n` +
+          `Показан: <b>${esc(pick!)}</b>${wanted && !data[wanted] ? ` (запрошенного ${esc(wanted)} в реестре нет)` : ""}\n\n` +
+          `<pre>${esc(shown)}</pre>\n\n` +
+          `Пришлите это — по структуре я напишу разбор. Другой тикер: /lzprobe USDT`,
+        { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await ctx.reply(`❌ Не удалось получить реестр: ${esc(message.slice(0, 150))}`);
+    }
   });
 }
