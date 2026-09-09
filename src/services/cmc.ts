@@ -65,23 +65,60 @@ export async function lookupToken(symbol: string): Promise<TokenInfo | undefined
     throw new CmcRequestError(err instanceof Error ? err.message : String(err));
   }
 
-  if (response.status === 401 || response.status === 403) {
-    throw new CmcRequestError("CoinMarketCap отклонил ключ API");
-  }
-  if (response.status === 429) {
-    throw new CmcRequestError("CoinMarketCap: превышен лимит запросов");
+  // Read the body before judging the status: CoinMarketCap explains itself
+  // in status.error_code / error_message, and a rejection has several very
+  // different causes that the HTTP code alone cannot tell apart.
+  const body = (await response.json().catch(() => undefined)) as any;
+  const cmcCode: number | undefined = body?.status?.error_code || undefined;
+  const cmcMessage: string | undefined = body?.status?.error_message || undefined;
+
+  if (!response.ok || cmcCode) {
+    // An unknown ticker is a normal answer, not a failure.
+    if (response.status === 400 && !isKeyOrPlanProblem(cmcCode)) return undefined;
+    throw new CmcRequestError(describeCmcFailure(response.status, cmcCode, cmcMessage));
   }
 
-  const body = (await response.json().catch(() => undefined)) as any;
   if (!body) throw new CmcRequestError("CoinMarketCap вернул неразборчивый ответ");
 
-  // A missing symbol comes back as an error status rather than empty data.
-  if (body.status?.error_code && body.status.error_code !== 0) {
-    if (response.status === 400) return undefined;
-    throw new CmcRequestError(String(body.status.error_message ?? "ошибка CoinMarketCap"));
-  }
-
   return parseCmcInfoResponse(body, symbol);
+}
+
+
+/** Codes that mean the key itself, or the plan behind it, is the problem. */
+function isKeyOrPlanProblem(code: number | undefined): boolean {
+  return code !== undefined && [1001, 1002, 1006, 1010, 1011].includes(code);
+}
+
+/**
+ * Turns a CoinMarketCap rejection into something actionable. The same HTTP
+ * status covers "your key is wrong" and "your plan does not include this
+ * endpoint", which need completely different fixes, so the reply always
+ * carries CMC's own code and text.
+ */
+function describeCmcFailure(httpStatus: number, code: number | undefined, message: string | undefined): string {
+  const detail = [code ? `код ${code}` : undefined, message].filter(Boolean).join(", ");
+  const suffix = detail ? `\n\nОтвет CoinMarketCap: ${detail}` : `\n\nHTTP ${httpStatus}`;
+
+  switch (code) {
+    case 1001:
+    case 1002:
+      return `ключ API не принят. Проверьте, что в переменную CMC_API_KEY попал ключ целиком, без пробелов и без звёздочек из маскировки.${suffix}`;
+    case 1006:
+      return `тариф не даёт доступ к этому эндпоинту. Нужен доступ к /v2/cryptocurrency/info.${suffix}`;
+    case 1010:
+      return `ключ отключён в кабинете CoinMarketCap.${suffix}`;
+    case 1011:
+      return `тариф требует оплаты или продления.${suffix}`;
+    case 1008:
+    case 1009:
+      return `превышен лимит запросов, попробуйте через минуту.${suffix}`;
+    default:
+      if (httpStatus === 401 || httpStatus === 403) {
+        return `доступ отклонён. Обычно это неверный ключ либо тариф без нужного эндпоинта.${suffix}`;
+      }
+      if (httpStatus === 429) return `превышен лимит запросов.${suffix}`;
+      return `запрос не прошёл.${suffix}`;
+  }
 }
 
 /**
