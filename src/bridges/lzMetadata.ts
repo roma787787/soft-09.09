@@ -26,6 +26,8 @@ interface RawEntry {
   key: string;
   nativeChainId?: number;
   eids: number[];
+  /** Top-level field names, so an unread shape can be described. */
+  fields: string[];
 }
 
 /**
@@ -111,10 +113,22 @@ export function extractEids(payload: unknown): Map<string, number> {
   return found;
 }
 
+/**
+ * The deployments of one chain entry. Usually an array; Boba's entry is not,
+ * and a shape this reader does not accept is indistinguishable from a chain
+ * with nothing deployed on it - which is the wrong conclusion to draw
+ * silently.
+ */
+function deploymentsOf(entry: Record<string, any>): any[] {
+  if (Array.isArray(entry.deployments)) return entry.deployments;
+  if (entry.deployments && typeof entry.deployments === "object") return Object.values(entry.deployments);
+  return [];
+}
+
 /** Records every entry, matched or not, so a miss can be accounted for. */
 function remember(key: string, entry: Record<string, any>): void {
   const nativeChainId = Number(entry.chainDetails?.nativeChainId ?? entry.nativeChainId);
-  const deployments = Array.isArray(entry.deployments) ? entry.deployments : [];
+  const deployments = deploymentsOf(entry);
   const eids = deployments.map((d: any) => Number(d?.eid)).filter((n: number) => Number.isFinite(n));
   const direct = Number(entry.eid);
   if (Number.isFinite(direct)) eids.push(direct);
@@ -123,6 +137,7 @@ function remember(key: string, entry: Record<string, any>): void {
     key,
     nativeChainId: Number.isFinite(nativeChainId) ? nativeChainId : undefined,
     eids,
+    fields: Object.keys(entry),
   });
 }
 
@@ -139,7 +154,12 @@ export function explainMissing(chainKey: string, evmChainId: number): string {
   if (hits.length === 0) return "в метаданных этой сети нет — LayerZero туда не развёрнут";
 
   const eids = [...new Set(hits.flatMap((h) => h.eids))];
-  if (eids.length === 0) return `есть как «${hits[0].key}», но ни одного eid не указано`;
+  if (eids.length === 0) {
+    // Naming the fields is the difference between "nothing is deployed here"
+    // and "this entry is shaped in a way the reader does not handle".
+    const fields = hits[0].fields.slice(0, 8).join(", ") || "нет полей";
+    return `есть как «${hits[0].key}», но eid не найден. Поля записи: ${fields}`;
+  }
 
   const v2 = eids.filter((e) => e > 30000 && e < 31000);
   if (v2.length === 0) {
@@ -154,7 +174,7 @@ export function explainMissing(chainKey: string, evmChainId: number): string {
  * trust: a value in the V2 range is a V2 eid whatever it is labelled.
  */
 function pickV2Eid(entry: Record<string, any>): number | undefined {
-  const deployments = Array.isArray(entry.deployments) ? entry.deployments : [];
+  const deployments = deploymentsOf(entry);
   for (const deployment of deployments) {
     const eid = Number(deployment?.eid);
     if (Number.isFinite(eid) && eid > 30000 && eid < 31000) return eid;

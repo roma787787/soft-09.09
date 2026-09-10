@@ -198,6 +198,19 @@ check(
 );
 check("a chain the source does not list is reported as not deployed", /этой сети нет/.test(explainMissing("katana", 747474)));
 
+// Not every entry lists its deployments as an array, and a shape the reader
+// does not accept looks exactly like a chain with nothing deployed on it.
+check(
+  "deployments given as an object are read too",
+  extractEids({
+    gnosis: { chainDetails: { nativeChainId: 100 }, deployments: { v2: { eid: 30145 } } },
+  }).get("gnosis") === 30145
+);
+// And when there is genuinely no eid, the entry's own fields are named, so
+// an unread shape can be told from an empty one.
+extractEids({ "odd-mainnet": { someOtherShape: true } });
+check("an entry with no eid has its fields named", /Поля записи: someOtherShape/.test(explainMissing("odd", 999999)));
+
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
 // mixed-case input unchanged instead of validating it, so the old
