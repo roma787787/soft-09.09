@@ -834,6 +834,23 @@ function tagsBalanced(html: string): boolean {
 }
 check("the truncated report is still valid HTML", tagsBalanced(runaway));
 
+// Telegram parses the whole message as HTML and rejects it outright if a
+// "<" does not start a tag it knows. A dust balance renders as "< 0,0001",
+// and unescaped it cost a whole report: "can't parse entities: Unsupported
+// start tag". Anything interpolated into the message has to be escaped, even
+// something as apparently safe as a number.
+const dusty = renderLiquidityReport({
+  symbol: "DUST",
+  name: "Dust Token",
+  balances: [fakeBalance("ethereum", "across", 1n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+});
+check("a dust balance is shown, not rounded away to zero", dusty.includes("0,0001"));
+check("and its \"<\" is escaped so Telegram can parse the message", !/<(?![a-zA-Z/])/.test(dusty), dusty);
+check("the report as a whole opens no tag it does not close", tagsBalanced(dusty));
+
 // A balance too small to print at four decimals is not zero, and printing
 // it as "0" says there is nothing here - the single most consequential
 // thing this bot can get wrong.

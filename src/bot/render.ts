@@ -342,14 +342,18 @@ export function renderLiquidityReport(input: ReportInput): string {
 
       for (const row of shown) {
         const explorer = getChain(chainKey)?.explorerAddressUrl(row.custodyAddress);
-        const amount = `${formatAmount(row.amount, row.decimals)} ${esc(symbol)}`;
+        // Escaped, not assumed safe: an amount is usually digits, but a
+        // balance below the last shown decimal renders as "< 0,0001", and an
+        // unescaped "<" makes Telegram reject the whole message as a broken
+        // tag - the report is then lost entirely over one dust row.
+        const amount = `${esc(formatAmount(row.amount, row.decimals))} ${esc(symbol)}`;
         const link = explorer ? ` <a href="${explorer}">↗</a>` : "";
         block.push(` - ${esc(BRIDGE_LABELS[protocol])}: <b>${amount}</b>${link}`);
       }
 
       if (rest.length > 0) {
         // Summed on the common scale, so formatted with its decimals.
-        const total = formatAmount(sumOf(rest), 18);
+        const total = esc(formatAmount(sumOf(rest), 18));
         const noun =
           protocol === "hyperlane"
             ? plural(rest.length, "маршрут", "маршрута", "маршрутов")
