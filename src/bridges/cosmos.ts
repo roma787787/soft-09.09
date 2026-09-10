@@ -224,32 +224,60 @@ export async function probeNativeModule(chainKey: string, routerId: string): Pro
   if (!chain) return [];
 
   const paths = [
-    `/hyperlane/warp/v1/tokens/${routerId}`,
-    `/hyperlane/warp/v1/token/${routerId}`,
-    `/hyperlane/warp/v1/bridged_supply/${routerId}`,
+    // A control: every Cosmos REST endpoint serves this. If it fails too,
+    // the endpoint is the problem and no path would have worked - which is
+    // a different fix from finding the right path, and the two are
+    // indistinguishable without asking.
+    `/cosmos/base/tendermint/v1beta1/node_info`,
     `/hyperlane/warp/v1/tokens`,
+    `/hyperlane/warp/v1/tokens/${routerId}`,
+    `/hyperlane/warp/v1/bridged_supply/${routerId}`,
+    // Some builds register the module under a different gateway prefix.
+    `/hyperlane/core/warp/v1/tokens`,
+    `/cosmos/hyperlane/warp/v1/tokens`,
   ];
 
-  const base = chain.restUrls[0]?.replace(/\/$/, "");
-  if (!base) return [];
-
   const out: ModuleProbe[] = [];
-  for (const path of paths) {
-    try {
-      const response = await fetch(`${base}${path}`, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!response.ok) {
-        out.push({ path, outcome: `HTTP ${response.status}`, ok: false });
-        continue;
+  // Every endpoint the registry lists, not just the first: a public node
+  // that serves only the standard modules answers 501 to everything else,
+  // and another host on the same chain may not.
+  for (const rawBase of chain.restUrls) {
+    const base = rawBase.replace(/\/$/, "");
+    for (const path of paths) {
+      try {
+        const response = await fetch(`${base}${path}`, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) {
+          out.push({ path: `${shortHost(base)}${shorten(path, routerId)}`, outcome: `HTTP ${response.status}`, ok: false });
+          continue;
+        }
+        const text = (await response.text()).replace(/\s+/g, " ");
+        out.push({ path: `${shortHost(base)}${shorten(path, routerId)}`, outcome: text.slice(0, 200), ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
+        out.push({
+          path: `${shortHost(base)}${shorten(path, routerId)}`,
+          outcome: `ошибка: ${message.slice(0, 60)}`,
+          ok: false,
+        });
       }
-      const text = (await response.text()).replace(/\s+/g, " ");
-      out.push({ path, outcome: text.slice(0, 220), ok: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
-      out.push({ path, outcome: `ошибка: ${message.slice(0, 70)}`, ok: false });
     }
   }
   return out;
+}
+
+/** Keeps the report readable: the host, not the whole URL. */
+function shortHost(base: string): string {
+  try {
+    return new URL(base).host;
+  } catch {
+    return base;
+  }
+}
+
+/** The router id is 66 characters and the same on every line. */
+function shorten(path: string, routerId: string): string {
+  return path.replace(routerId, "<id>");
 }

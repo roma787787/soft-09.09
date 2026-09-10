@@ -21,8 +21,15 @@ export interface CosmosChainDef {
 }
 
 /** Names a person might type, and CoinMarketCap's spellings. */
-const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[] }> = {
-  celestia: { aliases: ["tia"], cmc: ["Celestia"] },
+const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; restUrls?: string[] }> = {
+  // Extra hosts for the chains whose routes live in Hyperlane's own module:
+  // a public node serving only the standard modules answers 501 to anything
+  // else, and the registry lists one host per chain.
+  celestia: {
+    aliases: ["tia"],
+    cmc: ["Celestia"],
+    restUrls: ["https://celestia-api.polkachu.com", "https://api.celestia.nodestake.org"],
+  },
   injective: { aliases: ["inj"], cmc: ["Injective"] },
   neutron: { aliases: ["ntrn"], cmc: ["Neutron"] },
   osmosis: { aliases: ["osmo"], cmc: ["Osmosis"] },
@@ -31,8 +38,8 @@ const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[] }> = {
   cosmoshub: { aliases: ["cosmos", "atom"], cmc: ["Cosmos"] },
   noble: { aliases: ["noble"] },
   dymension: { aliases: ["dym"], cmc: ["Dymension"] },
-  kyve: { aliases: ["kyve"] },
-  milkyway: { aliases: ["milk"] },
+  kyve: { aliases: ["kyve"], restUrls: ["https://kyve-api.polkachu.com"] },
+  milkyway: { aliases: ["milk"], restUrls: ["https://milkyway-api.polkachu.com"] },
 };
 
 function explorerBuilder(explorer: string | undefined): (address: string) => string {
@@ -48,7 +55,7 @@ export const COSMOS_CHAINS: CosmosChainDef[] = GENERATED_COSMOS_CHAINS.map((chai
     label: chain.label,
     protocol: chain.protocol,
     rpcEnvVar: `${chain.key.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_REST_URL`,
-    restUrls: chain.restUrls,
+    restUrls: [...chain.restUrls, ...(extra.restUrls ?? [])],
     explorerAddressUrl: explorerBuilder(chain.explorer),
     aliases: [...new Set([chain.key.toLowerCase(), ...(extra.aliases ?? [])])],
     cmcPlatformNames: extra.cmc,
