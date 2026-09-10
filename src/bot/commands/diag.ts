@@ -40,6 +40,12 @@ const MAX_NODES_PROBED = MAX_ENDPOINTS_PER_CHAIN;
  */
 const TOTAL_BUDGET_MS = 75_000;
 
+/**
+ * Above this many healthy chains, they are counted rather than listed. The
+ * failures are what the reader acts on; the successes only need a number.
+ */
+const NAME_HEALTHY_UP_TO = 60;
+
 interface NodeHealth {
   url: string;
   ok: boolean;
@@ -232,12 +238,15 @@ export function registerDiagCommand(bot: Telegraf) {
       const slowest = [...ok].sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0)).slice(0, 5);
       lines.push(`✅ Ответили: ${ok.length}`);
       if (slowest.length > 0) {
-        lines.push(
-          `Самые медленные: ${slowest.map((h) => `${esc(h.label)} ${h.ms} мс`).join(", ")}`,
-          ""
-        );
+        lines.push(`Самые медленные: ${slowest.map((h) => `${esc(h.label)} ${h.ms} мс`).join(", ")}`);
       }
-      lines.push(esc(ok.map((h) => h.label).join(", ")));
+      // Named only while naming them is affordable. Two hundred labels are
+      // two and a half thousand characters, and they were spending the whole
+      // message on the chains that are fine - the report was then cut before
+      // the footer that says which variable fixes the ones that are not.
+      if (ok.length <= NAME_HEALTHY_UP_TO) {
+        lines.push("", esc(ok.map((h) => h.label).join(", ")));
+      }
     } else {
       for (const h of health) {
         const source = h.custom ? "свой RPC" : "публичный";

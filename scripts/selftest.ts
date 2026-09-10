@@ -34,7 +34,7 @@ import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
-import { renderLiquidityReport } from "../src/bot/render";
+import { capToTelegramLimit, renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
 import { extractEids, lastMetadataChainCount, explainMissing } from "../src/bridges/lzMetadata";
@@ -1660,6 +1660,25 @@ check(
   `${visibleLength(manyLines)} visible chars`
 );
 check("and stays valid HTML", tagsBalanced(manyLines));
+
+// The address scan builds one enormous line - every chain name it checked,
+// comma-separated - and at two hundred and twenty-nine chains that line is
+// on its own most of a message. It also had no cap at all until the table
+// outgrew it, and a message Telegram refuses looks from the phone exactly
+// like a bot that is down.
+const oneHugeLine = capToTelegramLimit(
+  `🔎 <code>0xdAC17F958D2ee523a2206206994597C13D831ec7</code>\n\n` +
+    `Проверено: ${Array.from({ length: 300 }, (_, i) => `Сеть с довольно длинным именем ${i}`).join(", ")}.`
+);
+check("a report that is one long line is capped", visibleLength(oneHugeLine) <= 4096);
+check("and survives with its tags closed", tagsBalanced(oneHugeLine));
+check("and says it was cut", oneHugeLine.includes("обрезан"));
+
+// The cut must not leave half an entity or half a tag behind, which is what
+// makes Telegram reject the whole message rather than render it short.
+const cutMidTag = capToTelegramLimit(`<b>${"а".repeat(4200)}<code>хвост`);
+check("a cut never ends inside a tag", !/<[^>]*$/.test(cutMidTag));
+check("nor inside an entity", !/&[^;\s]*$/.test(cutMidTag.replace(/\n.*$/s, "")));
 
 // --- chains the bot adds by itself -------------------------------------------
 //

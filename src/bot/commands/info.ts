@@ -6,6 +6,7 @@ import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/ch
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
 import { mapWithConcurrency } from "../../services/concurrency";
+import { capToTelegramLimit, plural } from "../render";
 
 /**
  * Chains asked at once when an address is checked against all of them.
@@ -184,10 +185,14 @@ export function registerInfoCommand(bot: Telegraf) {
       .filter((p) => !p.outcome.rpcError)
       .map((p) => getChain(p.chain)?.label ?? p.chain);
 
+    // A count, not two hundred and twenty-nine names. The list was written
+    // when the table held forty-two chains and it was reassuring; at this
+    // size it is most of the message, and it pushed the part that matters -
+    // which chains could not be reached - past Telegram's limit.
     let message =
       `🔎 <code>${address}</code>\n\n` +
       `Ни на одной сети этот адрес не относится к LayerZero, Hyperlane, Transporter или Portal.\n\n` +
-      `Проверено: ${checked.join(", ")}.`;
+      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.`;
 
     if (contractFoundOn.length > 0) {
       message +=
@@ -200,6 +205,9 @@ export function registerInfoCommand(bot: Telegraf) {
       message += `\n\n⚠️ Не ответили и остались непроверенными: ${failedNames.join(", ")}. Подробности: /diag`;
     }
 
-    await ctx.reply(message, REPLY_OPTS);
+    // Capped, which it never was: this is the one report that grew with the
+    // chain table, and a message Telegram refuses looks from the phone
+    // exactly like a bot that is down.
+    await ctx.reply(capToTelegramLimit(message), REPLY_OPTS);
   });
 }
