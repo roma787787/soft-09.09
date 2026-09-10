@@ -621,6 +621,19 @@ async function readV1Peer(
 }
 
 /**
+ * Folds a token symbol down to comparable letters.
+ *
+ * Tether writes its symbol with ₮, the tugrik sign, so the on-chain symbol
+ * of USDT0 is "USD₮0". Stripping it as punctuation leaves "USD0", which
+ * matches no ticker at all - and that alone rejected fourteen of USDT's
+ * twenty-three LayerZero deployments, including the ones on chains the
+ * wider search existed to find.
+ */
+function normalizeSymbol(symbol: string): string {
+  return symbol.toUpperCase().replace(/₮/g, "T").replace(/[^A-Z0-9]/g, "");
+}
+
+/**
  * Accepts a token whose symbol matches the ticker, allowing for the variants
  * a bridged token picks up ("USDT" locked by a "USDT0" deployment). A token
  * that will not answer symbol() is accepted: the peer link is already strong
@@ -635,8 +648,8 @@ export async function symbolLooksRight(chainKey: string, token: Address, symbol:
     })) as string;
     if (!actual) return true;
 
-    const a = actual.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const b = symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const a = normalizeSymbol(actual);
+    const b = normalizeSymbol(symbol);
     return a.includes(b) || b.includes(a);
   } catch {
     return true;

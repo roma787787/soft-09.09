@@ -323,7 +323,7 @@ export function renderLiquidityReport(input: ReportInput): string {
   if (mismatchedAdapters > 0) {
     notes.push(
       `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
-        " LayerZero: они блокируют не тот контракт, который CoinMarketCap указал для этого тикера."
+        " LayerZero: они не подтвердили, что держат именно этот токен. Подробности: <code>/lzmesh</code>."
     );
   }
   const closingNotes = [`Всего проверено контрактов: ${checkedCount}.`, ...scopeLines(scope)];

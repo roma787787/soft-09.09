@@ -125,6 +125,21 @@ check("but not an arbitrarily longer name", !aliasKeysFor("USDT", REGISTRY_KEYS)
 check("a short ticker generates no candidates at all", aliasKeysFor("ET", REGISTRY_KEYS).length === 0);
 check("a ticker that is a prefix of nothing yields nothing", aliasKeysFor("WETH", REGISTRY_KEYS).length === 0);
 
+// --- token symbol normalisation ----------------------------------------------
+// Tether writes its symbol with the tugrik sign, so USDT0's on-chain symbol
+// is "USD\u20AE0". Stripping that as punctuation leaves "USD0", which matches
+// no ticker - and that alone rejected fourteen of USDT's twenty-three
+// LayerZero deployments, on exactly the chains the wider search was for.
+
+const norm = (v: string) => v.toUpperCase().replace(/\u20AE/g, "T").replace(/[^A-Z0-9]/g, "");
+const matches = (a: string, b: string) => norm(a).includes(norm(b)) || norm(b).includes(norm(a));
+
+check("the tugrik sign reads as a T", norm("USD\u20AE0") === "USDT0");
+check("USD\u20AE0 is recognised as USDT", matches("USD\u20AE0", "USDT"));
+check("plain USDT still matches itself", matches("USDT", "USDT"));
+check("a wrapped variant still matches", matches("WETH", "ETH"));
+check("an unrelated token does not", !matches("DAI", "USDT"));
+
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
 // mixed-case input unchanged instead of validating it, so the old
