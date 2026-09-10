@@ -25,6 +25,16 @@ const OAPP_ABI = [
   { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const;
 
+const TRUSTED_REMOTE_ABI = [
+  {
+    type: "function",
+    name: "trustedRemoteLookup",
+    stateMutability: "view",
+    inputs: [{ type: "uint16" }],
+    outputs: [{ type: "bytes" }],
+  },
+] as const;
+
 const OAPP_V1_ABI = [
   { type: "function", name: "lzEndpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   {
@@ -114,15 +124,48 @@ export async function detectLayerZero(
   // Fall back to legacy V1 detection.
   const lzEndpointAddr = await safeRead<Address>(client, address, OAPP_V1_ABI as any, "lzEndpoint");
   if (lzEndpointAddr && isNonZero(lzEndpointAddr)) {
+    // V1 stores its remotes under trustedRemoteLookup, keyed by V1's own
+    // chain numbering. V2 numbered its chains by adding 30000 to those, so
+    // the eids read from live endpoints give V1's ids without a table.
+    const eidMap = await getLzEidMap();
+    const peers: RemotePeer[] = [];
+    for (const [eid, remoteChainKey] of eidMap.idToChainKey) {
+      const remoteId = eid - 30000;
+      if (remoteId <= 0 || remoteId >= 1000) continue;
+
+      const packed = await safeRead<string>(client, address, TRUSTED_REMOTE_ABI as any, "trustedRemoteLookup", [
+        remoteId,
+      ]);
+      // The value is abi.encodePacked(remote, local): the remote OApp is the
+      // first twenty bytes, and anything shorter was never configured.
+      const hex = (packed ?? "").replace(/^0x/, "");
+      if (hex.length < 40) continue;
+
+      const peerAddress = `0x${hex.slice(0, 40)}` as Address;
+      if (!isNonZero(peerAddress)) continue;
+
+      peers.push({
+        chainKey: remoteChainKey,
+        chainLabel: chainLabel(remoteChainKey, `V1 chainId ${remoteId}`),
+        remoteId,
+        peerAddress,
+      });
+    }
+
     return {
       protocol: "layerzero",
       confidence: "medium",
       role: "Контракт LayerZero V1 (устаревшая версия протокола)",
       facts: [["Endpoint (V1)", lzEndpointAddr]],
-      peers: [],
-      notes: [
-        "Похоже на контракт первой версии LayerZero. В ней адреса Endpoint у каждой сети свои, а связи хранятся в устаревшем формате, поэтому список связанных сетей автоматически не собирается. Посмотреть его можно вручную через функцию getTrustedRemoteAddress в эксплорере.",
-      ],
+      peers,
+      notes:
+        peers.length > 0
+          ? [
+              "Первая версия LayerZero: адреса Endpoint у каждой сети свои, а связи хранятся в формате trustedRemote. Показаны только сети, подключённые к боту.",
+            ]
+          : [
+              "Первая версия LayerZero. Связанных сетей у контракта не настроено — среди подключённых к боту сетей во всяком случае. Обычно так выглядит выведенный из обращения деплой.",
+            ],
     };
   }
 
