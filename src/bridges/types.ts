@@ -61,3 +61,21 @@ export interface Custodian {
    */
   readsNativeCoin?: boolean;
 }
+
+
+/**
+ * What a non-EVM reader found, and what it could not reach.
+ *
+ * A row that is simply absent reads as "this bridge holds nothing", and a
+ * chain whose endpoint refused is the one case where that is exactly wrong.
+ * The EVM side has counted its failures per chain from early on; these
+ * readers returned rows alone, so a dead gateway looked identical to an
+ * empty bridge.
+ */
+export interface NonEvmReadResult<Row> {
+  rows: Row[];
+  /** Reads attempted per chain. */
+  attempts: Record<string, number>;
+  /** Reads that failed to reach the chain, per chain. */
+  failures: Record<string, number>;
+}

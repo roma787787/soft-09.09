@@ -1372,6 +1372,20 @@ const reverted = renderLiquidityReport({
   notReadableByChain: { ethereum: 2 },
 });
 check("a reverting contract is not reported as a connection problem", !reverted.includes("не ответили"));
+
+// A non-EVM chain nobody could reach must be named too. Radix's gateways
+// are nine days behind the ledger, and a report that simply omits the row
+// says "this bridge holds nothing" about a bridge nobody could ask.
+const unreachableNonEvm = renderLiquidityReport({
+  symbol: "XRD",
+  name: "Radix",
+  balances: [],
+  checkedCount: 1,
+  failuresByChain: { radix: 1 },
+  attemptsByChain: { radix: 1 },
+});
+check("an unreachable non-EVM chain is named", unreachableNonEvm.includes("Radix"));
+check("and is called unreachable, not empty", !unreachableNonEvm.includes("не заведён"));
 check("but it is still accounted for", reverted.includes("отказом вместо баланса"));
 check("and counted with the right noun", reverted.includes("2 контракта ответили"));
 

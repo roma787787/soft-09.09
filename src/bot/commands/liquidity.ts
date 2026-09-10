@@ -255,16 +255,32 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // for the same reason the LayerZero registry is - a token bridged only to
   // Solana would otherwise be reported as not bridged at all.
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
-  const [svmAll, cosmosAll, otherAll] = await Promise.all([
-    !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : [],
-    !chainFilter || !!getCosmosChain(chainFilter)
-      ? Promise.all([findCosmosBalances(symbol), findNativeModuleBalances(symbol)]).then((r) => r.flat())
-      : [],
-    !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : [],
+  const empty = { rows: [], attempts: {}, failures: {} };
+  const [svmRead, cosmosRead, nativeRead, otherRead] = await Promise.all([
+    !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
+    !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
+    !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
+    !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
   ]);
-  const nonEvmAll = [...svmAll, ...cosmosAll, ...otherAll];
+
+  const nonEvmReads = [svmRead, cosmosRead, nativeRead, otherRead];
+  const nonEvmAll = nonEvmReads.flatMap((r) => r.rows);
+
+  // A chain that could not be reached must be named, not silently absent:
+  // Radix's gateways are nine days behind, and a report that just omits the
+  // row says "this bridge holds nothing" about a bridge nobody could ask.
+  const nonEvmAttempts: Record<string, number> = {};
+  const nonEvmFailures: Record<string, number> = {};
+  for (const read of nonEvmReads) {
+    for (const [chainKey, n] of Object.entries(read.attempts)) {
+      nonEvmAttempts[chainKey] = (nonEvmAttempts[chainKey] ?? 0) + n;
+    }
+    for (const [chainKey, n] of Object.entries(read.failures)) {
+      nonEvmFailures[chainKey] = (nonEvmFailures[chainKey] ?? 0) + n;
+    }
+  }
   const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
-  const solanaHasSomething = solanaRows.length > 0;
+  const solanaHasSomething = solanaRows.length > 0 || Object.keys(nonEvmFailures).length > 0;
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
 
@@ -323,8 +339,8 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     name: token.name,
     balances: [...balances, ...solanaRows],
     checkedCount: scoped.length + solanaRows.length,
-    failuresByChain,
-    attemptsByChain,
+    failuresByChain: { ...failuresByChain, ...nonEvmFailures },
+    attemptsByChain: { ...attemptsByChain, ...nonEvmAttempts },
     notReadableByChain,
     nativeOftChains: [...nativeOftChains],
     mismatchedAdapters,

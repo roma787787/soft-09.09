@@ -3,6 +3,7 @@ import { contracts } from "@wormhole-foundation/sdk-base";
 import { withSvmClient } from "../services/svmClient";
 import { getSvmChain } from "../config/svmChains";
 import { loadHyperlaneRegistry } from "./hyperlane";
+import type { NonEvmReadResult } from "./types";
 
 /**
  * Reading balances on Solana is not "one more chain in the table".
@@ -270,7 +271,10 @@ export interface SvmBalanceRow {
  * batched one, and a chain that drops out of the report reads as "no
  * liquidity here".
  */
-export async function findSvmBalances(symbol: string, solanaMint?: string): Promise<SvmBalanceRow[]> {
+export async function findSvmBalances(
+  symbol: string,
+  solanaMint?: string
+): Promise<NonEvmReadResult<SvmBalanceRow>> {
   interface Wanted {
     protocol: "hyperlane" | "wormhole";
     chainKey: string;
@@ -306,7 +310,11 @@ export async function findSvmBalances(symbol: string, solanaMint?: string): Prom
     }
   }
 
-  if (wanted.length === 0) return [];
+  const attempts: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  for (const entry of wanted) attempts[entry.chainKey] = (attempts[entry.chainKey] ?? 0) + 1;
+
+  if (wanted.length === 0) return { rows: [], attempts, failures };
 
   // Grouped by chain: each is a separate network with its own endpoint, and
   // one batched call per chain keeps a rate-limited public node from
@@ -326,6 +334,9 @@ export async function findSvmBalances(symbol: string, solanaMint?: string): Prom
         );
       } catch (err) {
         console.error(`[svm] ${chainKey}: не удалось прочитать аккаунты:`, err);
+        // The whole chain went unread, which is not the same as its bridges
+        // being empty - and only the count says which.
+        failures[chainKey] = (failures[chainKey] ?? 0) + entries.length;
         return [];
       }
 
@@ -351,5 +362,5 @@ export async function findSvmBalances(symbol: string, solanaMint?: string): Prom
     })
   );
 
-  return perChain.flat();
+  return { rows: perChain.flat(), attempts, failures };
 }

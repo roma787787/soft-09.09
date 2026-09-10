@@ -1,6 +1,7 @@
 import { COSMOS_CHAINS, getCosmosChain } from "../config/cosmosChains";
 import { endpointsWithOverride } from "../config/env";
 import { loadHyperlaneRegistry } from "./hyperlane";
+import type { NonEvmReadResult } from "./types";
 
 /**
  * Hyperlane warp routes on Cosmos chains.
@@ -125,14 +126,21 @@ async function readBankBalance(chainKey: string, address: string, denom: string)
   return undefined;
 }
 
-export async function findCosmosBalances(symbol: string): Promise<CosmosBalanceRow[]> {
+export async function findCosmosBalances(symbol: string): Promise<NonEvmReadResult<CosmosBalanceRow>> {
   const routes = findCosmosRoutes(symbol);
-  if (routes.length === 0) return [];
+  const attempts: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  for (const route of routes) attempts[route.chainKey] = (attempts[route.chainKey] ?? 0) + 1;
+
+  if (routes.length === 0) return { rows: [], attempts, failures };
 
   const results: Array<CosmosBalanceRow | undefined> = await Promise.all(
     routes.map(async (route): Promise<CosmosBalanceRow | undefined> => {
       const amount = await readBankBalance(route.chainKey, route.address, route.denom);
-      if (amount === undefined) return undefined;
+      if (amount === undefined) {
+        failures[route.chainKey] = (failures[route.chainKey] ?? 0) + 1;
+        return undefined;
+      }
 
       return {
         protocol: "hyperlane" as const,
@@ -146,7 +154,7 @@ export async function findCosmosBalances(symbol: string): Promise<CosmosBalanceR
     })
   );
 
-  return results.filter((r): r is CosmosBalanceRow => r !== undefined);
+  return { rows: results.filter((r): r is CosmosBalanceRow => r !== undefined), attempts, failures };
 }
 
 /** Chains covered here, for the /sources report. */
@@ -355,9 +363,11 @@ export async function findHyperlaneModuleAccount(chainKey: string): Promise<Modu
  * multiply it, which for a report about whether a withdrawal will go through
  * is the worst possible error.
  */
-export async function findNativeModuleBalances(symbol: string): Promise<CosmosBalanceRow[]> {
+export async function findNativeModuleBalances(symbol: string): Promise<NonEvmReadResult<CosmosBalanceRow>> {
   const routes = findNativeModuleRoutes(symbol);
-  if (routes.length === 0) return [];
+  const attempts: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  if (routes.length === 0) return { rows: [], attempts, failures };
 
   const byChainDenom = new Map<string, { chainKey: string; denom: string; decimals: number }>();
   for (const route of routes) {
@@ -370,11 +380,19 @@ export async function findNativeModuleBalances(symbol: string): Promise<CosmosBa
 
   const rows = await Promise.all(
     [...byChainDenom.values()].map(async (entry): Promise<CosmosBalanceRow | undefined> => {
+      attempts[entry.chainKey] = (attempts[entry.chainKey] ?? 0) + 1;
+
       const account = await findHyperlaneModuleAccount(entry.chainKey);
-      if (!account) return undefined;
+      if (!account) {
+        failures[entry.chainKey] = (failures[entry.chainKey] ?? 0) + 1;
+        return undefined;
+      }
 
       const amount = await readBankBalance(entry.chainKey, account.address, entry.denom);
-      if (amount === undefined) return undefined;
+      if (amount === undefined) {
+        failures[entry.chainKey] = (failures[entry.chainKey] ?? 0) + 1;
+        return undefined;
+      }
 
       return {
         protocol: "hyperlane" as const,
@@ -388,5 +406,5 @@ export async function findNativeModuleBalances(symbol: string): Promise<CosmosBa
     })
   );
 
-  return rows.filter((r): r is CosmosBalanceRow => r !== undefined);
+  return { rows: rows.filter((r): r is CosmosBalanceRow => r !== undefined), attempts, failures };
 }

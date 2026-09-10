@@ -2,6 +2,7 @@ import { keccak256, stringToBytes } from "viem";
 import { getOtherChain, OTHER_CHAINS } from "../config/otherChains";
 import { endpointsWithOverride } from "../config/env";
 import { loadHyperlaneRegistry } from "./hyperlane";
+import type { NonEvmReadResult } from "./types";
 
 /**
  * Starknet, Radix and Aleo: three chains, three unrelated ways to ask what a
@@ -202,9 +203,13 @@ export interface OtherBalanceRow {
   decimals: number;
 }
 
-export async function findOtherBalances(symbol: string): Promise<OtherBalanceRow[]> {
+export async function findOtherBalances(symbol: string): Promise<NonEvmReadResult<OtherBalanceRow>> {
   const routes = findOtherRoutes(symbol);
-  if (routes.length === 0) return [];
+  const attempts: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  for (const route of routes) attempts[route.chainKey] = (attempts[route.chainKey] ?? 0) + 1;
+
+  if (routes.length === 0) return { rows: [], attempts, failures };
 
   const rows = await Promise.all(
     routes.map(async (route): Promise<OtherBalanceRow | undefined> => {
@@ -217,7 +222,13 @@ export async function findOtherBalances(symbol: string): Promise<OtherBalanceRow
               ? await readAleoBalance(route)
               : undefined;
 
-      if (amount === undefined) return undefined;
+      // Not reached, rather than empty: Radix's gateways are nine days
+      // behind and refuse to answer, which is not the same fact as a bridge
+      // holding nothing.
+      if (amount === undefined) {
+        failures[route.chainKey] = (failures[route.chainKey] ?? 0) + 1;
+        return undefined;
+      }
 
       return {
         protocol: "hyperlane" as const,
@@ -231,7 +242,7 @@ export async function findOtherBalances(symbol: string): Promise<OtherBalanceRow
     })
   );
 
-  return rows.filter((r): r is OtherBalanceRow => r !== undefined);
+  return { rows: rows.filter((r): r is OtherBalanceRow => r !== undefined), attempts, failures };
 }
 
 export function otherChainCount(): number {
