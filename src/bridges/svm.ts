@@ -209,6 +209,7 @@ export function wormholeCustody(mint: string): string | undefined {
 
 export interface SolanaRoute {
   routeId: string;
+  chainKey: string;
   symbol: string;
   programId: string;
   mint: string;
@@ -239,6 +240,7 @@ export function findSolanaHyperlaneRoutes(symbol: string): SolanaRoute[] {
 
       found.push({
         routeId,
+        chainKey: token.chainName,
         symbol: token.symbol ?? routeSymbol ?? wanted,
         programId: token.addressOrDenom,
         mint: token.collateralAddressOrDenom,
@@ -268,50 +270,86 @@ export interface SvmBalanceRow {
  * batched one, and a chain that drops out of the report reads as "no
  * liquidity here".
  */
-export async function findSolanaBalances(symbol: string, mint?: string): Promise<SvmBalanceRow[]> {
-  const chainKey = "solanamainnet";
-  const wanted: Array<{ protocol: "hyperlane" | "wormhole"; address: string; mint: string; note?: string }> = [];
-
-  for (const route of findSolanaHyperlaneRoutes(symbol)) {
-    const escrow = hyperlaneEscrow(route.programId);
-    if (escrow) wanted.push({ protocol: "hyperlane", address: escrow, mint: route.mint, note: route.routeId });
+export async function findSvmBalances(symbol: string, solanaMint?: string): Promise<SvmBalanceRow[]> {
+  interface Wanted {
+    protocol: "hyperlane" | "wormhole";
+    chainKey: string;
+    address: string;
+    mint: string;
+    note?: string;
   }
 
-  if (mint) {
-    const custody = wormholeCustody(mint);
-    if (custody) wanted.push({ protocol: "wormhole", address: custody, mint });
+  const wanted: Wanted[] = [];
+
+  // Every Sealevel chain derives its escrow the same way, because they all
+  // run the same VM and the same Hyperlane program. Adding Eclipse, SOON and
+  // the rest therefore costs a row in the chain table and no new logic.
+  for (const route of findSolanaHyperlaneRoutes(symbol)) {
+    const escrow = hyperlaneEscrow(route.programId);
+    if (escrow) {
+      wanted.push({
+        protocol: "hyperlane",
+        chainKey: route.chainKey,
+        address: escrow,
+        mint: route.mint,
+        note: route.routeId,
+      });
+    }
+  }
+
+  // Wormhole's Token Bridge lives on Solana itself, not on the rollups that
+  // borrow its VM.
+  if (solanaMint) {
+    const custody = wormholeCustody(solanaMint);
+    if (custody) {
+      wanted.push({ protocol: "wormhole", chainKey: "solanamainnet", address: custody, mint: solanaMint });
+    }
   }
 
   if (wanted.length === 0) return [];
 
-  let accounts: Array<any | null>;
-  try {
-    accounts = await withSvmClient(chainKey, (c) =>
-      c.getMultipleParsedAccounts(wanted.map((w) => new PublicKey(w.address))).then((r) => r.value)
-    );
-  } catch (err) {
-    console.error("[svm] не удалось прочитать аккаунты Solana:", err);
-    return [];
+  // Grouped by chain: each is a separate network with its own endpoint, and
+  // one batched call per chain keeps a rate-limited public node from
+  // refusing a burst of small ones.
+  const byChain = new Map<string, Wanted[]>();
+  for (const entry of wanted) {
+    if (!byChain.has(entry.chainKey)) byChain.set(entry.chainKey, []);
+    byChain.get(entry.chainKey)!.push(entry);
   }
 
-  const rows: SvmBalanceRow[] = [];
-  wanted.forEach((entry, i) => {
-    const info = (accounts[i]?.data as any)?.parsed?.info;
-    // An account that does not exist, or holds a different mint, is not this
-    // token's custody - and inventing a zero for it would claim the bridge
-    // was checked when it was not.
-    if (!info || info.mint !== entry.mint) return;
+  const perChain = await Promise.all(
+    [...byChain.entries()].map(async ([chainKey, entries]) => {
+      let accounts: Array<any | null>;
+      try {
+        accounts = await withSvmClient(chainKey, (c) =>
+          c.getMultipleParsedAccounts(entries.map((e) => new PublicKey(e.address))).then((r) => r.value)
+        );
+      } catch (err) {
+        console.error(`[svm] ${chainKey}: не удалось прочитать аккаунты:`, err);
+        return [];
+      }
 
-    rows.push({
-      protocol: entry.protocol,
-      chainKey,
-      custodyAddress: entry.address,
-      tokenAddress: entry.mint,
-      note: entry.note,
-      amount: BigInt(info.tokenAmount?.amount ?? "0"),
-      decimals: Number(info.tokenAmount?.decimals ?? 0),
-    });
-  });
+      const rows: SvmBalanceRow[] = [];
+      entries.forEach((entry, i) => {
+        const info = (accounts[i]?.data as any)?.parsed?.info;
+        // An account that does not exist, or holds a different mint, is not
+        // this token's custody - and inventing a zero for it would claim the
+        // bridge was checked when it was not.
+        if (!info || info.mint !== entry.mint) return;
 
-  return rows;
+        rows.push({
+          protocol: entry.protocol,
+          chainKey,
+          custodyAddress: entry.address,
+          tokenAddress: entry.mint,
+          note: entry.note,
+          amount: BigInt(info.tokenAmount?.amount ?? "0"),
+          decimals: Number(info.tokenAmount?.decimals ?? 0),
+        });
+      });
+      return rows;
+    })
+  );
+
+  return perChain.flat();
 }

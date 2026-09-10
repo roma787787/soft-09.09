@@ -22,7 +22,8 @@ export function registerSourcesCommand(bot: Telegraf) {
 
     lines.push(
       `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length}</b> ` +
-        `(${CHAINS.length} EVM + ${SVM_CHAINS.map((c) => c.label).join(", ")})`
+        `— ${CHAINS.length} EVM и ${SVM_CHAINS.length} на VM Solana ` +
+        `(${SVM_CHAINS.map((c) => c.label).join(", ")})`
     );
     lines.push("");
 

@@ -25,6 +25,7 @@ import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
+import { SVM_CHAINS } from "../src/config/svmChains";
 import {
   findSolanaHyperlaneRoutes,
   hyperlaneEscrowCandidates,
@@ -282,10 +283,27 @@ check("but Solana is still not an EVM chain", getChain("solanamainnet") === unde
 // supply. Using the EVM signal would report twenty minting routes as custody
 // contracts sitting at zero - a wrong answer dressed as a measurement.
 
+// Every Sealevel chain runs the same VM and the same Hyperlane program, so
+// the derivation proven on Solana holds on Eclipse, SOON and the rest.
+// Adding them is a row in the chain table, not new logic - which is only
+// true while the table is generated from the same registry the routes are.
+const svmKeys = SVM_CHAINS.map((c) => c.key);
+check("the Sealevel table covers more than Solana", svmKeys.length >= 4, svmKeys.join(", "));
+check("Solana is in it", svmKeys.includes("solanamainnet"));
+check("and so are the rollups that borrow its VM", svmKeys.includes("eclipsemainnet") && svmKeys.includes("soon"));
+check("every one of them has somewhere to connect", SVM_CHAINS.every((c) => c.defaultRpcUrls.length > 0));
+check("and its own RPC variable", new Set(SVM_CHAINS.map((c) => c.rpcEnvVar)).size === SVM_CHAINS.length);
+// An explorer base carrying a query string cannot take a path appended.
+check(
+  "an explorer link is never built by gluing a path onto a query string",
+  SVM_CHAINS.every((c) => !/\?.*\/account\//.test(c.explorerAddressUrl("X")))
+);
+
 const solRoutes = findSolanaHyperlaneRoutes("Bonk");
 check("Solana collateral routes are found", solRoutes.length > 0, `${solRoutes.length}`);
 check("and every one of them actually locks something", solRoutes.every((r) => /Collateral|Native/i.test(r.standard)));
 check("a route brings both its program and its mint", solRoutes.every((r) => !!r.programId && !!r.mint));
+check("and names the chain it is on", solRoutes.every((r) => svmKeys.includes(r.chainKey)));
 check("a ticker with no Solana route yields nothing", findSolanaHyperlaneRoutes("QWERTYNOPE").length === 0);
 
 // Derivation is deterministic, so the same inputs must always name the same

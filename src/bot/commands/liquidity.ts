@@ -1,11 +1,12 @@
 import type { Telegraf, Context } from "telegraf";
 import { getChain, resolveChain, resolveAnyChain, chainMeta } from "../../config/chains";
+import { getSvmChain } from "../../config/svmChains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians } from "../../bridges/stargate";
-import { findSolanaBalances } from "../../bridges/svm";
+import { findSvmBalances } from "../../bridges/svm";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -250,8 +251,8 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // for the same reason the LayerZero registry is - a token bridged only to
   // Solana would otherwise be reported as not bridged at all.
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
-  const solanaRows =
-    !chainFilter || chainFilter === "solanamainnet" ? await findSolanaBalances(symbol, solanaMint) : [];
+  const svmAll = !chainFilter || !!getSvmChain(chainFilter) ? await findSvmBalances(symbol, solanaMint) : [];
+  const solanaRows = chainFilter ? svmAll.filter((r) => r.chainKey === chainFilter) : svmAll;
   const solanaHasSomething = solanaRows.length > 0;
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
@@ -295,7 +296,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   // Solana now counts as a chain the bot checks, so it belongs with the
   // supported ones rather than in the "not checked" footer.
-  const solanaLabel = solanaMint ? [chainMeta("solanamainnet")?.label ?? "Solana"] : [];
+  const solanaLabel = [...new Set(svmAll.map((r) => chainMeta(r.chainKey)?.label ?? r.chainKey))];
   const supportedChains = [
     ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
   ];

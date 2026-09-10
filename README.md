@@ -47,6 +47,7 @@ npm run typecheck
 ```bash
 npm run sync:across       # обновить адреса Across из публикуемых деплоев (нужна сеть)
 npm run sync:stargate     # то же для пулов Stargate
+npm run sync:svm          # список сетей на VM Solana из реестра Hyperlane
 ```
 
 `check:addresses` стоит запускать после любой правки справочника адресов:
@@ -116,8 +117,11 @@ Soneium, Zircuit, Swell, Lisk, BOB, Plume, Superseed, Katana, HyperEVM,
 Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
 Aurora, Ronin, Boba (список в `src/config/chains.ts`).
 
-Плюс **Solana** — она не EVM, поэтому живёт в отдельной таблице
-(`src/config/svmChains.ts`) и читается своим слоем.
+Плюс сети на **VM Solana** — Solana, Eclipse, SOON, Sonic SVM, svmBNB,
+Solaxy, Nara. Они не EVM, поэтому живут в отдельной таблице и читаются
+своим слоем. Сама таблица генерируется из реестра Hyperlane
+(`npm run sync:svm`) — оттуда же, откуда берутся маршруты, поэтому сеть,
+названная маршрутом, всегда в ней есть.
 
 Сеть добавляется одной записью: таблицы Wormhole, Across и Stargate
 ключуются по chain id, поэтому новая сеть подхватывает их адреса сама, без
@@ -141,8 +145,13 @@ Aurora, Ronin, Boba (список в `src/config/chains.ts`).
 чеканят supply. Решает `standard` — иначе двадцать чеканящих маршрутов
 попали бы в отчёт как пустые хранилища.
 
-Команда `/svm <тикер>` перебирает все варианты деривации и показывает, что
-ответила сеть по каждому — на случай, если Hyperlane их изменит.
+Все сети на VM Solana выводят адрес одинаково — у них общая виртуальная
+машина и общая программа Hyperlane, — поэтому Eclipse, SOON и остальные
+стоили строки в таблице и ни строчки новой логики.
+
+Команда `/svm <тикер>` перебирает все варианты деривации по одной сети на
+каждую и показывает, что ответила сеть — на случай, если Hyperlane их
+изменит или на новой сети они окажутся другими.
 
 Мосты делятся на два типа, и от этого зависит, как ищется хранилище.
 **Общие хранилища** (Wormhole Token Bridge, Across SpokePool) держат в одном

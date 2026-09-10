@@ -37,12 +37,24 @@ export function registerSvmCommand(bot: Telegraf) {
     const lines = [`<b>Solana — ${esc(symbol)}</b>`, ""];
 
     const routes = findSolanaHyperlaneRoutes(symbol);
-    lines.push(`<b>Hyperlane</b>: маршрутов с залогом — ${routes.length}`);
+    const chains = [...new Set(routes.map((r) => r.chainKey))];
+    lines.push(
+      `<b>Hyperlane</b>: маршрутов с залогом — ${routes.length}` +
+        (chains.length > 0 ? ` в сетях: ${esc(chains.join(", "))}` : "")
+    );
 
-    for (const route of routes.slice(0, 2)) {
-      lines.push("", `<i>${esc(route.routeId)}</i> (${esc(route.standard)})`, `  минт: <code>${esc(route.mint)}</code>`);
+    // One per chain rather than the first two overall: the derivation is
+    // what is being checked, and it is the same for every route on a chain
+    // but unproven on a chain nobody has looked at yet.
+    const sample = chains.map((c) => routes.find((r) => r.chainKey === c)!);
+    for (const route of sample.slice(0, 4)) {
+      lines.push(
+        "",
+        `<i>${esc(route.routeId)}</i> — ${esc(route.chainKey)} (${esc(route.standard)})`,
+        `  минт: <code>${esc(route.mint)}</code>`
+      );
       const checks = await checkCandidates(
-        "solanamainnet",
+        route.chainKey,
         route.mint,
         hyperlaneEscrowCandidates(route.programId, route.mint)
       );

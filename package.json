@@ -13,7 +13,8 @@
     "check:addresses": "tsx scripts/check-addresses.ts",
     "selftest": "tsx scripts/selftest.ts",
     "sync:across": "tsx scripts/sync-across.ts",
-    "sync:stargate": "tsx scripts/sync-stargate.ts"
+    "sync:stargate": "tsx scripts/sync-stargate.ts",
+    "sync:svm": "tsx scripts/sync-svm-chains.ts"
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.125",
