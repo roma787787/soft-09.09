@@ -266,6 +266,31 @@ const withSolana = parseCmcInfoResponse(
   },
   "USDC"
 );
+// CoinMarketCap qualifies some names in brackets, and the bracketed form
+// matched nothing - so the chain appeared in the report's "not checked"
+// footer while the report showed rows for it, which is the bot contradicting
+// itself in one message.
+const bracketed = parseCmcInfoResponse(
+  {
+    data: {
+      CARR: [
+        {
+          symbol: "CARR",
+          name: "Carnomaly",
+          contract_address: [
+            {
+              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              platform: { name: "Polygon (prev. MATIC)" },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  "CARR"
+);
+check("a bracketed network name still resolves", bracketed?.platforms[0]?.chainKey === "polygon");
+
 check("the EVM deployment is still read as before", withSolana?.platforms.length === 1);
 check("the Solana mint is kept rather than discarded", withSolana?.otherPlatforms.length === 1);
 check(

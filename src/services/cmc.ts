@@ -46,8 +46,20 @@ function normalise(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * CoinMarketCap sometimes qualifies a network's name in brackets - "Polygon
+ * (prev. MATIC)", "BNB Smart Chain (BEP20)" - and the bracketed form matches
+ * nothing, so the chain lands in the report's "not checked" list while the
+ * report shows rows for it two screens above. Trying the name without its
+ * qualifier costs nothing and settles that whole class.
+ */
+function nameCandidates(platformName: string, slug: string | undefined): string[] {
+  const withoutBrackets = platformName.replace(/\s*\(.*?\)\s*/g, " ").trim();
+  return [normalise(platformName), normalise(withoutBrackets), slug ? normalise(slug) : ""].filter(Boolean);
+}
+
 function resolvePlatform(platformName: string, slug: string | undefined): string | undefined {
-  const candidates = [normalise(platformName), slug ? normalise(slug) : ""].filter(Boolean);
+  const candidates = nameCandidates(platformName, slug);
   for (const chain of CHAINS) {
     const names = [chain.key, chain.label, ...(chain.cmcPlatformNames ?? [])].map(normalise);
     if (candidates.some((c) => names.includes(c))) return chain.key;
@@ -57,7 +69,7 @@ function resolvePlatform(platformName: string, slug: string | undefined): string
 
 /** The same, for the chains the bot reads without viem. */
 function resolveSvmPlatform(platformName: string, slug: string | undefined): string | undefined {
-  const candidates = [normalise(platformName), slug ? normalise(slug) : ""].filter(Boolean);
+  const candidates = nameCandidates(platformName, slug);
   for (const chain of SVM_CHAINS) {
     const names = [chain.key, chain.label, ...(chain.cmcPlatformNames ?? [])].map(normalise);
     if (candidates.some((c) => names.includes(c))) return chain.key;
