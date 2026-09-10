@@ -290,6 +290,11 @@ export function renderLiquidityReport(input: ReportInput): string {
     .sort((a, b) => (b.top > a.top ? 1 : b.top < a.top ? -1 : 0));
 
   const notes: string[] = [];
+  if (balances.some((b) => b.readsNativeCoin)) {
+    notes.push(
+      "Строки с нативной монетой — это пул, который держит саму монету сети, а не её обёрнутую версию: выйдет из него именно монета."
+    );
+  }
   if (chains.some(({ rows }) => rows.filter((r) => r.protocol === "hyperlane").length > MAX_ROWS_PER_GROUP)) {
     notes.push(
       "Маршруты Hyperlane — это отдельные пулы, их балансы нельзя складывать: вывести можно только из того маршрута, через который заходили."
@@ -346,7 +351,13 @@ export function renderLiquidityReport(input: ReportInput): string {
         // balance below the last shown decimal renders as "< 0,0001", and an
         // unescaped "<" makes Telegram reject the whole message as a broken
         // tag - the report is then lost entirely over one dust row.
-        const amount = `${esc(formatAmount(row.amount, row.decimals))} ${esc(symbol)}`;
+        // A native pool holds the chain's coin, so a report on WETH shows its
+        // rows in ETH. Printing the requested ticker there would be a small
+        // lie about what actually comes out.
+        const unit = row.readsNativeCoin
+          ? getChain(chainKey)?.viemChain.nativeCurrency.symbol ?? symbol
+          : symbol;
+        const amount = `${esc(formatAmount(row.amount, row.decimals))} ${esc(unit)}`;
         const link = explorer ? ` <a href="${explorer}">↗</a>` : "";
         block.push(` - ${esc(BRIDGE_LABELS[protocol])}: <b>${amount}</b>${link}`);
       }

@@ -2,7 +2,10 @@ import type { Address } from "viem";
 import type { Custodian } from "./types";
 import { CHAINS, getChain } from "../config/chains";
 import { getClient } from "../services/rpcClient";
-import { STARGATE_POOLS_BY_SYMBOL } from "../protocols/addresses/stargate.generated";
+import {
+  STARGATE_POOLS_BY_SYMBOL,
+  STARGATE_NATIVE_POOLS_BY_CHAIN_ID,
+} from "../protocols/addresses/stargate.generated";
 
 /**
  * Stargate is LayerZero's own liquidity layer, and for the tokens people
@@ -45,6 +48,42 @@ function chainKeyForId(chainId: number): string | undefined {
  * list the token for at all.
  */
 export async function findStargateCustodians(symbol: string): Promise<Custodian[]> {
+  return [...(await findErc20Pools(symbol)), ...findNativePools(symbol)];
+}
+
+/**
+ * Pools holding the chain's own coin. On an Ethereum L2 that coin is ETH,
+ * and these hold far more of it than any wrapped-token pool - leaving them
+ * out made the largest ETH liquidity on the report invisible.
+ *
+ * A pool is only included when the chain's native currency is the token
+ * being asked about. That rule is what keeps a Metis pool out of an ETH
+ * report: the contract is named the same everywhere, but what it holds
+ * follows the chain, not the name.
+ */
+function findNativePools(symbol: string): Custodian[] {
+  const wanted = (SYMBOL_ALIASES[symbol.toUpperCase()] ?? symbol).toUpperCase();
+
+  const found: Custodian[] = [];
+  for (const [rawId, pool] of Object.entries(STARGATE_NATIVE_POOLS_BY_CHAIN_ID)) {
+    const chain = CHAINS.find((c) => c.viemChain.id === Number(rawId));
+    if (!chain) continue;
+    if (chain.viemChain.nativeCurrency.symbol.toUpperCase() !== wanted) continue;
+
+    found.push({
+      protocol: "stargate",
+      chainKey: chain.key,
+      custodyAddress: pool,
+      // Nothing to read a balance against; the pool holds the coin itself.
+      tokenAddress: pool,
+      readsNativeCoin: true,
+      note: `нативный ${chain.viemChain.nativeCurrency.symbol}`,
+    });
+  }
+  return found;
+}
+
+async function findErc20Pools(symbol: string): Promise<Custodian[]> {
   const pools = poolsFor(symbol);
   if (!pools) return [];
 
@@ -83,9 +122,10 @@ export async function findStargateCustodians(symbol: string): Promise<Custodian[
 /** Which tickers Stargate pools cover, for the /sources report. */
 export function stargateCoverage(): { assets: string[]; pools: number } {
   const assets = Object.keys(STARGATE_POOLS_BY_SYMBOL);
-  const pools = assets.reduce(
+  const erc20 = assets.reduce(
     (n, a) => n + Object.keys(STARGATE_POOLS_BY_SYMBOL[a]).filter((id) => chainKeyForId(Number(id))).length,
     0
   );
-  return { assets, pools };
+  const native = Object.keys(STARGATE_NATIVE_POOLS_BY_CHAIN_ID).filter((id) => chainKeyForId(Number(id))).length;
+  return { assets, pools: erc20 + native };
 }

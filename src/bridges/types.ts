@@ -53,4 +53,11 @@ export interface Custodian {
   tokenAddress: Address;
   /** Extra detail for the reply, e.g. the warp route's registry id. */
   note?: string;
+  /**
+   * Read the chain's own coin instead of an ERC-20. Stargate's native pools
+   * hold ETH itself, and on an Ethereum L2 they hold far more of it than any
+   * wrapped-token pool, so skipping them hid the largest ETH liquidity there
+   * is. Their balance comes from getBalance, not balanceOf.
+   */
+  readsNativeCoin?: boolean;
 }

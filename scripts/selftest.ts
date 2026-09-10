@@ -27,7 +27,10 @@ import { validateAddress } from "../src/protocols/addresses/validate";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
 import { vaultAddressesByChain } from "../src/bridges/vaults";
 import { stargateCoverage } from "../src/bridges/stargate";
-import { STARGATE_POOLS_BY_SYMBOL } from "../src/protocols/addresses/stargate.generated";
+import {
+  STARGATE_POOLS_BY_SYMBOL,
+  STARGATE_NATIVE_POOLS_BY_CHAIN_ID,
+} from "../src/protocols/addresses/stargate.generated";
 
 let failures = 0;
 
@@ -114,7 +117,16 @@ const stargate = stargateCoverage();
 check("Stargate covers the assets that matter", ["USDC", "USDT", "ETH"].every((a) => stargate.assets.includes(a)));
 check("and resolves onto chains we support", stargate.pools >= 10, `${stargate.pools} pools`);
 
-const allStargate = Object.values(STARGATE_POOLS_BY_SYMBOL).flatMap((byChain) => Object.values(byChain));
+const allStargate = [
+  ...Object.values(STARGATE_POOLS_BY_SYMBOL).flatMap((byChain) => Object.values(byChain)),
+  ...Object.values(STARGATE_NATIVE_POOLS_BY_CHAIN_ID),
+];
+// Native pools hold the chain's coin and hold far more ETH on an L2 than any
+// wrapped-token pool, so their absence was the largest gap in the ETH report.
+check(
+  "the native pools are in the table too",
+  [1, 10, 8453, 42161].every((id) => !!STARGATE_NATIVE_POOLS_BY_CHAIN_ID[id])
+);
 check("every Stargate address survives validation", allStargate.every((a) => validateAddress(a).length === 0));
 // Stargate deploys to testnets too, and a testnet pool read by chain id
 // would report play money as real liquidity.
@@ -848,6 +860,22 @@ const dusty = renderLiquidityReport({
   attemptsByChain: { ethereum: 1 },
 });
 check("a dust balance is shown, not rounded away to zero", dusty.includes("0,0001"));
+
+// A native pool holds the chain's coin, so a WETH report shows those rows in
+// ETH. Printing the requested ticker would misstate what comes out.
+const nativeRow = renderLiquidityReport({
+  symbol: "WETH",
+  name: "WETH",
+  balances: [
+    { ...fakeBalance("ethereum", "stargate", 5n * 10n ** 18n), decimals: 18, readsNativeCoin: true },
+  ],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+});
+check("a native pool's row is labelled with the chain's coin", nativeRow.includes("5 ETH"), nativeRow);
+check("and not with the ticker that was asked for", !nativeRow.includes("5 WETH"));
+check("the report says what a native row means", nativeRow.includes("нативной монетой"));
 check("and its \"<\" is escaped so Telegram can parse the message", !/<(?![a-zA-Z/])/.test(dusty), dusty);
 check("the report as a whole opens no tag it does not close", tagsBalanced(dusty));
 

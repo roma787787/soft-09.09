@@ -41,6 +41,8 @@ const root = path.join(tmp, "package/deployments");
 
 /** symbol -> chainId -> pool address */
 const pools: Record<string, Record<number, string>> = {};
+/** chainId -> pool holding the chain's own coin rather than an ERC-20 */
+const nativePools: Record<number, string> = {};
 let skipped = 0;
 
 for (const dir of fs.readdirSync(root)) {
@@ -57,10 +59,6 @@ for (const dir of fs.readdirSync(root)) {
     if (!match) continue;
 
     const asset = match[1];
-    // The native pool holds the chain's own coin, not an ERC-20; reading it
-    // needs a different call than every other row here, so it is left out
-    // rather than silently reported as zero.
-    if (asset === "Native") continue;
 
     const address = JSON.parse(fs.readFileSync(path.join(root, dir, file), "utf8"))?.address;
     if (typeof address !== "string") continue;
@@ -72,10 +70,22 @@ for (const dir of fs.readdirSync(root)) {
       continue;
     }
 
+    // The native pool holds the chain's own coin, so its balance is read with
+    // a different call and it is kept apart from the ERC-20 pools.
+    if (asset === "Native") {
+      nativePools[chainId] = address;
+      continue;
+    }
+
     const symbol = asset.toUpperCase();
     (pools[symbol] ??= {})[chainId] = address;
   }
 }
+
+const nativeBody = Object.entries(nativePools)
+  .sort((a, b) => Number(a[0]) - Number(b[0]))
+  .map(([chainId, address]) => `  ${chainId}: "${address}",`)
+  .join("\n");
 
 const body = Object.keys(pools)
   .sort()
@@ -107,10 +117,23 @@ fs.writeFileSync(
 export const STARGATE_POOLS_BY_SYMBOL: Record<string, Record<number, Address>> = {
 ${body}
 };
+
+/**
+ * Pools holding the chain's own coin rather than an ERC-20. On an Ethereum
+ * L2 that coin is ETH, and these hold far more of it than any wrapped-token
+ * pool, so leaving them out made the largest ETH liquidity invisible. Their
+ * balance is read with getBalance, not balanceOf.
+ */
+export const STARGATE_NATIVE_POOLS_BY_CHAIN_ID: Record<number, Address> = {
+${nativeBody}
+};
 `,
   "utf8"
 );
 
 fs.rmSync(tmp, { recursive: true, force: true });
 const total = Object.values(pools).reduce((n, byChain) => n + Object.keys(byChain).length, 0);
-console.log(`${OUT}: ${Object.keys(pools).length} активов, ${total} пулов${skipped ? `, пропущено ${skipped}` : ""}`);
+console.log(
+  `${OUT}: ${Object.keys(pools).length} активов, ${total} пулов, ` +
+    `${Object.keys(nativePools).length} нативных${skipped ? `, пропущено ${skipped}` : ""}`
+);

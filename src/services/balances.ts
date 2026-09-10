@@ -69,7 +69,14 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
 
   const readOne = async (c: Custodian, attempt = 0): Promise<CustodianBalance | undefined> => {
     try {
-      const [amount, decimals] = await Promise.all([
+      if (c.readsNativeCoin) {
+          // The chain's own coin is not an ERC-20 and has no balanceOf; it
+          // is always 18 decimals on the chains these pools live on.
+          const amount = await getClient(c.chainKey).getBalance({ address: c.custodyAddress });
+          return { ...c, amount, decimals: 18 };
+        }
+
+        const [amount, decimals] = await Promise.all([
           getClient(c.chainKey).readContract({
             address: c.tokenAddress,
             abi: ERC20_ABI,

@@ -64,3 +64,25 @@ export const STARGATE_POOLS_BY_SYMBOL: Record<string, Record<number, Address>> =
     43114: "0x12dC9256Acc9895B076f6638D628382881e62CeE",
   },
 };
+
+/**
+ * Pools holding the chain's own coin rather than an ERC-20. On an Ethereum
+ * L2 that coin is ETH, and these hold far more of it than any wrapped-token
+ * pool, so leaving them out made the largest ETH liquidity invisible. Their
+ * balance is read with getBalance, not balanceOf.
+ */
+export const STARGATE_NATIVE_POOLS_BY_CHAIN_ID: Record<number, Address> = {
+  1: "0x77b2043768d28E9C9aB44E1aBfC95944bcE57931",
+  10: "0xe8CDF27AcD73a434D661C84887215F7598e7d0d3",
+  130: "0xe9aBA835f813ca05E50A6C0ce65D0D74390F7dE7",
+  169: "0x9895D81bB462A195b4922ED7De0e3ACD007c32CB",
+  1868: "0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590",
+  1890: "0x8731d54E9D02c286767d56ac03e8037C07e01e98",
+  1923: "0xCc0587aeBDa397146cc828b445dB130a94486e74",
+  2741: "0x221F0E1280Ec657503ca55c708105F1e1529527D",
+  8453: "0xdc181Bd607330aeeBEF6ea62e03e5e1Fb4B6F7C7",
+  42161: "0xA45B5130f36CDcA45667738e2a258AB09f4A5f7F",
+  43111: "0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590",
+  59144: "0x81F6138153d473E8c5EcebD3DC8Cd4903506B075",
+  534352: "0xC2b638Cb5042c1B3c5d5C969361fB50569840583",
+};
