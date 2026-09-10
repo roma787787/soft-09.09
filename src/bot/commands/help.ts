@@ -18,6 +18,7 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 <code>/untrack &lt;адрес&gt; [сеть]</code> — выключить оповещения.
 <code>/list</code> — список того, что вы отслеживаете.
 <code>/sources</code> — что бот знает: сколько сетей, маршрутов и хранилищ в реестрах.
+<code>/ccip &lt;сеть&gt;</code> — по шагам показать, как бот ищет пулы CCIP в этой сети.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.

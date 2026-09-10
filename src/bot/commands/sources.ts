@@ -4,6 +4,7 @@ import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
 import { vaultCoverage } from "../../bridges/vaults";
+import { ccipChainCount } from "../../bridges/ccip";
 import { BRIDGE_SHORT_LABELS } from "../../bridges/types";
 
 /**
@@ -47,7 +48,12 @@ export function registerSourcesCommand(bot: Telegraf) {
       );
     }
 
-    lines.push("Реестр LayerZero подтягивается на лету, остальные — вместе со сборкой бота.");
+    lines.push(
+      `<b>CCIP / Transporter</b> — роутер известен в ${ccipChainCount()} из ${CHAINS.length} сетей.`,
+      "Пул под конкретный токен находится опросом контрактов, списка токенов не нужно. Проверить цепочку: <code>/ccip ethereum</code>.",
+      "",
+      "Реестр LayerZero подтягивается на лету, остальные — вместе со сборкой бота."
+    );
 
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
   });

@@ -3,6 +3,7 @@ import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
+import { findCcipCustodians } from "../../bridges/ccip";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -140,9 +141,16 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
   // Shared vaults answer for any token at all - one contract per chain holds
   // everything that bridge carries - so they are asked regardless of whether
   // a registry happens to list this ticker.
-  const vaults = await findVaultCustodians(tokenByChainFrom(token.platforms));
+  const tokenByChain = tokenByChainFrom(token.platforms);
+  const [vaults, ccip] = await Promise.all([
+    findVaultCustodians(tokenByChain),
+    // CCIP keeps a pool per token, but the pool is found by asking the
+    // contracts rather than by looking the ticker up in a list, so it needs
+    // no registry of its own.
+    findCcipCustodians(tokenByChain),
+  ]);
 
-  const all = dedupeCustodians([...custodians, ...found, ...vaults]);
+  const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip]);
 
   if (all.length === 0) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];

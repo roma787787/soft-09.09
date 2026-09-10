@@ -1,12 +1,13 @@
 import type { Address } from "viem";
 
-export type BridgeProtocol = "layerzero" | "hyperlane" | "wormhole" | "across";
+export type BridgeProtocol = "layerzero" | "hyperlane" | "wormhole" | "across" | "ccip";
 
 export const BRIDGE_LABELS: Record<BridgeProtocol, string> = {
   layerzero: "LayerZero (OFT Adapter)",
   hyperlane: "Hyperlane (Warp Route)",
   wormhole: "Wormhole (Token Bridge)",
   across: "Across (SpokePool)",
+  ccip: "Chainlink CCIP / Transporter (Token Pool)",
 };
 
 /** Short name for the "where did these contracts come from" line. */
@@ -15,6 +16,7 @@ export const BRIDGE_SHORT_LABELS: Record<BridgeProtocol, string> = {
   hyperlane: "Hyperlane",
   wormhole: "Wormhole",
   across: "Across",
+  ccip: "CCIP",
 };
 
 /**
@@ -29,10 +31,11 @@ export const BRIDGE_UNITS: Record<BridgeProtocol, [one: string, few: string, man
   hyperlane: ["маршрут", "маршрута", "маршрутов"],
   wormhole: ["сеть", "сети", "сетей"],
   across: ["сеть", "сети", "сетей"],
+  ccip: ["пул", "пула", "пулов"],
 };
 
 /** Declaration order, so the report lists bridges the same way every time. */
-export const BRIDGE_ORDER: BridgeProtocol[] = ["wormhole", "hyperlane", "layerzero", "across"];
+export const BRIDGE_ORDER: BridgeProtocol[] = ["wormhole", "hyperlane", "layerzero", "across", "ccip"];
 
 /**
  * A contract that holds the token on one chain: what the bot reads
