@@ -6,6 +6,7 @@ import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerz
 import { vaultCoverage } from "../../bridges/vaults";
 import { ccipChainCount } from "../../bridges/ccip";
 import { BRIDGE_SHORT_LABELS } from "../../bridges/types";
+import { plural } from "../render";
 
 /**
  * What the bot actually knows. "Checked 4 contracts" is only meaningful next
@@ -28,15 +29,15 @@ export function registerSourcesCommand(bot: Telegraf) {
     );
 
     lines.push(
-      `<b>Hyperlane</b> — ${hyperlaneRouteCount()} маршрутов в реестре.`,
+      `<b>Hyperlane</b> — ${hyperlaneRouteCount()} ${plural(hyperlaneRouteCount(), "маршрут", "маршрута", "маршрутов")} в реестре.`,
       "Ищется по тикеру; показываются только collateral-маршруты, синтетические ничего не держат.",
       ""
     );
 
     const lzSize = layerZeroRegistrySize();
     lines.push(
-      `<b>LayerZero</b> — реестр OFT: ${lzSize === undefined ? "ещё не загружался" : `${lzSize} тикеров`}.`,
-      `Ручной конфиг: ${layerZeroConfigSize()} тикеров (переопределяет реестр).`,
+      `<b>LayerZero</b> — реестр OFT: ${lzSize === undefined ? "загрузится при первом /info" : `${lzSize} ${plural(lzSize, "тикер", "тикера", "тикеров")}`}.`,
+      `Ручной конфиг: ${layerZeroConfigSize()} ${plural(layerZeroConfigSize(), "тикер", "тикера", "тикеров")} (переопределяет реестр).`,
       ""
     );
 

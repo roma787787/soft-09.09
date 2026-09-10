@@ -8,8 +8,19 @@ import {
 } from "../bridges/types";
 import { formatAmount, type CustodianBalance } from "../services/balances";
 
-/** Telegram rejects anything past 4096; leave room for the closing notes. */
-const MAX_MESSAGE_CHARS = 3600;
+/**
+ * Telegram counts a message "after entities parsing" - tags and entities do
+ * not count toward the 4096 limit, only the text a person sees. Every row
+ * here carries an explorer link, so the raw HTML runs several times longer
+ * than the message does, and budgeting against the HTML threw away reports
+ * that would have fitted with room to spare.
+ */
+function visibleLength(html: string): number {
+  return html.replace(/<[^>]*>/g, "").replace(/&(?:amp|lt|gt|quot|#\d+);/g, "\u0001").length;
+}
+
+/** Telegram's own limit, with a margin for the notice appended on a cut. */
+const MAX_MESSAGE_CHARS = 4000;
 
 /** Rows shown per protocol per chain before the rest are summarised. */
 const MAX_ROWS_PER_GROUP = 3;
@@ -46,12 +57,24 @@ function closeOpenTags(text: string): string {
  * entity is dropped and whatever it left open is closed.
  */
 function capToTelegramLimit(text: string): string {
-  if (text.length <= 4000) return text;
+  if (visibleLength(text) <= MAX_MESSAGE_CHARS) return text;
 
-  const head = text.slice(0, 3900);
-  const lastLine = head.lastIndexOf("\n");
+  const budget = MAX_MESSAGE_CHARS - 50;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split("\n")) {
+    const cost = visibleLength(line) + 1;
+    if (used + cost > budget) break;
+    kept.push(line);
+    used += cost;
+  }
+
+  // A single line longer than the whole budget leaves no boundary to cut
+  // on; there the half-written tag or entity is dropped instead.
   const cut =
-    lastLine > 0 ? head.slice(0, lastLine) : head.replace(/<[^>]*$/, "").replace(/&[^;\s]*$/, "");
+    kept.length > 0
+      ? kept.join("\n")
+      : text.slice(0, budget).replace(/<[^>]*$/, "").replace(/&[^;\s]*$/, "");
 
   return `${closeOpenTags(cut)}\n\n… отчёт обрезан, чтобы уместиться в сообщение.`;
 }
@@ -64,7 +87,7 @@ function esc(s: string): string {
  * Russian noun agreement: 1 сеть, 2 сети, 5 сетей, with the 11-14 exception.
  * The whole interface is Russian, and "1 сетей" reads as a broken product.
  */
-function plural(n: number, one: string, few: string, many: string): string {
+export function plural(n: number, one: string, few: string, many: string): string {
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return many;
   const mod10 = n % 10;
@@ -266,6 +289,36 @@ export function renderLiquidityReport(input: ReportInput): string {
     }))
     .sort((a, b) => (b.top > a.top ? 1 : b.top < a.top ? -1 : 0));
 
+  const notes: string[] = [];
+  if (chains.some(({ rows }) => rows.filter((r) => r.protocol === "hyperlane").length > MAX_ROWS_PER_GROUP)) {
+    notes.push(
+      "Маршруты Hyperlane — это отдельные пулы, их балансы нельзя складывать: вывести можно только из того маршрута, через который заходили."
+    );
+  }
+  if (unreachable.length > 0) {
+    notes.push(`⚠️ Не ответили совсем: ${esc(unreachable.join(", "))}. Этих сетей в отчёте нет.`);
+  }
+  if (partial.length > 0) {
+    notes.push(
+      `⚠️ Ответили не полностью: ${esc(partial.join(", "))}. Эти сети в отчёте есть, но часть их контрактов пропущена.`
+    );
+  }
+  if (mismatchedAdapters > 0) {
+    notes.push(
+      `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
+        " LayerZero: они блокируют не тот контракт, который CoinMarketCap указал для этого тикера."
+    );
+  }
+  const closingNotes = [`Всего проверено контрактов: ${checkedCount}.`, ...scopeLines(scope)];
+
+  // The closing notes are what explain a thin report - which chains failed,
+  // what was skipped, how much was checked. Budgeting the body first and
+  // appending them afterwards meant the cut landed on exactly the lines that
+  // say why the report looks the way it does. So they are measured first and
+  // the body gets what is left.
+  const notesBudget = visibleLength([...notes, ...closingNotes].join("\n")) + 80;
+
+
   const lines: string[] = [header];
   let used = header.length;
   let omittedChains = 0;
@@ -306,41 +359,21 @@ export function renderLiquidityReport(input: ReportInput): string {
     }
 
     const blockText = block.join("\n");
-    if (used + blockText.length > MAX_MESSAGE_CHARS) {
+    if (used + visibleLength(blockText) > MAX_MESSAGE_CHARS - notesBudget) {
       omittedChains++;
       continue;
     }
     lines.push(blockText);
-    used += blockText.length;
+    used += visibleLength(blockText);
   }
 
-  const notes: string[] = [];
-  if (chains.some(({ rows }) => rows.filter((r) => r.protocol === "hyperlane").length > MAX_ROWS_PER_GROUP)) {
-    notes.push(
-      "Маршруты Hyperlane — это отдельные пулы, их балансы нельзя складывать: вывести можно только из того маршрута, через который заходили."
-    );
-  }
+
+
   if (omittedChains > 0) {
     notes.push(
       `Ещё ${omittedChains} ${plural(omittedChains, "сеть не поместилась", "сети не поместились", "сетей не поместилось")} в сообщение.`
     );
   }
-  if (unreachable.length > 0) {
-    notes.push(`⚠️ Не ответили совсем: ${esc(unreachable.join(", "))}. Этих сетей в отчёте нет.`);
-  }
-  if (partial.length > 0) {
-    notes.push(
-      `⚠️ Ответили не полностью: ${esc(partial.join(", "))}. Эти сети в отчёте есть, но часть их контрактов пропущена.`
-    );
-  }
-  if (mismatchedAdapters > 0) {
-    notes.push(
-      `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
-        " LayerZero: они блокируют не тот контракт, который CoinMarketCap указал для этого тикера."
-    );
-  }
-  notes.push(`Всего проверено контрактов: ${checkedCount}.`);
-  notes.push(...scopeLines(scope));
 
-  return capToTelegramLimit([...lines, "", ...notes].join("\n"));
+  return capToTelegramLimit([...lines, "", ...notes, ...closingNotes].join("\n"));
 }

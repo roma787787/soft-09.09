@@ -38,6 +38,14 @@ function check(name: string, condition: boolean, detail?: string): void {
   }
 }
 
+// Telegram counts a message "after entities parsing", so tags and entities
+// do not count toward the 4096 limit - only what a person sees. Measuring
+// the raw HTML instead threw away reports that fitted with room to spare,
+// so the tests must measure it the same way the renderer does.
+function visibleLength(html: string): number {
+  return html.replace(/<[^>]*>/g, "").replace(/&(?:amp|lt|gt|quot|#\d+);/g, "\u0001").length;
+}
+
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
 // mixed-case input unchanged instead of validating it, so the old
@@ -404,9 +412,14 @@ const heavyReport = renderLiquidityReport({
 });
 check(
   "a 137-custodian report fits inside Telegram's message limit",
-  heavyReport.length < 4096,
-  `length=${heavyReport.length}`
+  visibleLength(heavyReport) < 4096,
+  `${visibleLength(heavyReport)} visible chars, ${heavyReport.length} of HTML`
 );
+// The closing notes are what explain a thin report. Budgeting the body
+// first and appending them afterwards meant the cut landed on exactly the
+// lines that say why the report looks the way it does.
+check("a heavy report keeps its closing notes", heavyReport.includes("Всего проверено контрактов"));
+check("and is not left with the truncation notice instead", !heavyReport.includes("обрезан"));
 check("the heavy report still names several chains", (heavyReport.match(/Сеть:/g) ?? []).length >= 3);
 check("the heavy report summarises the routes it did not print", heavyReport.includes("и ещё"));
 check("the heavy report says how many contracts were checked", heavyReport.includes("проверено контрактов: 137"));
@@ -773,7 +786,11 @@ const runaway = renderLiquidityReport({
     byProtocol: { wormhole: 0, hyperlane: 0, layerzero: 0 },
   },
 });
-check("a runaway report still fits Telegram's limit", runaway.length <= 4096, `${runaway.length} chars`);
+check(
+  "a runaway report still fits Telegram's limit",
+  visibleLength(runaway) <= 4096,
+  `${visibleLength(runaway)} visible chars`
+);
 check("and says it was cut rather than ending mid-word", runaway.includes("обрезан"));
 
 // Telegram parses the whole message as HTML and refuses an unbalanced one,
@@ -794,6 +811,13 @@ function tagsBalanced(html: string): boolean {
 }
 check("the truncated report is still valid HTML", tagsBalanced(runaway));
 
+// A balance too small to print at four decimals is not zero, and printing
+// it as "0" says there is nothing here - the single most consequential
+// thing this bot can get wrong.
+check("dust is not reported as zero", formatAmount(1n, 18) === "< 0,0001", formatAmount(1n, 18));
+check("a real zero still reads as zero", formatAmount(0n, 18) === "0");
+check("dust on top of a whole number does not hide the whole number", formatAmount(10n ** 18n + 1n, 18) === "1");
+
 
 // The cut lands mid-line only when a single line outgrows the whole budget;
 // the usual case must land on a line boundary, tags intact.
@@ -811,7 +835,11 @@ const manyLines = renderLiquidityReport({
     byProtocol: { wormhole: 0, hyperlane: 0, layerzero: 0 },
   },
 });
-check("a long multi-line report is capped too", manyLines.length <= 4096, `${manyLines.length} chars`);
+check(
+  "a long multi-line report is capped too",
+  visibleLength(manyLines) <= 4096,
+  `${visibleLength(manyLines)} visible chars`
+);
 check("and stays valid HTML", tagsBalanced(manyLines));
 
 // -----------------------------------------------------------------------------

@@ -117,5 +117,10 @@ export function formatAmount(amount: bigint, decimals: number): string {
   // Show enough of the fraction to distinguish "almost nothing" from zero,
   // which matters when the question is whether a withdrawal will go through.
   const fraction = remainder.toString().padStart(decimals, "0").slice(0, 4).replace(/0+$/, "");
-  return fraction ? `${wholeText},${fraction}` : wholeText;
+  if (fraction) return `${wholeText},${fraction}`;
+
+  // Dust: a balance too small to show at this precision, but not zero.
+  // Printing a bare "0" would say there is nothing here, and "nothing here"
+  // is the single most consequential thing this bot can get wrong.
+  return whole === 0n ? "< 0,0001" : wholeText;
 }
