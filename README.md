@@ -112,12 +112,14 @@ Fly.io, обычный VPS) порядок один:
 - `/untrack <адрес> [сеть]` — выключить отслеживание.
 - `/list` — список того, что отслеживается в этом чате.
 
-Поддерживаемые сети «из коробки»: 42 — Ethereum, Arbitrum, Optimism, Base,
-Polygon, BNB Chain, Avalanche, Unichain, Ink, Linea, World Chain, Mode,
-Berachain, Blast, Celo, Scroll, Mantle, Sonic, Gnosis, Sei, Taiko, Fraxtal,
-Soneium, Zircuit, Swell, Lisk, BOB, Plume, Superseed, Katana, HyperEVM,
-Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
-Aurora, Ronin, Boba (список в `src/config/chains.ts`).
+Поддерживаемые сети «из коробки»: **174** — 152 EVM, 7 на VM Solana,
+11 Cosmos, 4 прочих (Starknet, Paradex, Radix, Aleo).
+
+Список EVM-сетей не набирался вручную: в него попала каждая сеть, которую
+покрывает хотя бы один из наших источников — деплои Across, пулы Stargate,
+реестр Wormhole или реестр Hyperlane — и которую знает viem. Оттуда же
+берутся chain id, эндпоинты и адреса эксплореров, поэтому переписывать
+руками нечего.
 
 Плюс **Starknet, Paradex, Radix и Aleo** — по одному способу чтения на
 каждое семейство: `starknet_call` с селектором, вычисляемым из имени

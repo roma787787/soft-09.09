@@ -48,19 +48,46 @@ export function registerDiagCommand(bot: Telegraf) {
 
     const health = await Promise.all(CHAINS.map((c) => checkChain(c.key, c.label)));
 
-    const lines = health.map((h) => {
-      const source = h.custom ? "свой RPC" : "публичный";
-      if (h.ok) {
-        return `✅ <b>${esc(h.label)}</b> — блок ${h.blockNumber}, ${h.ms} мс <i>(${source})</i>`;
+    const failed = health.filter((h) => !h.ok);
+    const ok = health.filter((h) => h.ok);
+
+    // A line per chain stopped fitting somewhere past forty of them. What
+    // matters is which chains failed and why; the ones that answered only
+    // need to be named, with the slowest called out - a node taking a second
+    // is the next one to start failing.
+    const lines: string[] = [];
+    if (health.length > 40) {
+      for (const h of failed) {
+        lines.push(
+          `❌ <b>${esc(h.label)}</b> <i>(${h.custom ? "свой RPC" : "публичный"})</i>\n   <code>${esc(h.error ?? "нет ответа")}</code>`
+        );
       }
-      return `❌ <b>${esc(h.label)}</b> <i>(${source})</i>\n   <code>${esc(h.error ?? "нет ответа")}</code>`;
-    });
+      if (failed.length > 0) lines.push("");
+
+      const slowest = [...ok].sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0)).slice(0, 5);
+      lines.push(`✅ Ответили: ${ok.length}`);
+      if (slowest.length > 0) {
+        lines.push(
+          `Самые медленные: ${slowest.map((h) => `${esc(h.label)} ${h.ms} мс`).join(", ")}`,
+          ""
+        );
+      }
+      lines.push(esc(ok.map((h) => h.label).join(", ")));
+    } else {
+      for (const h of health) {
+        const source = h.custom ? "свой RPC" : "публичный";
+        lines.push(
+          h.ok
+            ? `✅ <b>${esc(h.label)}</b> — блок ${h.blockNumber}, ${h.ms} мс <i>(${source})</i>`
+            : `❌ <b>${esc(h.label)}</b> <i>(${source})</i>\n   <code>${esc(h.error ?? "нет ответа")}</code>`
+        );
+      }
+    }
 
     const okCount = health.filter((h) => h.ok).length;
     const header = `🩺 Связь с сетями: ${okCount} из ${health.length}\n\n`;
 
     let footer = "";
-    const failed = health.filter((h) => !h.ok);
     if (failed.length > 0) {
       // Naming the variables outright: deriving SWELL_RPC_URL from
       // "Swellchain" is a small step at a desk and an annoying one on a

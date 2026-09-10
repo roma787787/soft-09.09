@@ -123,6 +123,13 @@ export async function getLzEidMap(): Promise<CachedMap> {
   return cachedMap(
     "layerzero",
     async (chainKey) => {
+      // Only chains the metadata does not cover are asked directly. At a
+      // hundred and fifty chains, most have no LayerZero at all, and calling
+      // a contract that is not there on every one of them once an hour is
+      // pure waste - the metadata is LayerZero's own published registry, so
+      // where it answers there is nothing to check it against.
+      if (fromMetadata.has(chainKey)) return fromMetadata.get(chainKey);
+
       const client = getClient(chainKey);
       return (await client.readContract({
         address: LZ_ENDPOINT_V2,
