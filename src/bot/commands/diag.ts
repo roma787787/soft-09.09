@@ -3,6 +3,7 @@ import { CHAINS } from "../../config/chains";
 import { hasCustomRpc, rpcUrlsFor } from "../../config/env";
 import { MAX_ENDPOINTS_PER_CHAIN } from "../../services/rpcClient";
 import { plural, capToTelegramLimit } from "../render";
+import { mapWithConcurrency } from "../../services/concurrency";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -166,39 +167,26 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
 }
 
 /**
- * A pool, not lockstep batches. Batches wait for their slowest member, so a
- * single dead chain stalls eleven healthy ones and the sweep takes as long
- * as the sum of the worst chain in each batch.
+ * One pass over the table, bounded, with a deadline the run as a whole must
+ * respect. Chains the deadline is past are marked as never asked rather
+ * than as down: calling them down would send the reader hunting for RPC
+ * keys they do not need.
  */
 async function sweep(deadline: number): Promise<ChainHealth[]> {
-  const health: ChainHealth[] = new Array(CHAINS.length);
-  let next = 0;
-
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = next++;
-      if (index >= CHAINS.length) return;
-      const chain = CHAINS[index];
-      if (Date.now() > deadline) {
-        health[index] = {
-          chainKey: chain.key,
-          label: chain.label,
-          ok: false,
-          alive: 0,
-          asked: 0,
-          skipped: true,
-          custom: hasCustomRpc(chain.key),
-        };
-        continue;
-      }
-      health[index] = await checkChain(chain.key, chain.label);
+  return mapWithConcurrency(CHAINS, HEALTH_CHECK_CONCURRENCY, async (chain) => {
+    if (Date.now() > deadline) {
+      return {
+        chainKey: chain.key,
+        label: chain.label,
+        ok: false,
+        alive: 0,
+        asked: 0,
+        skipped: true,
+        custom: hasCustomRpc(chain.key),
+      };
     }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(HEALTH_CHECK_CONCURRENCY, CHAINS.length) }, () => worker())
-  );
-  return health;
+    return checkChain(chain.key, chain.label);
+  });
 }
 
 /**

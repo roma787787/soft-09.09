@@ -13,6 +13,7 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
+import { mapWithConcurrency } from "../src/services/concurrency";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -1217,6 +1218,28 @@ function deployment(chainKey: string, locksCollateral: boolean, address: Address
 }
 
 async function asyncChecks(): Promise<void> {
+// The pool every sweep now shares. Order of results must follow the input,
+// not the order things finished, or a chain's health would be reported
+// under another chain's name.
+  const items = [50, 10, 30, 0, 20];
+  let live = 0;
+  let peak = 0;
+  const out = await mapWithConcurrency(items, 2, async (ms) => {
+    peak = Math.max(peak, ++live);
+    await new Promise((r) => setTimeout(r, ms));
+    live--;
+    return ms * 2;
+  });
+  check("results keep the input's order", out.join(",") === "100,20,60,0,40");
+  check("and never more than the limit run at once", peak === 2);
+
+  const empty = await mapWithConcurrency([], 4, async () => 1);
+  check("an empty list is not a hang", empty.length === 0);
+
+  // A limit larger than the list must not spawn workers with nothing to do.
+  const few = await mapWithConcurrency([1, 2], 99, async (n) => n + 1);
+  check("a limit above the list length is harmless", few.join(",") === "2,3");
+
   const native = await resolveRegistryDeployments(
     [deployment("ethereum", false)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
@@ -1723,6 +1746,7 @@ check(
   balanced.known + balanced.added.length + balanced.rejected.length + balanced.duplicates ===
     balanced.listed
 );
+
 
 // -----------------------------------------------------------------------------
 

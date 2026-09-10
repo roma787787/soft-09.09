@@ -5,6 +5,14 @@ import { getClient } from "../../services/rpcClient";
 import { addTracked } from "../../services/db";
 import { CHAINS, getChain } from "../../config/chains";
 import { PROTOCOL_LABELS, type DetectionResult } from "../../protocols/types";
+import { mapWithConcurrency } from "../../services/concurrency";
+
+/**
+ * Chains asked at once when an address is checked against all of them.
+ * Each chain costs one getCode before anything heavier, so this is about
+ * not stampeding the nodes rather than about the work itself.
+ */
+const CHAIN_SCAN_CONCURRENCY = 24;
 
 export function registerTrackCommand(bot: Telegraf) {
   bot.command("track", async (ctx: Context) => {
@@ -28,9 +36,13 @@ export function registerTrackCommand(bot: Telegraf) {
     let detected: DetectionResult[] | undefined;
 
     if (!chainKey) {
-      const perChain = await Promise.all(
-        CHAINS.map(async (c) => ({ chain: c.key, outcome: await detectOnChain(c.key, address) }))
-      );
+      // Bounded, for the same reason as /info: the chain table is discovered
+      // rather than typed and has passed two hundred, and a sweep of that
+      // many at once measures the queue rather than the nodes.
+      const perChain = await mapWithConcurrency(CHAINS, CHAIN_SCAN_CONCURRENCY, async (c) => ({
+        chain: c.key,
+        outcome: await detectOnChain(c.key, address),
+      }));
       const withHits = perChain.filter((p) => p.outcome.results.length > 0);
       if (withHits.length === 1) {
         chainKey = withHits[0].chain;

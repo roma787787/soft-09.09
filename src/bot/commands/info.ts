@@ -5,6 +5,14 @@ import { detectOnChain } from "../../protocols/registry";
 import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
+import { mapWithConcurrency } from "../../services/concurrency";
+
+/**
+ * Chains asked at once when an address is checked against all of them.
+ * Each chain costs one getCode before anything heavier, so this is about
+ * not stampeding the nodes rather than about the work itself.
+ */
+const CHAIN_SCAN_CONCURRENCY = 24;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -138,9 +146,14 @@ export function registerInfoCommand(bot: Telegraf) {
     }
 
     // --- no chain given: scan every configured chain ---
-    const perChain = await Promise.all(
-      CHAINS.map(async (c) => ({ chain: c.key, outcome: await detectOnChain(c.key, address) }))
-    );
+    // Bounded: the table is discovered rather than typed and has passed two
+    // hundred chains, and a sweep of that many at once stops measuring the
+    // nodes and starts measuring the queue - the ones at the back time out
+    // and the address is reported as absent from a chain nobody asked.
+    const perChain = await mapWithConcurrency(CHAINS, CHAIN_SCAN_CONCURRENCY, async (c) => ({
+      chain: c.key,
+      outcome: await detectOnChain(c.key, address),
+    }));
 
     const withHits = perChain.filter((p) => p.outcome.results.length > 0);
     if (withHits.length > 0) {

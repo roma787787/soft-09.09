@@ -4,6 +4,7 @@ import type { Chain } from "viem";
 import * as viemChains from "viem/chains";
 import { type ChainDef, CHAINS, getChainByChainId, registerChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
+import { mapWithConcurrency } from "./concurrency";
 
 /**
  * Hyperlane's chain metadata, read the same way the warp-route registry is:
@@ -379,37 +380,27 @@ async function runDiscovery(): Promise<DiscoveryReport> {
     candidates.push(platform);
   }
 
-  let next = 0;
-  const results: Array<{ platform: AssetPlatform; facts: ChainFacts; url: string } | RejectedChain> = [];
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = next++;
-      if (index >= candidates.length) return;
-      const platform = candidates[index];
-      const facts = await mergedFacts(platform.chainId!);
-      if (!facts) {
-        results[index] = {
+  const results = await mapWithConcurrency(candidates, PROBE_CONCURRENCY, async (platform) => {
+    const facts = await mergedFacts(platform.chainId!);
+    if (!facts) {
+      return {
+        label: platform.name,
+        chainId: platform.chainId!,
+        reason: "ни один реестр её не описывает",
+      } as RejectedChain;
+    }
+    if (facts.rpcUrls.length === 0) {
+      return { label: platform.name, chainId: platform.chainId!, reason: "нет публичных узлов" } as RejectedChain;
+    }
+    const url = await firstWorkingEndpoint(facts.rpcUrls, platform.chainId!);
+    return url
+      ? { platform, facts, url }
+      : ({
           label: platform.name,
           chainId: platform.chainId!,
-          reason: "ни один реестр её не описывает",
-        };
-        continue;
-      }
-      if (facts.rpcUrls.length === 0) {
-        results[index] = { label: platform.name, chainId: platform.chainId!, reason: "нет публичных узлов" };
-        continue;
-      }
-      const url = await firstWorkingEndpoint(facts.rpcUrls, platform.chainId!);
-      results[index] = url
-        ? { platform, facts, url }
-        : {
-            label: platform.name,
-            chainId: platform.chainId!,
-            reason: `ни один из ${Math.min(facts.rpcUrls.length, MAX_ENDPOINTS)} узлов не отозвался`,
-          };
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, candidates.length) }, worker));
+          reason: `ни один из ${Math.min(facts.rpcUrls.length, MAX_ENDPOINTS)} узлов не отозвался`,
+        } as RejectedChain);
+  });
 
   for (const result of results) {
     if (!result) continue;
