@@ -1813,8 +1813,42 @@ for (const c of CHAINS) {
   for (const alias of c.aliases) byAlias.set(alias.toLowerCase(), c);
 }
 
+const byChainId = new Map(CHAINS.map((c) => [c.viemChain.id, c]));
+
+/**
+ * Adds a chain to the table after startup.
+ *
+ * The table above is what a person maintains; this is for the chains the bot
+ * finds on its own, by asking the token API which networks it now lists and
+ * checking whether a node for each will answer. Reports are scoped to the
+ * chains a token actually lives on, so a wider table costs nothing per
+ * report - it only decides whether a chain the token IS on gets read or
+ * gets listed as one the bot does not check.
+ *
+ * Returns false, without changing anything, if the key or the chain id is
+ * already taken. Two entries for one chain id would have the report reading
+ * the same custody contract twice and adding it to itself.
+ */
+export function registerChain(chain: ChainDef): boolean {
+  if (byKey.has(chain.key) || byChainId.has(chain.viemChain.id)) return false;
+  CHAINS.push(chain);
+  byKey.set(chain.key, chain);
+  byChainId.set(chain.viemChain.id, chain);
+  // Aliases last, and never over an existing one: a discovered chain must
+  // not quietly take a name a person already types for another.
+  for (const alias of chain.aliases) {
+    const key = alias.toLowerCase();
+    if (!byAlias.has(key)) byAlias.set(key, chain);
+  }
+  return true;
+}
+
 export function getChain(key: string): ChainDef | undefined {
   return byKey.get(key);
+}
+
+export function getChainByChainId(chainId: number): ChainDef | undefined {
+  return byChainId.get(chainId);
 }
 
 export function resolveChain(input: string): ChainDef | undefined {

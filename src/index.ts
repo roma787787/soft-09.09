@@ -3,6 +3,7 @@ import { env } from "./config/env";
 import { CHAINS } from "./config/chains";
 import { createBot } from "./bot";
 import { startTracker } from "./services/tracker";
+import { startChainDiscovery } from "./services/chainDiscovery";
 import "./services/db"; // ensure schema is created on boot
 
 async function main() {
@@ -12,10 +13,14 @@ async function main() {
 
   const bot = createBot();
   const stopTracker = startTracker(bot);
+  // Not awaited: a slow or rate-limited token API would delay the bot
+  // answering at all, and what discovery adds is the long tail.
+  const stopDiscovery = startChainDiscovery();
 
   const shutdown = (signal: string) => {
     console.log(`[shutdown] received ${signal}`);
     stopTracker();
+    stopDiscovery();
     bot.stop(signal);
     process.exit(0);
   };

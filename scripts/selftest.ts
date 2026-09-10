@@ -13,11 +13,12 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
+import { factsFor, keyForSlug } from "../src/services/chainDiscovery";
 import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
-import { getChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
+import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
@@ -1572,6 +1573,71 @@ check(
   `${visibleLength(manyLines)} visible chars`
 );
 check("and stays valid HTML", tagsBalanced(manyLines));
+
+// --- chains the bot adds by itself -------------------------------------------
+//
+// Last in the file on purpose: these register a chain, and registering
+// mutates the table every check above reads.
+
+check("a slug becomes a stable key", keyForSlug("polygon-pos") === "polygonpos");
+check("and an empty one still becomes something", keyForSlug("---") === "chain");
+check(
+  "the key does not change between runs",
+  keyForSlug("Arbitrum-One") === keyForSlug("arbitrum-one")
+);
+
+// The registries that ship with the bot have to describe a chain before it
+// can be added: the token API says a network exists, not how to reach it.
+const soneium = factsFor(1868);
+check("a chain both registries know is described", (soneium?.rpcUrls.length ?? 0) > 0);
+check("with its native currency", soneium?.nativeCurrency.symbol === "ETH");
+check("a chain neither registry knows is not", factsFor(424_242_424_242) === undefined);
+// viem ships testnets beside mainnets, and this bot answers questions about
+// real liquidity: a testnet added under a name that looks like the real
+// chain would report balances in play money. 999999999 is Zora Sepolia.
+check("a testnet is not a chain to add", factsFor(999_999_999) === undefined);
+check(
+  "endpoints wanting a key are left out",
+  factsFor(1868)?.rpcUrls.every((u) => !/\$\{|API_KEY/i.test(u)) === true
+);
+
+const invented: Parameters<typeof registerChain>[0] = {
+  key: "selftestchain",
+  label: "Selftest Chain",
+  viemChain: {
+    id: 987_654_321,
+    name: "Selftest Chain",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: ["https://example.invalid"] } },
+  } as any,
+  rpcEnvVar: "SELFTESTCHAIN_RPC_URL",
+  defaultRpcUrls: ["https://example.invalid"],
+  explorerTxUrl: (h) => h,
+  explorerAddressUrl: (a) => a,
+  // "ethereum" is deliberately included: a discovered chain must not take a
+  // name a person already types for another one.
+  aliases: ["selftestchain", "ethereum"],
+};
+
+check("a new chain is registered", registerChain(invented) === true);
+check("and is then findable by key", getChain("selftestchain")?.label === "Selftest Chain");
+check("and by chain id", getChainByChainId(987_654_321)?.key === "selftestchain");
+check("registering it twice changes nothing", registerChain(invented) === false);
+check(
+  "a different key on the same chain id is refused",
+  registerChain({ ...invented, key: "selftestchaintwo", aliases: ["selftestchaintwo"] }) === false
+);
+check(
+  "the same key on a different chain id is refused",
+  registerChain({
+    ...invented,
+    viemChain: { ...invented.viemChain, id: 987_654_322 } as any,
+    aliases: [],
+  }) === false
+);
+// The alias guard: Ethereum was there first and must stay reachable.
+check("an existing alias is not taken over", resolveChain("ethereum")?.key === "ethereum");
+check("the chain's own alias does resolve", resolveChain("selftestchain")?.key === "selftestchain");
 
 // -----------------------------------------------------------------------------
 

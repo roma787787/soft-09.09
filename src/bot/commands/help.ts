@@ -28,6 +28,7 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
 <code>/diag</code> — проверить связь с нодами всех сетей.
+<code>/chains</code> — какие сети бот добавил сам и какие отверг.
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.
 
