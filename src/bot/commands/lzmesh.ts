@@ -6,6 +6,7 @@ import {
   findLayerZeroRegistryDeployments,
   probeLayerZeroToken,
   expandLayerZeroMesh,
+  describeSeed,
 } from "../../bridges/layerzero";
 
 function esc(s: string): string {
@@ -78,6 +79,15 @@ export function registerLzMeshCommand(bot: Telegraf) {
       lines.push("", "Зацепиться не за что: ни реестр, ни контракты токена не дали ни одного OFT.");
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
       return;
+    }
+
+    // What the seed itself answers, verbatim. A walk that finds nothing is
+    // not evidence about the token; it is evidence about this contract, and
+    // only the raw readings distinguish the two.
+    const readings = await describeSeed(seeds[0].chainKey, seeds[0].oapp);
+    lines.push("", `<b>Зацепка</b> (${esc(chainName(seeds[0].chainKey))})`);
+    for (const r of readings) {
+      lines.push(`  ${esc(r.name)}: <code>${esc(r.value)}</code>`);
     }
 
     const covered = new Set([...deployments.map((d) => d.chainKey), ...probed.map((r) => r.platform.chainKey!)]);

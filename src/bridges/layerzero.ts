@@ -597,3 +597,61 @@ async function symbolLooksRight(chainKey: string, token: Address, symbol: string
     return true;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Seed diagnostics
+// ---------------------------------------------------------------------------
+
+export interface SeedReading {
+  name: string;
+  value: string;
+}
+
+/**
+ * Reads, one by one, everything the peer walk depends on, and reports the raw
+ * answer of each call.
+ *
+ * Both walks came back with nothing for the same contract - neither peers()
+ * nor trustedRemoteLookup() - which no longer fits "wrong generation" and is
+ * past the point where guessing is useful. What a contract answers is a
+ * question with an exact answer, so this asks it and prints it verbatim
+ * rather than folding it into a conclusion.
+ */
+export async function describeSeed(chainKey: string, oapp: Address): Promise<SeedReading[]> {
+  const client = getClient(chainKey);
+  const out: SeedReading[] = [{ name: "адрес", value: oapp }];
+
+  const read = async (name: string, fn: () => Promise<unknown>) => {
+    try {
+      const value = await fn();
+      out.push({ name, value: value === undefined || value === null ? "пусто" : String(value) });
+    } catch (err) {
+      const text = err instanceof Error ? err.message.split("\n")[0] : String(err);
+      out.push({ name, value: `ошибка: ${text.slice(0, 90)}` });
+    }
+  };
+
+  await read("endpoint()", () =>
+    client.readContract({ address: oapp, abi: OAPP_ABI, functionName: "endpoint" })
+  );
+  await read("lzEndpoint()", () =>
+    client.readContract({ address: oapp, abi: OAPP_V1_ABI, functionName: "lzEndpoint" })
+  );
+  await read("token()", () =>
+    client.readContract({ address: oapp, abi: OAPP_ABI, functionName: "token" })
+  );
+  // BNB Chain, as a destination both generations number: eid 30102, V1 id 102.
+  await read("peers(30102)", () =>
+    client.readContract({ address: oapp, abi: PEERS_ABI, functionName: "peers", args: [30102] })
+  );
+  await read("trustedRemoteLookup(102)", () =>
+    client.readContract({
+      address: oapp,
+      abi: TRUSTED_REMOTE_ABI,
+      functionName: "trustedRemoteLookup",
+      args: [102],
+    })
+  );
+
+  return out;
+}
