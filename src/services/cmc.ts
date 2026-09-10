@@ -2,6 +2,7 @@ import type { Address } from "viem";
 import { isAddress } from "viem";
 import { env } from "../config/env";
 import { CHAINS } from "../config/chains";
+import { SVM_CHAINS } from "../config/svmChains";
 
 export class CmcNotConfiguredError extends Error {}
 export class CmcRequestError extends Error {}
@@ -14,10 +15,26 @@ export interface TokenPlatform {
   tokenAddress: Address;
 }
 
+/**
+ * A deployment on a chain that is not EVM, so its address is not hex and
+ * cannot be handed to any of the EVM code. Kept apart from `platforms` for
+ * exactly that reason: widening the EVM address type to fit base58 would put
+ * a cast at every call site to serve one kind of chain.
+ */
+export interface OtherPlatform {
+  /** Our key for the chain, when it is one the bot can read. */
+  chainKey?: string;
+  platformName: string;
+  /** Base58 on Solana, and whatever the chain uses elsewhere. */
+  tokenAddress: string;
+}
+
 export interface TokenInfo {
   symbol: string;
   name: string;
   platforms: TokenPlatform[];
+  /** Deployments on non-EVM chains, which have addresses of another shape. */
+  otherPlatforms: OtherPlatform[];
 }
 
 /**
@@ -36,6 +53,25 @@ function resolvePlatform(platformName: string, slug: string | undefined): string
     if (candidates.some((c) => names.includes(c))) return chain.key;
   }
   return undefined;
+}
+
+/** The same, for the chains the bot reads without viem. */
+function resolveSvmPlatform(platformName: string, slug: string | undefined): string | undefined {
+  const candidates = [normalise(platformName), slug ? normalise(slug) : ""].filter(Boolean);
+  for (const chain of SVM_CHAINS) {
+    const names = [chain.key, chain.label, ...(chain.cmcPlatformNames ?? [])].map(normalise);
+    if (candidates.some((c) => names.includes(c))) return chain.key;
+  }
+  return undefined;
+}
+
+/**
+ * Solana and its relatives use base58, not hex. Loose on purpose: this only
+ * decides whether an address is worth keeping, and every use of it is
+ * verified against the chain afterwards.
+ */
+function looksLikeBase58Address(value: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
 }
 
 /**
@@ -132,19 +168,37 @@ export function parseCmcInfoResponse(body: any, symbol: string): TokenInfo | und
   if (!coin) return undefined;
 
   const platforms: TokenPlatform[] = [];
+  const otherPlatforms: OtherPlatform[] = [];
   const seen = new Set<string>();
 
   const push = (rawAddress: unknown, platformName: unknown, slug?: unknown) => {
-    if (typeof rawAddress !== "string" || !isAddress(rawAddress, { strict: false })) return;
+    if (typeof rawAddress !== "string") return;
     const name = typeof platformName === "string" ? platformName : "неизвестная сеть";
     const key = `${normalise(name)}:${rawAddress.toLowerCase()}`;
     if (seen.has(key)) return;
-    seen.add(key);
-    platforms.push({
-      chainKey: resolvePlatform(name, typeof slug === "string" ? slug : undefined),
-      platformName: name,
-      tokenAddress: rawAddress as Address,
-    });
+    const slugText = typeof slug === "string" ? slug : undefined;
+
+    if (isAddress(rawAddress, { strict: false })) {
+      seen.add(key);
+      platforms.push({
+        chainKey: resolvePlatform(name, slugText),
+        platformName: name,
+        tokenAddress: rawAddress as Address,
+      });
+      return;
+    }
+
+    // Not hex, so not EVM. Dropping these outright is what hid every
+    // non-EVM deployment - Solana included - long before anything got a
+    // chance to look at it.
+    if (looksLikeBase58Address(rawAddress)) {
+      seen.add(key);
+      otherPlatforms.push({
+        chainKey: resolveSvmPlatform(name, slugText),
+        platformName: name,
+        tokenAddress: rawAddress,
+      });
+    }
   };
 
   // Newer responses carry every deployment in contract_address[];
@@ -162,5 +216,6 @@ export function parseCmcInfoResponse(body: any, symbol: string): TokenInfo | und
     symbol: String(coin.symbol ?? symbol).toUpperCase(),
     name: String(coin.name ?? symbol),
     platforms,
+    otherPlatforms,
   };
 }

@@ -54,7 +54,7 @@ export function registerSvmCommand(bot: Telegraf) {
     // Wormhole locks Solana-native tokens in an account derived from the
     // mint, so it needs the token's own mint rather than a route.
     const token = await lookupToken(symbol);
-    const solanaMint = token?.platforms.find((p) => /solana/i.test(p.platformName))?.tokenAddress;
+    const solanaMint = token?.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
     lines.push("", `<b>Wormhole</b>: программа <code>${esc(solanaTokenBridge() ?? "неизвестна")}</code>`);
 
     if (!solanaMint) {

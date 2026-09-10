@@ -230,6 +230,41 @@ check(
   /только описание сети/.test(explainMissing("described", 999998))
 );
 
+// A base58 mint is not an EVM address, and rejecting it as malformed is
+// what hid every non-EVM deployment before anything could look at it.
+const withSolana = parseCmcInfoResponse(
+  {
+    data: {
+      USDC: [
+        {
+          symbol: "USDC",
+          name: "USDC",
+          contract_address: [
+            { contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", platform: { name: "Ethereum" } },
+            {
+              contract_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+              platform: { name: "Solana" },
+            },
+            { contract_address: "не адрес вовсе", platform: { name: "Ерунда" } },
+          ],
+        },
+      ],
+    },
+  },
+  "USDC"
+);
+check("the EVM deployment is still read as before", withSolana?.platforms.length === 1);
+check("the Solana mint is kept rather than discarded", withSolana?.otherPlatforms.length === 1);
+check(
+  "and it is matched to the chain the bot reads",
+  withSolana?.otherPlatforms[0]?.chainKey === "solanamainnet"
+);
+check(
+  "the mint keeps its base58 form",
+  withSolana?.otherPlatforms[0]?.tokenAddress === "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+);
+check("nonsense is still thrown away", (withSolana?.platforms.length ?? 0) + (withSolana?.otherPlatforms.length ?? 0) === 2);
+
 // --- Solana routes -----------------------------------------------------------
 // The EVM rule "has collateralAddressOrDenom, therefore holds collateral" is
 // wrong on Sealevel: synthetic routes carry that field too and mint their
