@@ -56,9 +56,17 @@ export interface BalanceReport {
  * report, and named separately: a missing row must never read as "there is
  * no liquidity here", which is the opposite of the truth.
  */
-/** A widely bridged token has 100+ custodians; firing them all at once is
- * a reliable way to get rate-limited by every node at the same time. */
-const MAX_CONCURRENT_READS = 6;
+/**
+ * Concurrency is per chain, not per report.
+ *
+ * Rate limits belong to a node, so that is the thing worth pacing. A single
+ * global limit made every chain queue behind every other one: a widely
+ * bridged token across forty-two chains is three hundred reads, and taking
+ * them six at a time overall meant fifty sequential rounds while forty-one
+ * nodes sat idle. Per chain, the same work is a handful of rounds, and no
+ * node is asked for more at once than it was before.
+ */
+const MAX_CONCURRENT_PER_CHAIN = 4;
 
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
   const failuresByChain: Record<string, number> = {};
@@ -99,11 +107,22 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
       }
   };
 
-  const results: Array<CustodianBalance | undefined> = [];
-  for (let i = 0; i < custodians.length; i += MAX_CONCURRENT_READS) {
-    const batch = custodians.slice(i, i + MAX_CONCURRENT_READS);
-    results.push(...(await Promise.all(batch.map(readOne))));
+  const byChain = new Map<string, Custodian[]>();
+  for (const c of custodians) {
+    if (!byChain.has(c.chainKey)) byChain.set(c.chainKey, []);
+    byChain.get(c.chainKey)!.push(c);
   }
+
+  const perChain = await Promise.all(
+    [...byChain.values()].map(async (queue) => {
+      const out: Array<CustodianBalance | undefined> = [];
+      for (let i = 0; i < queue.length; i += MAX_CONCURRENT_PER_CHAIN) {
+        out.push(...(await Promise.all(queue.slice(i, i + MAX_CONCURRENT_PER_CHAIN).map((c) => readOne(c)))));
+      }
+      return out;
+    })
+  );
+  const results = perChain.flat();
 
   return {
     balances: results.filter((b): b is CustodianBalance => b !== undefined),
