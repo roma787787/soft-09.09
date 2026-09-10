@@ -18,10 +18,23 @@ export interface OtherChainDef {
   cmcPlatformNames?: string[];
 }
 
-const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; path?: string }> = {
-  starknet: { aliases: ["strk"], cmc: ["Starknet"], path: "contract" },
+const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; path?: string; rpcUrls?: string[] }> = {
+  // The registry's Starknet endpoint answers 410, discontinued. Its Radix one
+  // does not resolve at all. Both are listed first there and would otherwise
+  // be the only ones tried - so alternates go in front, and the registry's
+  // stay behind them in case they come back.
+  starknet: {
+    aliases: ["strk"],
+    cmc: ["Starknet"],
+    path: "contract",
+    rpcUrls: [
+      "https://starknet-mainnet.public.blastapi.io/rpc/v0_8",
+      "https://free-rpc.nethermind.io/mainnet-juno/",
+      "https://starknet.drpc.org",
+    ],
+  },
   paradex: { aliases: ["paradex"], path: "contract" },
-  radix: { aliases: ["xrd"], cmc: ["Radix"], path: "address" },
+  radix: { aliases: ["xrd"], cmc: ["Radix"], path: "address", rpcUrls: ["https://mainnet.radixdlt.com"] },
   aleo: { aliases: ["aleo"], cmc: ["Aleo"], path: "address" },
 };
 
@@ -33,7 +46,7 @@ export const OTHER_CHAINS: OtherChainDef[] = GENERATED_OTHER_CHAINS.map((chain) 
     label: chain.label,
     protocol: chain.protocol,
     rpcEnvVar: `${chain.key.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_RPC_URL`,
-    rpcUrls: chain.rpcUrls,
+    rpcUrls: [...(extra.rpcUrls ?? []), ...chain.rpcUrls],
     explorerAddressUrl: chain.explorer
       ? (a) => `${chain.explorer!.replace(/\/$/, "")}/${segment}/${a}`
       : (a) => a,

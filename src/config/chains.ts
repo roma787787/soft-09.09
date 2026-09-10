@@ -576,7 +576,10 @@ export const CHAINS: ChainDef[] = [
     // registry already gives its addresses in hex - so eth_call reaches it
     // and none of the non-EVM machinery is needed. Five warp routes for one
     // table entry.
-    defaultRpcUrls: ["https://api.trongrid.io/jsonrpc"],
+    // /diag reaches TronGrid on one call and the report's several fail:
+    // that is a rate limit, not an outage. A second endpoint costs nothing
+    // and a chain that drops out of a report reads as "no liquidity here".
+    defaultRpcUrls: ["https://api.trongrid.io/jsonrpc", "https://tron-rpc.publicnode.com"],
     explorerTxUrl: (h) => `https://tronscan.org/#/transaction/${h}`,
     explorerAddressUrl: (a) => `https://tronscan.org/#/address/${a}`,
     aliases: ["tron", "trx"],

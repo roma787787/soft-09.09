@@ -262,17 +262,30 @@ export async function probeOtherRoute(route: OtherRoute): Promise<OtherProbe[]> 
 
   const out: OtherProbe[] = [];
   const say = (step: string, ok: boolean, outcome: string) =>
-    out.push({ step, ok, outcome: outcome.replace(/\s+/g, " ").slice(0, 180) });
+    out.push({ step, ok, outcome: outcome.replace(/\s+/g, " ").slice(0, 160) });
+
+  // Every endpoint, not just the first. Two of these chains had a dead one
+  // listed ahead of a working one, and probing only the first would have
+  // reported the chain as broken while the reader was reaching it fine.
+  const hosts = chain.rpcUrls;
+  const hostName = (url: string) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  };
 
   if (route.protocol === "starknet") {
     if (!route.collateral) {
       say("залог", false, "маршрут не называет токен, который держит");
       return out;
     }
-    for (const name of ["balanceOf", "balance_of"]) {
+    for (const url of hosts) {
+      const name = "balanceOf";
       const selector = starknetSelector(name);
       try {
-        const response = await fetch(chain.rpcUrls[0], {
+        const response = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -287,38 +300,46 @@ export async function probeOtherRoute(route: OtherRoute): Promise<OtherProbe[]> 
           signal: AbortSignal.timeout(15_000),
         });
         const text = await response.text();
-        say(`${name} (${selector.slice(0, 12)}…)`, response.ok && !text.includes('"error"'), `HTTP ${response.status} ${text}`);
+        const ok = response.ok && !text.includes('"error"');
+        say(`${hostName(url)} ${name}`, ok, `HTTP ${response.status} ${text}`);
+        if (ok) break;
       } catch (err) {
-        say(name, false, err instanceof Error ? err.message : String(err));
+        say(hostName(url), false, err instanceof Error ? err.message : String(err));
       }
     }
     return out;
   }
 
   if (route.protocol === "radix") {
+    for (const url of hosts) {
     try {
-      const response = await fetch(`${chain.rpcUrls[0].replace(/\/$/, "")}/state/entity/details`, {
+      const response = await fetch(`${url.replace(/\/$/, "")}/state/entity/details`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ addresses: [route.address] }),
         signal: AbortSignal.timeout(15_000),
       });
       const text = await response.text();
-      say("state/entity/details", response.ok, `HTTP ${response.status} ${text}`);
+      say(`${hostName(url)} state/entity/details`, response.ok, `HTTP ${response.status} ${text}`);
+      if (response.ok) break;
     } catch (err) {
-      say("state/entity/details", false, err instanceof Error ? err.message : String(err));
+      say(hostName(url), false, err instanceof Error ? err.message : String(err));
+    }
     }
     return out;
   }
 
   if (route.protocol === "aleo") {
     const address = route.address.includes("/") ? route.address.split("/")[1] : route.address;
-    try {
-      const url = `${chain.rpcUrls[0].replace(/\/$/, "")}/mainnet/program/credits.aleo/mapping/account/${address}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-      say("credits.aleo/account", response.ok, `HTTP ${response.status} ${await response.text()}`);
-    } catch (err) {
-      say("credits.aleo/account", false, err instanceof Error ? err.message : String(err));
+    for (const base of hosts) {
+      try {
+        const url = `${base.replace(/\/$/, "")}/mainnet/program/credits.aleo/mapping/account/${address}`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+        say(`${hostName(base)} credits.aleo`, response.ok, `HTTP ${response.status} ${await response.text()}`);
+        if (response.ok) break;
+      } catch (err) {
+        say(hostName(base), false, err instanceof Error ? err.message : String(err));
+      }
     }
   }
 
