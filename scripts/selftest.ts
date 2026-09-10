@@ -20,6 +20,7 @@ import { getChain, resolveChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
+import { extractEids } from "../src/bridges/lzMetadata";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
@@ -139,6 +140,41 @@ check("USD\u20AE0 is recognised as USDT", matches("USD\u20AE0", "USDT"));
 check("plain USDT still matches itself", matches("USDT", "USDT"));
 check("a wrapped variant still matches", matches("WETH", "ETH"));
 check("an unrelated token does not", !matches("DAI", "USDT"));
+
+// --- LayerZero chain metadata ------------------------------------------------
+// A chain with no eid cannot be named to a contract, so the peer walk cannot
+// ask about it and every deployment there stays invisible. Asking the
+// endpoint directly misses the zk-rollups, where deterministic deployment
+// does not hold and the endpoint sits elsewhere; the published metadata
+// knows them regardless. The response shape is read defensively, so what
+// matters is that a wrong shape yields nothing rather than nonsense.
+
+check(
+  "an eid is matched by EVM chain id",
+  extractEids({ someName: { chainDetails: { nativeChainId: 8453 }, deployments: [{ eid: 30184 }] } }).get("base") ===
+    30184
+);
+check(
+  "a chain named the way we name it is matched too",
+  extractEids({ ethereum: { deployments: [{ eid: 30101 }] } }).get("ethereum") === 30101
+);
+// V2 eids are V1's ids plus 30000, so the number says which generation it
+// is - no need to trust a version label that may not be there.
+check(
+  "a V1 eid is not mistaken for a V2 one",
+  extractEids({ ethereum: { deployments: [{ eid: 101 }] } }).size === 0
+);
+check(
+  "a testnet eid is out of range and ignored",
+  extractEids({ ethereum: { deployments: [{ eid: 40161 }] } }).size === 0
+);
+check("a chain we do not support is skipped", extractEids({ solana: { deployments: [{ eid: 30168 }] } }).size === 0);
+check("a malformed payload yields nothing rather than throwing", extractEids("nonsense").size === 0);
+check("so does an empty one", extractEids({}).size === 0 && extractEids(null).size === 0);
+check(
+  "an entry with no usable eid is skipped, not guessed at",
+  extractEids({ ethereum: { chainDetails: { nativeChainId: 1 }, deployments: [] } }).size === 0
+);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

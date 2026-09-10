@@ -1,4 +1,5 @@
 import { getClient } from "./rpcClient";
+import { fetchLzEidsFromMetadata } from "../bridges/lzMetadata";
 import { CHAINS } from "../config/chains";
 import { LZ_ENDPOINT_V2, LZ_V2_EID_BY_CHAIN } from "../protocols/addresses/layerzero";
 import { HYPERLANE_MAILBOX_BY_CHAIN, HYPERLANE_DOMAIN_BY_CHAIN } from "../protocols/addresses/hyperlane";
@@ -109,6 +110,16 @@ async function cachedMap(
 }
 
 export async function getLzEidMap(): Promise<CachedMap> {
+  // Asking the endpoint itself is the most authoritative answer, but it only
+  // works where EndpointV2 sits at its usual address - zk-rollups compile
+  // differently, so deterministic deployment does not hold there and the
+  // endpoint is elsewhere. LayerZero's published metadata knows those chains
+  // regardless, and a chain with no eid is one the peer walk cannot ask
+  // about at all, which hides whatever is deployed there.
+  const fromMetadata = await fetchLzEidsFromMetadata();
+  const fallback: Record<string, number> = { ...LZ_V2_EID_BY_CHAIN };
+  for (const [chainKey, eid] of fromMetadata) fallback[chainKey] = eid;
+
   return cachedMap(
     "layerzero",
     async (chainKey) => {
@@ -119,7 +130,7 @@ export async function getLzEidMap(): Promise<CachedMap> {
         functionName: "eid",
       })) as number;
     },
-    LZ_V2_EID_BY_CHAIN
+    fallback
   );
 }
 
