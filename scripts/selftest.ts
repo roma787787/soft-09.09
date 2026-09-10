@@ -12,7 +12,13 @@ import { tryDecodeEvent } from "../src/services/eventCatalog";
 import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
-import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
+import {
+  parseAssetPlatforms,
+  parseCoinResponse,
+  pickCoin,
+  resolveEvmPlatform,
+  type AssetPlatform,
+} from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
 import {
   factsFor,
@@ -340,6 +346,22 @@ const unknownSlug = parseCoinResponse(
   gecko
 );
 check("an unknown slug is kept under its own name", unknownSlug?.platforms[0]?.platformName === "chain-launched-yesterday");
+
+// Losing the platform list to a rate limit must not lose the token with it.
+// Without the list a network is matched by the spelling of its slug, which
+// mostly works - and quietly does not for the ones whose slug resembles
+// nothing anyone would type, which is why Optimism's is spelled out.
+const noPlatformList = new Map<string, AssetPlatform>();
+check(
+  "a slug still resolves without the platform list",
+  parseCoinResponse(
+    { symbol: "x", name: "X", platforms: { "arbitrum-one": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" } },
+    "X",
+    noPlatformList
+  )?.platforms[0]?.chainKey === "arbitrum"
+);
+check("including Optimism, whose slug matches nothing", resolveEvmPlatform(undefined, "optimistic-ethereum") === "optimism");
+check("and a slug for nothing we carry still resolves to nothing", resolveEvmPlatform(undefined, "not-a-chain") === undefined);
 
 // Node wraps every transport failure as "fetch failed" and puts the
 // diagnosis in `cause`. Sixteen chains reported the wrapper and nothing

@@ -246,7 +246,12 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://optimistic.etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://optimistic.etherscan.io/address/${a}`,
     aliases: ["op", "optimism"],
-    platformNames: ["Optimism", "OP Mainnet"],
+    // "optimistic-ethereum" is CoinGecko's slug for this chain, and the one
+    // major network whose slug resembles nothing anyone would type. It only
+    // matters when the platform list is unavailable and networks are matched
+    // by spelling instead of by chain id, which is exactly when losing
+    // Optimism would be most expensive.
+    platformNames: ["Optimism", "OP Mainnet", "optimistic-ethereum"],
   },
   {
     key: "base",

@@ -30,8 +30,15 @@ const HYPERLANE_METADATA = loadHyperlaneMetadata();
 /** How long a node gets to prove it is a node. */
 const PROBE_TIMEOUT_MS = 6_000;
 
-/** Chains probed at once. Each probes its endpoints in parallel. */
-const PROBE_CONCURRENCY = 10;
+/**
+ * Chains probed at once, each probing its endpoints in parallel.
+ *
+ * Sized against the clock rather than politeness: a rescan asked for in
+ * chat has to finish inside Telegram's handler window, and a hundred and
+ * fifty candidates at a registry lookup plus six six-second probes each
+ * would not have, at ten.
+ */
+const PROBE_CONCURRENCY = 16;
 
 /** Endpoints tried per candidate chain, matching what the reader will use. */
 const MAX_ENDPOINTS = 6;

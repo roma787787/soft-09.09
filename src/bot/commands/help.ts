@@ -28,6 +28,7 @@ function helpText(): string {
 
 <b>Команды:</b>
 <code>/info &lt;тикер&gt;</code> — сколько токена лежит в хранилищах мостов по всем сетям. Пример: <code>/info ARB</code>
+<code>/liquidity &lt;тикер&gt;</code> — то же самое, второе имя команды.
 <code>/info &lt;тикер&gt; &lt;сеть&gt;</code> — то же, но только по одной сети. Пример: <code>/info USDC base</code>
 <code>/info &lt;адрес&gt; [сеть]</code> — определить, что за контракт по адресу: протокол, пиры, endpoint/mailbox, владелец.
 <code>/track &lt;адрес&gt; [сеть]</code> — включить оповещения о новых событиях этого контракта в этот чат.
@@ -42,6 +43,7 @@ function helpText(): string {
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
+<code>/lzprobe &lt;тикер&gt;</code> — сырой ответ реестра LayerZero по тикеру.
 
 Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
 

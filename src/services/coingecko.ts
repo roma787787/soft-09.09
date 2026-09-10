@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Address } from "viem";
 import { isAddress } from "viem";
 import { env } from "../config/env";
@@ -160,6 +162,50 @@ const PLATFORM_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 let platformCache: { at: number; byId: Map<string, AssetPlatform> } | undefined;
 let platformInFlight: Promise<Map<string, AssetPlatform>> | undefined;
 
+/**
+ * The platform list, kept on disk beside the database.
+ *
+ * In memory it would be lost to every restart, and the first lookup after a
+ * deploy is exactly when the free tier is most likely to refuse - the limit
+ * is shared by IP with every other bot on the hosting provider. Without the
+ * list a network is matched by the spelling of its slug rather than by its
+ * chain id, which mostly works and quietly does not for the ones whose slug
+ * is nothing like their name: CoinGecko files Optimism under
+ * "optimistic-ethereum".
+ *
+ * A file that cannot be read or written is not an error worth reporting
+ * twice - the list is a convenience, and the network is still there.
+ */
+function platformCachePath(): string {
+  return path.join(path.dirname(env.dbPath), "coingecko-platforms.json");
+}
+
+function readPlatformCache(): Map<string, AssetPlatform> | undefined {
+  try {
+    const raw = fs.readFileSync(platformCachePath(), "utf8");
+    const byId = parseAssetPlatforms(JSON.parse(raw));
+    return byId.size > 0 ? byId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePlatformCache(byId: Map<string, AssetPlatform>): void {
+  try {
+    // Written back in the API's own shape, so the file can be replaced with
+    // a hand-saved response and still be read.
+    const rows = [...byId.values()].map((p) => ({
+      id: p.id,
+      chain_identifier: p.chainId ?? null,
+      name: p.name,
+    }));
+    fs.mkdirSync(path.dirname(platformCachePath()), { recursive: true });
+    fs.writeFileSync(platformCachePath(), JSON.stringify(rows), "utf8");
+  } catch {
+    // Read-only disk, no volume mounted: the bot works, it just re-fetches.
+  }
+}
+
 function apiUrl(path: string): URL {
   return new URL(path, env.coingeckoApiBase);
 }
@@ -199,10 +245,19 @@ async function get(path: string, params: Record<string, string> = {}): Promise<u
     );
   }
   if (response.status === 401 || response.status === 403) {
+    // Only blame the key when there is one. A 403 with no key configured is
+    // something between the bot and CoinGecko - a proxy, a firewall, a
+    // blocked datacentre range - and sending the reader to check a variable
+    // they never set is a wasted evening.
     throw new TokenSourceRequestError(
-      `CoinGecko: ключ не принят (HTTP ${response.status}). Проверьте COINGECKO_API_KEY, ` +
-        `и что COINGECKO_API_BASE соответствует тарифу: api.coingecko.com для Demo, ` +
-        `pro-api.coingecko.com для Pro.`
+      env.coingeckoApiKey
+        ? `CoinGecko: ключ не принят (HTTP ${response.status}). Проверьте COINGECKO_API_KEY, ` +
+          `и что COINGECKO_API_BASE соответствует тарифу: api.coingecko.com для Demo, ` +
+          `pro-api.coingecko.com для Pro — заголовок выбирается по адресу, и от неверной пары ` +
+          `ключ просто игнорируется.`
+        : `CoinGecko: доступ закрыт (HTTP ${response.status}). Ключ не задан, так что дело не в нём — ` +
+          `запрос режет что-то по дороге. Проверьте, что хостинг выпускает трафик на ` +
+          `${env.coingeckoApiBase}.`
     );
   }
   if (!response.ok) {
@@ -247,13 +302,23 @@ export async function assetPlatforms(): Promise<Map<string, AssetPlatform>> {
   platformInFlight = (async () => {
     try {
       const byId = parseAssetPlatforms(await get("/api/v3/asset_platforms"));
-      if (byId.size > 0) platformCache = { at: Date.now(), byId };
+      if (byId.size > 0) {
+        platformCache = { at: Date.now(), byId };
+        writePlatformCache(byId);
+      }
       return platformCache?.byId ?? byId;
     } catch (err) {
       // A stale list beats no list: the platform names barely move, and
       // failing the whole lookup because this one call was rate-limited
       // would report a token as unbridged.
       if (platformCache) return platformCache.byId;
+      const saved = readPlatformCache();
+      if (saved) {
+        // Not stamped with now: this is last deploy's answer, and it should
+        // still be replaced by a fresh one at the first opportunity.
+        platformCache = { at: 0, byId: saved };
+        return saved;
+      }
       throw err;
     } finally {
       platformInFlight = undefined;
@@ -264,7 +329,18 @@ export async function assetPlatforms(): Promise<Map<string, AssetPlatform>> {
 
 /* ------------------------------------------------------------------ */
 
-const coinIdBySymbol = new Map<string, string | undefined>();
+/**
+ * Ticker to coin id.
+ *
+ * A hit is kept for the life of the process - a coin's id never changes.
+ * A miss is kept only briefly: tickers get listed, and a permanent "not
+ * found" would keep the bot answering "нет такого тикера" about a token
+ * CoinGecko has known about for hours, until someone thought to redeploy.
+ */
+const COIN_ID_MISS_TTL_MS = 10 * 60 * 1000;
+
+const coinIdHits = new Map<string, string>();
+const coinIdMisses = new Map<string, number>();
 
 /**
  * Picks the coin a ticker means.
@@ -301,9 +377,19 @@ export function pickCoin(body: unknown, symbol: string): string | undefined {
 
 async function coinIdFor(symbol: string): Promise<string | undefined> {
   const key = symbol.toUpperCase();
-  if (coinIdBySymbol.has(key)) return coinIdBySymbol.get(key);
+  const hit = coinIdHits.get(key);
+  if (hit) return hit;
+
+  const missedAt = coinIdMisses.get(key);
+  if (missedAt !== undefined && Date.now() - missedAt < COIN_ID_MISS_TTL_MS) return undefined;
+
   const id = pickCoin(await get("/api/v3/search", { query: key }), key);
-  coinIdBySymbol.set(key, id);
+  if (id) {
+    coinIdHits.set(key, id);
+    coinIdMisses.delete(key);
+  } else {
+    coinIdMisses.set(key, Date.now());
+  }
   return id;
 }
 
@@ -375,8 +461,16 @@ export async function lookupToken(symbol: string): Promise<TokenInfo | undefined
   // An unknown ticker is a normal answer, not a failure.
   if (!id) return undefined;
 
+  // The platform list is a convenience, not a prerequisite. Losing it to a
+  // rate limit must not lose the token as well: without it a network is
+  // resolved by the slug's own spelling instead of by its chain id, which
+  // is worse but is not nothing - and reporting a bridged token as
+  // unbridged because a second request was throttled would be a lie.
   const [platforms, coin] = await Promise.all([
-    assetPlatforms(),
+    assetPlatforms().catch((err) => {
+      console.error("[coingecko] список сетей недоступен, сопоставляем по названиям:", err);
+      return new Map<string, AssetPlatform>();
+    }),
     get(`/api/v3/coins/${encodeURIComponent(id)}`, {
       localization: "false",
       tickers: "false",
