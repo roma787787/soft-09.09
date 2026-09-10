@@ -44,6 +44,7 @@ import {
 } from "viem/chains";
 import type { Chain } from "viem";
 import { SVM_CHAINS, resolveSvmChain } from "./svmChains";
+import { COSMOS_CHAINS, resolveCosmosChain } from "./cosmosChains";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -602,6 +603,9 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
   const svm = SVM_CHAINS.find((c) => c.key === chainKey);
   if (svm) return { label: svm.label, explorerAddressUrl: svm.explorerAddressUrl };
 
+  const cosmos = COSMOS_CHAINS.find((c) => c.key === chainKey);
+  if (cosmos) return { label: cosmos.label, explorerAddressUrl: cosmos.explorerAddressUrl };
+
   return undefined;
 }
 
@@ -620,6 +624,9 @@ export function resolveAnyChain(name: string): { key: string; label: string } | 
 
   const svm = resolveSvmChain(name);
   if (svm) return { key: svm.key, label: svm.label };
+
+  const cosmos = resolveCosmosChain(name);
+  if (cosmos) return { key: cosmos.key, label: cosmos.label };
 
   return undefined;
 }

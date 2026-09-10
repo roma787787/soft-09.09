@@ -26,6 +26,8 @@ import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { SVM_CHAINS } from "../src/config/svmChains";
+import { COSMOS_CHAINS } from "../src/config/cosmosChains";
+import { findCosmosRoutes } from "../src/bridges/cosmos";
 import {
   findSolanaHyperlaneRoutes,
   hyperlaneEscrowCandidates,
@@ -329,6 +331,26 @@ check(
   "and its custody account can be derived from a mint",
   wormholeCustodyCandidates("DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263").length > 0
 );
+
+// --- Cosmos routes -----------------------------------------------------------
+// A CosmWasm warp route is a contract with an ordinary address holding an
+// ordinary bank balance, so nothing here is derived and nothing can be
+// derived wrongly. The routes addressed by a hex router id belong to
+// Hyperlane's native module, whose collateral sits in an account this code
+// cannot derive - those are counted, not guessed at.
+
+const cosmosKeys = COSMOS_CHAINS.map((c) => c.key);
+check("the Cosmos table is populated", cosmosKeys.length >= 8, cosmosKeys.join(", "));
+check("every chain has a REST endpoint", COSMOS_CHAINS.every((c) => c.restUrls.length > 0));
+check("a Cosmos chain resolves by name", resolveAnyChain("neutron")?.key === "neutron");
+check("and by ticker-ish alias", resolveAnyChain("inj")?.key === "injective");
+check("Cosmos chains are not EVM chains", getChain("neutron") === undefined);
+
+const cosmosRoutes = findCosmosRoutes("INJ");
+check("a Cosmos collateral route is found", cosmosRoutes.length > 0, `${cosmosRoutes.length}`);
+check("its address is bech32, not a hex router id", cosmosRoutes.every((r) => /^[a-z]+1/.test(r.address)));
+check("a native route falls back to the chain's own denom", cosmosRoutes.every((r) => r.denom.length > 0));
+check("a ticker with no Cosmos route yields nothing", findCosmosRoutes("QWERTYNOPE").length === 0);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

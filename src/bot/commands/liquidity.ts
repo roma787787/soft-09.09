@@ -1,12 +1,14 @@
 import type { Telegraf, Context } from "telegraf";
 import { getChain, resolveChain, resolveAnyChain, chainMeta } from "../../config/chains";
 import { getSvmChain } from "../../config/svmChains";
+import { getCosmosChain } from "../../config/cosmosChains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians } from "../../bridges/stargate";
 import { findSvmBalances } from "../../bridges/svm";
+import { findCosmosBalances } from "../../bridges/cosmos";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -251,8 +253,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // for the same reason the LayerZero registry is - a token bridged only to
   // Solana would otherwise be reported as not bridged at all.
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
-  const svmAll = !chainFilter || !!getSvmChain(chainFilter) ? await findSvmBalances(symbol, solanaMint) : [];
-  const solanaRows = chainFilter ? svmAll.filter((r) => r.chainKey === chainFilter) : svmAll;
+  const [svmAll, cosmosAll] = await Promise.all([
+    !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : [],
+    !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : [],
+  ]);
+  const nonEvmAll = [...svmAll, ...cosmosAll];
+  const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
   const solanaHasSomething = solanaRows.length > 0;
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
@@ -296,7 +302,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   // Solana now counts as a chain the bot checks, so it belongs with the
   // supported ones rather than in the "not checked" footer.
-  const solanaLabel = [...new Set(svmAll.map((r) => chainMeta(r.chainKey)?.label ?? r.chainKey))];
+  const solanaLabel = [...new Set(nonEvmAll.map((r) => chainMeta(r.chainKey)?.label ?? r.chainKey))];
   const supportedChains = [
     ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
   ];

@@ -48,6 +48,7 @@ npm run typecheck
 npm run sync:across       # обновить адреса Across из публикуемых деплоев (нужна сеть)
 npm run sync:stargate     # то же для пулов Stargate
 npm run sync:svm          # список сетей на VM Solana из реестра Hyperlane
+npm run sync:cosmos       # то же для сетей Cosmos
 ```
 
 `check:addresses` стоит запускать после любой правки справочника адресов:
@@ -116,6 +117,11 @@ Berachain, Blast, Celo, Scroll, Mantle, Sonic, Gnosis, Sei, Taiko, Fraxtal,
 Soneium, Zircuit, Swell, Lisk, BOB, Plume, Superseed, Katana, HyperEVM,
 Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
 Aurora, Ronin, Boba (список в `src/config/chains.ts`).
+
+Плюс сети **Cosmos** — Celestia, Injective, Neutron, Osmosis, Stride, Terra
+Classic, Cosmos Hub, Noble, Dymension, KYVE, MilkyWay. Там ничего выводить
+не нужно: маршрут это контракт с обычным адресом, а залог — обычный
+банковский баланс, один GET по REST.
 
 Плюс сети на **VM Solana** — Solana, Eclipse, SOON, Sonic SVM, svmBNB,
 Solaxy, Nara. Они не EVM, поэтому живут в отдельной таблице и читаются
