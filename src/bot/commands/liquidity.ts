@@ -1,7 +1,9 @@
 import type { Telegraf, Context } from "telegraf";
 import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
-import { resolveCustodians, dedupeCustodians } from "../../bridges";
+import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
+import { findVaultCustodians } from "../../bridges/vaults";
+import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
   findLayerZeroRegistryDeployments,
@@ -76,6 +78,15 @@ export async function resolveRegistryDeployments(
   return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters };
 }
 
+function countByProtocol(custodians: Custodian[]): Partial<Record<BridgeProtocol, number>> {
+  const counts: Partial<Record<BridgeProtocol, number>> = {};
+  for (const p of BRIDGE_ORDER) {
+    const n = custodians.filter((c) => c.protocol === p).length;
+    if (n > 0) counts[p] = n;
+  }
+  return counts;
+}
+
 export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
   // Trimmed to a plausible ticker length: the "not found" reply quotes what
   // was asked for, and a 4000-character argument would push that reply past
@@ -126,7 +137,12 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     }
   }
 
-  const all = dedupeCustodians([...custodians, ...found]);
+  // Shared vaults answer for any token at all - one contract per chain holds
+  // everything that bridge carries - so they are asked regardless of whether
+  // a registry happens to list this ticker.
+  const vaults = await findVaultCustodians(tokenByChainFrom(token.platforms));
+
+  const all = dedupeCustodians([...custodians, ...found, ...vaults]);
 
   if (all.length === 0) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
@@ -167,9 +183,7 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     scope: {
       supportedChains,
       unsupportedPlatforms,
-      wormhole: all.filter((c) => c.protocol === "wormhole").length,
-      hyperlane: all.filter((c) => c.protocol === "hyperlane").length,
-      layerzero: all.filter((c) => c.protocol === "layerzero").length,
+      byProtocol: countByProtocol(all),
     },
   });
 }

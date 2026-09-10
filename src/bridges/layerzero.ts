@@ -277,6 +277,15 @@ export function findLayerZeroCustodians(
   return found;
 }
 
+/**
+ * How many tickers LayerZero's registry currently covers, or undefined when
+ * it has not been loaded yet. Deliberately does not trigger a fetch: a
+ * coverage report should describe what the bot has, not go and get it.
+ */
+export function layerZeroRegistrySize(): number | undefined {
+  return registryCache ? Object.keys(registryCache.data).length : undefined;
+}
+
 /** How many tickers the manual config covers, for the /sources report. */
 export function layerZeroConfigSize(): number {
   return Object.keys(loadConfig()).length;

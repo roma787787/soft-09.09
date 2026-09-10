@@ -25,6 +25,7 @@ import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
+import { vaultAddressesByChain } from "../src/bridges/vaults";
 
 let failures = 0;
 
@@ -71,6 +72,26 @@ check("every derived address survives validation", Object.values(portalMap).ever
 check(
   "chains Wormhole never deployed to are absent rather than guessed",
   portalMap.linea === undefined && portalMap.blast === undefined && portalMap.mode === undefined
+);
+
+// --- shared vaults -----------------------------------------------------------
+// Across keys its deployments by EVM chain id; we key chains by our own
+// names. If that mapping resolves to nothing the table is silently empty and
+// every Across row vanishes from every report - indistinguishable, to the
+// reader, from the bridge holding no liquidity.
+
+const acrossByChain = vaultAddressesByChain().across ?? {};
+check("the Across table maps onto our chains", Object.keys(acrossByChain).length >= 10, `${Object.keys(acrossByChain).length} chains`);
+check("every Across address survives validation", Object.values(acrossByChain).every((a) => validateAddress(a).length === 0));
+// These three are the chains Wormhole never deployed to, so before Across
+// they could only ever show a Hyperlane row.
+check(
+  "it reaches the chains Wormhole does not",
+  !!acrossByChain.linea && !!acrossByChain.mode && !!acrossByChain.blast
+);
+check(
+  "and does not invent a chain we have no RPC for",
+  Object.keys(acrossByChain).every((key) => getChain(key) !== undefined)
 );
 
 // --- tracker block range arithmetic -----------------------------------------
@@ -541,13 +562,14 @@ const scoped = renderLiquidityReport({
   scope: {
     supportedChains: ["Ethereum", "BNB Chain"],
     unsupportedPlatforms: ["TON"],
-    wormhole: 2,
-    hyperlane: 0,
-    layerzero: 0,
+    byProtocol: { wormhole: 2, hyperlane: 0, layerzero: 0 },
   },
 });
 check("the report breaks down where its contracts came from", scoped.includes("Откуда взялись контракты"));
-check("it names the counts per bridge", scoped.includes("Hyperlane — 0") && scoped.includes("Wormhole — 2"));
+check("it names the counts per bridge", scoped.includes("Wormhole — 2 сети"));
+// A bridge that contributed nothing is left out rather than listed as zero:
+// with five bridges, a line of zeroes buries the one number that matters.
+check("and leaves out the bridges that contributed nothing", !scoped.includes("Hyperlane — 0"));
 check("it names the networks CoinMarketCap listed", scoped.includes("Ethereum, BNB Chain"));
 check("it names networks outside the bot's coverage", scoped.includes("TON"));
 check("the scoped report still fits the message limit", scoped.length < 4096);
@@ -612,7 +634,7 @@ function scopedWith(hyperlane: number, layerzero: number, omitted = 0): string {
     checkedCount: 10,
     failuresByChain: {},
     attemptsByChain: {},
-    scope: { supportedChains: [], unsupportedPlatforms: [], wormhole: 1, hyperlane, layerzero },
+    scope: { supportedChains: [], unsupportedPlatforms: [], byProtocol: { wormhole: 1, hyperlane, layerzero } },
   });
 }
 check("one route reads as одна", scopedWith(1, 1).includes("Hyperlane — 1 маршрут,"));
@@ -748,9 +770,7 @@ const runaway = renderLiquidityReport({
   scope: {
     supportedChains: Array.from({ length: 200 }, (_, i) => `Сеть номер ${i}`),
     unsupportedPlatforms: Array.from({ length: 200 }, (_, i) => `Платформа номер ${i}`),
-    wormhole: 0,
-    hyperlane: 0,
-    layerzero: 0,
+    byProtocol: { wormhole: 0, hyperlane: 0, layerzero: 0 },
   },
 });
 check("a runaway report still fits Telegram's limit", runaway.length <= 4096, `${runaway.length} chars`);
@@ -788,9 +808,7 @@ const manyLines = renderLiquidityReport({
   scope: {
     supportedChains: Array.from({ length: 300 }, (_, i) => `Длинное имя сети номер ${i}`),
     unsupportedPlatforms: [],
-    wormhole: 0,
-    hyperlane: 0,
-    layerzero: 0,
+    byProtocol: { wormhole: 0, hyperlane: 0, layerzero: 0 },
   },
 });
 check("a long multi-line report is capped too", manyLines.length <= 4096, `${manyLines.length} chars`);

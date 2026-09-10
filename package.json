@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "check:addresses": "tsx scripts/check-addresses.ts",
-    "selftest": "tsx scripts/selftest.ts"
+    "selftest": "tsx scripts/selftest.ts",
+    "sync:across": "tsx scripts/sync-across.ts"
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.125",

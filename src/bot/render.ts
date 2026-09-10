@@ -1,5 +1,11 @@
 import { getChain } from "../config/chains";
-import { BRIDGE_LABELS, type BridgeProtocol } from "../bridges/types";
+import {
+  BRIDGE_LABELS,
+  BRIDGE_ORDER,
+  BRIDGE_SHORT_LABELS,
+  BRIDGE_UNITS,
+  type BridgeProtocol,
+} from "../bridges/types";
 import { formatAmount, type CustodianBalance } from "../services/balances";
 
 /** Telegram rejects anything past 4096; leave room for the closing notes. */
@@ -86,9 +92,8 @@ export interface ReportInput {
     supportedChains: string[];
     /** Networks CoinMarketCap listed that this bot does not cover. */
     unsupportedPlatforms: string[];
-    wormhole: number;
-    hyperlane: number;
-    layerzero: number;
+    /** How many contracts each bridge contributed. */
+    byProtocol: Partial<Record<BridgeProtocol, number>>;
   };
 }
 
@@ -100,14 +105,14 @@ export interface ReportInput {
  */
 function scopeLines(scope: ReportInput["scope"]): string[] {
   if (!scope) return [];
-  const parts = [
-    `Wormhole — ${scope.wormhole} ${plural(scope.wormhole, "сеть", "сети", "сетей")}`,
-    `Hyperlane — ${scope.hyperlane} ${plural(scope.hyperlane, "маршрут", "маршрута", "маршрутов")}`,
-    // Adapters come from LayerZero's registry now, not from the config; the
-    // old wording said otherwise and was simply untrue.
-    `LayerZero — ${scope.layerzero} ${plural(scope.layerzero, "адаптер", "адаптера", "адаптеров")}`,
-  ];
-  const lines = [`Откуда взялись контракты: ${parts.join(", ")}.`];
+  // Each bridge names its own unit: a warp route, an adapter and a shared
+  // vault are different things, and the difference is what explains why one
+  // bridge contributes twelve rows and another contributes one.
+  const parts = BRIDGE_ORDER.filter((p) => (scope.byProtocol[p] ?? 0) > 0).map((p) => {
+    const n = scope.byProtocol[p] ?? 0;
+    return `${BRIDGE_SHORT_LABELS[p]} — ${n} ${plural(n, ...BRIDGE_UNITS[p])}`;
+  });
+  const lines = parts.length > 0 ? [`Откуда взялись контракты: ${parts.join(", ")}.`] : [];
 
   if (scope.supportedChains.length > 0) {
     lines.push(`CoinMarketCap знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);

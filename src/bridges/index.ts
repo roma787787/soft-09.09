@@ -26,11 +26,16 @@ function findWormholeCustodians(tokenByChain: Map<string, Address>): Custodian[]
  * can name a chain CoinMarketCap did not list; those are kept, since the
  * question is where liquidity sits, not what CMC happens to know.
  */
-export function resolveCustodians(symbol: string, platforms: TokenPlatform[]): Custodian[] {
+export function tokenByChainFrom(platforms: TokenPlatform[]): Map<string, Address> {
   const tokenByChain = new Map<string, Address>();
   for (const p of platforms) {
     if (p.chainKey && !tokenByChain.has(p.chainKey)) tokenByChain.set(p.chainKey, p.tokenAddress);
   }
+  return tokenByChain;
+}
+
+export function resolveCustodians(symbol: string, platforms: TokenPlatform[]): Custodian[] {
+  const tokenByChain = tokenByChainFrom(platforms);
 
   const custodians = [
     ...findLayerZeroCustodians(symbol, tokenByChain),

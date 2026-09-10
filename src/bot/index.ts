@@ -7,6 +7,7 @@ import { registerUntrackCommand } from "./commands/untrack";
 import { registerListCommand } from "./commands/list";
 import { registerDiagCommand } from "./commands/diag";
 import { registerLiquidityCommand } from "./commands/liquidity";
+import { registerSourcesCommand } from "./commands/sources";
 import { registerLzProbeCommand } from "./commands/lzprobe";
 
 export function createBot(): Telegraf {
@@ -19,6 +20,7 @@ export function createBot(): Telegraf {
   registerListCommand(bot);
   registerDiagCommand(bot);
   registerLiquidityCommand(bot);
+  registerSourcesCommand(bot);
   registerLzProbeCommand(bot);
 
   bot.catch((err, ctx) => {
