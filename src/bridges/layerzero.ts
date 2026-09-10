@@ -92,7 +92,7 @@ export async function probeLayerZeroToken(
  * the report showed nothing and meant "not bridged here", which for the
  * older half of LayerZero was simply wrong.
  */
-async function layerZeroVersionOf(
+export async function layerZeroVersionOf(
   chainKey: string,
   address: Address
 ): Promise<"v1" | "v2" | undefined> {
@@ -367,6 +367,33 @@ const PEERS_ABI = [
 /** Peer lookups per round against a single node. */
 const PEER_QUERY_BATCH = 8;
 
+/**
+ * V1's counterpart to peers(). The stored value is
+ * abi.encodePacked(remoteAddress, localAddress), so the remote OApp is the
+ * first twenty bytes - there is no decoding to do, only slicing.
+ */
+const TRUSTED_REMOTE_ABI = [
+  {
+    type: "function",
+    name: "trustedRemoteLookup",
+    stateMutability: "view",
+    inputs: [{ type: "uint16" }],
+    outputs: [{ type: "bytes" }],
+  },
+] as const;
+
+/**
+ * V2 numbered its chains by adding 30000 to V1's numbers, so the eids the
+ * bot already reads from each live endpoint give V1's chain ids for free.
+ * Deriving beats writing them down: the eids come from the chains
+ * themselves, so they cannot go stale, and a chain the bot cannot reach
+ * simply has no id rather than a remembered one.
+ */
+function v1ChainIdFromEid(eid: number): number | undefined {
+  const id = eid - 30000;
+  return id > 0 && id < 1000 ? id : undefined;
+}
+
 const ERC20_SYMBOL_ABI = [
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
 ] as const;
@@ -384,7 +411,7 @@ export interface MeshResult {
    * not to be readable - three different problems with three different
    * fixes.
    */
-  steps: { eids: number; asked: number; peers: number; probed: number };
+  steps: { eids: number; asked: number; peers: number; probed: number; version?: "v1" | "v2" };
 }
 
 /**
@@ -421,8 +448,16 @@ export async function expandLayerZeroMesh(
 
   const peerByChain = new Map<string, Address>();
   let asked = 0;
+  let seedVersion: "v1" | "v2" | undefined;
+
   for (const seed of useful) {
     const client = getClient(seed.chainKey);
+    // Which function to ask depends on the generation, and asking the wrong
+    // one returns nothing at all - which is how an entire V1 deployment came
+    // back as "no peers" and was read as "not bridged anywhere else".
+    const version = (await layerZeroVersionOf(seed.chainKey, seed.oapp)) ?? "v2";
+    seedVersion ??= version;
+
     const targets = [...eidMap.chainKeyToId.entries()].filter(
       ([chainKey]) => chainKey !== seed.chainKey && !peerByChain.has(chainKey) && !known.has(chainKey)
     );
@@ -434,18 +469,11 @@ export async function expandLayerZeroMesh(
     for (let i = 0; i < targets.length; i += PEER_QUERY_BATCH) {
       await Promise.all(
         targets.slice(i, i + PEER_QUERY_BATCH).map(async ([chainKey, eid]) => {
-          try {
-            const raw = (await client.readContract({
-              address: seed.oapp,
-              abi: PEERS_ABI,
-              functionName: "peers",
-              args: [eid],
-            })) as string;
-            if (!isEvmAddressBytes32(raw)) return;
-            peerByChain.set(chainKey, bytes32ToAddress(raw) as Address);
-          } catch {
-            // This chain is simply not a destination for this deployment.
-          }
+          const peer =
+            version === "v2"
+              ? await readV2Peer(client, seed.oapp, eid)
+              : await readV1Peer(client, seed.oapp, eid);
+          if (peer) peerByChain.set(chainKey, peer);
         })
       );
     }
@@ -486,8 +514,65 @@ export async function expandLayerZeroMesh(
     custodians,
     nativeChains,
     reached,
-    steps: { eids: eidMap.chainKeyToId.size, asked, peers: peerByChain.size, probed: reached.length },
+    steps: {
+      eids: eidMap.chainKeyToId.size,
+      asked,
+      peers: peerByChain.size,
+      probed: reached.length,
+      version: seedVersion,
+    },
   };
+}
+
+/** V2: peers(eid) returns the remote OApp left-padded into a bytes32. */
+async function readV2Peer(
+  client: ReturnType<typeof getClient>,
+  oapp: Address,
+  eid: number
+): Promise<Address | undefined> {
+  try {
+    const raw = (await client.readContract({
+      address: oapp,
+      abi: PEERS_ABI,
+      functionName: "peers",
+      args: [eid],
+    })) as string;
+    return isEvmAddressBytes32(raw) ? (bytes32ToAddress(raw) as Address) : undefined;
+  } catch {
+    // This chain is simply not a destination for this deployment.
+    return undefined;
+  }
+}
+
+/**
+ * V1: trustedRemoteLookup(chainId) returns the remote and local addresses
+ * packed together, remote first. Anything shorter than an address means the
+ * route was never configured.
+ */
+async function readV1Peer(
+  client: ReturnType<typeof getClient>,
+  oapp: Address,
+  eid: number
+): Promise<Address | undefined> {
+  const chainId = v1ChainIdFromEid(eid);
+  if (chainId === undefined) return undefined;
+
+  try {
+    const raw = (await client.readContract({
+      address: oapp,
+      abi: TRUSTED_REMOTE_ABI,
+      functionName: "trustedRemoteLookup",
+      args: [chainId],
+    })) as string;
+
+    const hex = raw.replace(/^0x/, "");
+    if (hex.length < 40) return undefined;
+
+    const remote = `0x${hex.slice(0, 40)}` as Address;
+    return /^0x0+$/i.test(remote) ? undefined : remote;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -83,10 +83,10 @@ export function registerLzMeshCommand(bot: Telegraf) {
     const covered = new Set([...deployments.map((d) => d.chainKey), ...probed.map((r) => r.platform.chainKey!)]);
     const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
 
-    const { eids, asked, peers, probed: recognised } = mesh.steps;
+    const { eids, asked, peers, probed: recognised, version } = mesh.steps;
     lines.push(
       "",
-      "<b>Сеть пиров</b>",
+      `<b>Сеть пиров</b> (зацепка ${version === "v1" ? "LayerZero V1" : "LayerZero V2"})`,
       `  сетей с известным eid: ${eids}`,
       `  спрошено у контракта: ${asked}`,
       `  пиров вернулось: ${peers}`,
@@ -106,7 +106,7 @@ export function registerLzMeshCommand(bot: Telegraf) {
         eids === 0
           ? "Ни у одной сети не удалось выяснить eid — обход не мог начаться."
           : peers === 0
-            ? "Контракт не назвал ни одного пира: либо это не V2 OApp, либо peers() у него пуст."
+            ? "Контракт не назвал ни одного пира — маршруты у него не настроены."
             : "Пиры есть, но ни один не опознался как OFT — вероятно, ноды тех сетей не ответили."
       );
     }

@@ -80,6 +80,36 @@ check(
 );
 check("every chain resolves by its own key", CHAINS.every((c) => resolveChain(c.key)?.key === c.key));
 
+// --- LayerZero V1 peer decoding ----------------------------------------------
+// trustedRemoteLookup returns remote and local addresses packed together,
+// remote first. Reading the wrong half, or accepting a short value, would
+// point the balance read at an address that holds nothing - and a wrong
+// number here is worse than a missing row.
+
+function decodeV1Peer(raw: string): string | undefined {
+  const hex = raw.replace(/^0x/, "");
+  if (hex.length < 40) return undefined;
+  const remote = `0x${hex.slice(0, 40)}`;
+  return /^0x0+$/i.test(remote) ? undefined : remote;
+}
+
+const REMOTE = "3ee18B2214AFF97000D974cf647E7C347E8fa585";
+const LOCAL = "5a58505a96D1dbf8dF91cB21B54419FC36e93fdE";
+check(
+  "the remote address is taken from the front of the packed value",
+  decodeV1Peer(`0x${REMOTE}${LOCAL}`)?.toLowerCase() === `0x${REMOTE}`.toLowerCase()
+);
+check("an unconfigured route decodes to nothing", decodeV1Peer("0x") === undefined);
+check("a truncated value is rejected rather than padded", decodeV1Peer("0x1234") === undefined);
+check("an all-zero remote is not treated as an address", decodeV1Peer(`0x${"0".repeat(80)}`) === undefined);
+
+// V2 numbered its chains by adding 30000 to V1's numbers, so V1's ids come
+// from the eids the bot already reads live rather than from a table.
+const v1FromEid = (eid: number) => (eid - 30000 > 0 && eid - 30000 < 1000 ? eid - 30000 : undefined);
+check("Ethereum's V1 id comes out of its eid", v1FromEid(30101) === 101);
+check("Base's V1 id comes out of its eid", v1FromEid(30184) === 184);
+check("a testnet or malformed eid yields no V1 id", v1FromEid(40161) === undefined && v1FromEid(101) === undefined);
+
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
 // mixed-case input unchanged instead of validating it, so the old
