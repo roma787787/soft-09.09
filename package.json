@@ -17,7 +17,8 @@
     "sync:svm": "tsx scripts/sync-svm-chains.ts",
     "sync:cosmos": "tsx scripts/sync-cosmos-chains.ts",
     "sync:other": "tsx scripts/sync-other-chains.ts",
-    "sync:rpcs": "tsx scripts/sync-rpcs.ts"
+    "sync:rpcs": "tsx scripts/sync-rpcs.ts",
+    "check:dead": "tsx scripts/check-dead-chains.ts"
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.125",

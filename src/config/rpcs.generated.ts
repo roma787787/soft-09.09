@@ -8,26 +8,28 @@
  * of the report - and a missing chain reads as "no liquidity here", which is
  * the opposite of what it means.
  *
- * Sources: chainlist-rpcs@0.5.310, the data behind chainlist.org, and
- * ethereum-lists/chains, the registry chainid.network serves. Two of them
- * because they disagree exactly where it matters: chainlist had Astar zkEVM
- * on a hostname that no longer resolves, while the registry had the live
- * one, and a chain with a single dead entry has no endpoints at all.
+ * Sources: chainlist-rpcs@0.5.310, the data behind chainlist.org;
+ * @hyperlane-xyz/registry, which a bridge operator keeps answering because
+ * its relayers depend on it; and ethereum-lists/chains, the registry
+ * chainid.network serves. Three of them because they disagree exactly where
+ * it matters - both public lists had only dead hosts for Zero Network while
+ * Hyperlane had two that answer - and a chain whose single entry is dead has
+ * no endpoints at all.
  */
 export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "ethereum": ["https://lb.routeme.sh/rpc/evm/1", "https://one.valve.city/rpc/vk_demo/evm/1", "https://rpc.nodeflare.app/eth/public", "https://go.getblock.io/aefd01aa907c4805ba3c00a9e5b48c6b", "https://eth-mainnet.nodereal.io/v1/1659dfb40aa24bbb8153a677b98064d7", "https://rpc.ankr.com/eth/c4cc6a8c87ec30258076de433ab2cf3d834228aae3fc4d76087873e4fea11635", "https://public.1rpc.io/eth", "https://rpc.builder0x69.io"],
   "optimism": ["https://lb.routeme.sh/rpc/evm/10", "https://rpc.nodeflare.app/op/public", "https://optimism-mainnet.public.blastapi.io", "https://public.1rpc.io/op", "https://optimism-public.nodies.app", "https://opt-mainnet.g.alchemy.com/v2/demo", "https://optimism.public.blockpi.network/v1/rpc/public", "https://optimism.api.onfinality.io/public"],
-  "flare": ["https://lb.routeme.sh/rpc/evm/14", "https://flare-mainnet.gateway.tatum.io", "https://flare.drpc.org", "https://flare.rpc.thirdweb.com", "https://flare-bundler.etherspot.io", "https://rpc.ankr.com/flare", "https://01-gravelines-003-01.rpc.tatum.io/ext/bc/C/rpc", "https://01-vinthill-003-02.rpc.tatum.io/ext/bc/C/rpc"],
+  "flare": ["https://lb.routeme.sh/rpc/evm/14", "https://flare-mainnet.gateway.tatum.io", "https://flare.drpc.org", "https://flare.solidifi.app/ext/C/rpc", "https://flare.rpc.thirdweb.com", "https://rpc.ankr.com/flare", "https://flare-bundler.etherspot.io", "https://01-gravelines-003-01.rpc.tatum.io/ext/bc/C/rpc"],
   "cronos": ["https://lb.routeme.sh/rpc/evm/25", "https://rpc.nodeflare.app/cronos/public", "https://cronos-rpc.elk.finance", "https://cronos-evm-rpc.publicnode.com", "https://public.1rpc.io/cro", "https://cronos.drpc.org", "https://rpc.vvs.finance", "https://mmf-rpc.xstaking.sg"],
-  "deprecatedrootstock": ["https://lb.routeme.sh/rpc/evm/30", "https://mycrypto.rsk.co", "https://rootstock.drpc.org", "https://rootstock-mainnet.public.blastapi.io", "https://rsk-mainnet.gateway.tatum.io"],
+  "deprecatedrootstock": ["https://lb.routeme.sh/rpc/evm/30", "https://mycrypto.rsk.co", "https://rootstock.drpc.org", "https://rootstock-mainnet.public.blastapi.io", "https://rsk-mainnet.gateway.tatum.io", "https://rpc.mainnet.rootstock.io/kXhXHf6TnnfW1POvr4UT0YUvujmuju-M"],
   "xpla": ["https://lb.routeme.sh/rpc/evm/37"],
   "telos": ["https://lb.routeme.sh/rpc/evm/40", "https://public.1rpc.io/telos/evm", "https://telos.drpc.org", "https://rpc.ankr.com/telos", "https://rpc.poolz.finance/telos"],
   "lukso": ["https://lb.routeme.sh/rpc/evm/42", "https://rpc.lukso.sigmacore.io", "https://42.rpc.thirdweb.com", "https://public-lukso.nownodes.io"],
   "bsc": ["https://lb.routeme.sh/rpc/evm/56", "https://rpc.nodeflare.app/bnb/public", "https://bsc-dataseed.bnbchain.org", "https://bsc.campioneinfrastructure.com", "https://bsc-dataseed1.defibit.io", "https://bsc-dataseed1.ninicoin.io", "https://bsc-dataseed2.defibit.io", "https://bsc-dataseed3.defibit.io"],
   "syscoin": ["https://lb.routeme.sh/rpc/evm/57", "https://rpc.ankr.com/syscoin", "https://syscoin-evm.publicnode.com", "https://syscoin.public-rpc.com", "https://57.rpc.thirdweb.com"],
-  "viction": ["https://viction.drpc.org", "https://lb.routeme.sh/rpc/evm/88"],
+  "viction": ["https://viction.drpc.org", "https://lb.routeme.sh/rpc/evm/88", "https://88.rpc.thirdweb.com"],
   "gnosis": ["https://lb.routeme.sh/rpc/evm/100", "https://xdai-archive.blockscout.com", "https://gnosis-public.nodies.app", "https://rpc.gnosis.gateway.fm", "https://gnosis-mainnet.public.blastapi.io", "https://rpc.ap-southeast-1.gateway.fm/v4/gnosis/non-archival/mainnet", "https://gnosis.api.onfinality.io/public", "https://gnosis.drpc.org"],
-  "shibarium": ["https://shibarium.drpc.org", "https://shib.nownodes.io"],
+  "shibarium": ["https://shibarium.drpc.org", "https://www.shibrpc.com", "https://shib.nownodes.io"],
   "fusemainnet": ["https://lb.routeme.sh/rpc/evm/122", "https://fuse-public.nodies.app", "https://fuse-mainnet.chainstacklabs.com", "https://fuse.api.onfinality.io/public", "https://fuse.liquify.com", "https://fuse.drpc.org", "https://rpc.owlracle.info/fuse/70d38ce1826c4a60bb2a8e05a6c8b20f", "https://fuse.api.pocket.network"],
   "unichain": ["https://lb.routeme.sh/rpc/evm/130", "https://rpc.nodeflare.app/unichain/public", "https://unichain.api.onfinality.io/public", "https://unichain-rpc.publicnode.com", "https://unichain.drpc.org", "https://unichain.therpc.io", "https://unichain-mainnet.gateway.tatum.io", "https://rpc.poolz.finance/unichain"],
   "polygon": ["https://lb.routeme.sh/rpc/evm/137", "https://rpc.nodeflare.app/polygon/public", "https://rpc-mainnet.matic.quiknode.pro", "https://polygon-public.nodies.app", "https://polygon-mainnet.public.blastapi.io", "https://public.1rpc.io/matic", "https://polygon-mainnet.g.alchemy.com/v2/demo", "https://go.getblock.io/02667b699f05444ab2c64f9bff28f027"],
@@ -44,12 +46,12 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "tac": ["https://lb.routeme.sh/rpc/evm/239", "https://tac.therpc.io", "https://tac.drpc.org", "https://rpc.tac.build"],
   "fantom": ["https://lb.routeme.sh/rpc/evm/250", "https://rpcapi.fantom.network", "https://fantom-public.nodies.app", "https://rpc.ftm.tools", "https://rpc.fantom.network", "https://rpc2.fantom.network", "https://rpc3.fantom.network", "https://fantom-mainnet.public.blastapi.io"],
   "fraxtal": ["https://lb.routeme.sh/rpc/evm/252", "https://fraxtal.drpc.org", "https://fraxtal.gateway.tenderly.co", "https://node.histori.xyz/fraxtal-mainnet/8ry9f6t9dct1se2hlagxnd9n2a", "https://fraxtal.api.pocket.network", "https://rpc.swiftnodes.io/rpc/fraxtal", "https://frax-mainnet.rpc.sentio.xyz", "https://fraxtal-rpc.publicnode.com"],
-  "kroma": ["https://lb.routeme.sh/rpc/evm/255", "https://kroma.drpc.org", "https://rpc-kroma.rockx.com"],
+  "kroma": ["https://lb.routeme.sh/rpc/evm/255", "https://kroma.drpc.org", "https://rpc-kroma.rockx.com", "https://1rpc.io/kroma"],
   "boba": ["https://lb.routeme.sh/rpc/evm/288", "https://boba-ethereum.gateway.tenderly.co", "https://gateway.tenderly.co/public/boba-ethereum", "https://public.1rpc.io/boba/eth", "https://boba-eth.drpc.org", "https://boba.api.pocket.network", "https://api-boba-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c", "https://replica.boba.network"],
   "orderly": ["https://lb.routeme.sh/rpc/evm/291", "https://orderly.drpc.org"],
   "filecoin": ["https://lb.routeme.sh/rpc/evm/314", "https://api.node.glif.io", "https://node.filutils.com/rpc/v1", "https://rpc.ankr.com/filecoin", "https://filecoin.chainup.net/rpc/v1", "https://infura.sftproject.io/filecoin/rpc/v1", "https://api.chain.love/rpc/v1", "https://filecoin.drpc.org"],
   "zksync": ["https://lb.routeme.sh/rpc/evm/324", "https://li-fi-redirect.intustechno.workers.dev/rpc", "https://go.getblock.io/f76c09905def4618a34946bf71851542", "https://zksync.meowrpc.com", "https://zksync.drpc.org", "https://public.1rpc.io/zksync2-era", "https://endpoints.omniatech.io/v1/zksync-era/mainnet/public", "https://api.zan.top/zksync-mainnet"],
-  "molten": ["https://lb.routeme.sh/rpc/evm/360", "https://shape-mainnet.g.alchemy.com/public"],
+  "molten": ["https://lb.routeme.sh/rpc/evm/360", "https://shape-mainnet.g.alchemy.com/public", "https://molten.calderachain.xyz/http"],
   "pulsechain": ["https://lb.routeme.sh/rpc/evm/369", "https://rpc.gigatheminter.com", "https://rpc-pulsechain.g4mm4.io", "https://evex.cloud/pulserpc", "https://rpc.degenprotocol.io", "https://one.valve.city/rpc/vk_demo/evm/369", "https://pulsechain-rpc.publicnode.com", "https://rpc.owlracle.info/pulse/70d38ce1826c4a60bb2a8e05a6c8b20f"],
   "cronoszkevm": ["https://lb.routeme.sh/rpc/evm/388", "https://cronos-zkevm.drpc.org", "https://cronos-zkevm.rpc.sentio.xyz"],
   "worldchain": ["https://lb.routeme.sh/rpc/evm/480", "https://480.rpc.thirdweb.com", "https://worldchain-mainnet.gateway.tenderly.co", "https://sparkling-autumn-dinghy.worldchain-mainnet.quiknode.pro", "https://worldchain.drpc.org"],
@@ -58,7 +60,7 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "matchain": ["https://lb.routeme.sh/rpc/evm/698", "https://rpc.ankr.com/matchain_mainnet"],
   "deprecatedflow": ["https://lb.routeme.sh/rpc/evm/747", "https://flow-mainnet.gateway.tatum.io"],
   "acala": ["https://lb.routeme.sh/rpc/evm/787", "https://eth-rpc-acala.aca-staging.network", "https://rpc.evm.acala.network"],
-  "subtensor": ["https://lb.routeme.sh/rpc/evm/964", "https://bittensor-lite-public.nodies.app", "https://rpc.blockmachine.io"],
+  "subtensor": ["https://lb.routeme.sh/rpc/evm/964", "https://bittensor-lite-public.nodies.app", "https://rpc.blockmachine.io", "https://bittensor-finney.api.onfinality.io/public"],
   "stable": ["https://lb.routeme.sh/rpc/evm/988", "https://stable-mainnet.rpc.sentio.xyz", "https://stable.drpc.org"],
   "hyperevm": ["https://lb.routeme.sh/rpc/evm/999", "https://hyperevm.rpc.sentio.xyz", "https://rpc.nodeflare.app/hl/public", "https://gwan-ssl.wandevs.org:46891"],
   "conflux": ["https://lb.routeme.sh/rpc/evm/1030", "https://conflux-espace-public.unifra.io", "https://conflux-espace.blockpi.network/v1/rpc/public"],
@@ -68,7 +70,7 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "lisk": ["https://lb.routeme.sh/rpc/evm/1135", "https://lisk.drpc.org", "https://lisk.gateway.tenderly.co", "https://api-lisk-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c", "https://lisk-mainnet.gateway.tatum.io"],
   "moonbeam": ["https://lb.routeme.sh/rpc/evm/1284", "https://moonbeam.api.onfinality.io/public", "https://moonbeam.unitedbloc.com", "https://public.1rpc.io/glmr", "https://moonbeam-rpc.dwellir.com", "https://moonbeam.therpc.io", "https://endpoints.omniatech.io/v1/moonbeam/mainnet/public", "https://rpc.poolz.finance/moonbeam"],
   "moonriver": ["https://lb.routeme.sh/rpc/evm/1285", "https://moonriver.api.onfinality.io/public", "https://moonriver.unitedbloc.com", "https://moonriver-rpc.dwellir.com", "https://moonriver-rpc.publicnode.com", "https://moonriver.drpc.org", "https://rpc.owlracle.info/movr/70d38ce1826c4a60bb2a8e05a6c8b20f", "https://moonriver.api.pocket.network"],
-  "sei": ["https://lb.routeme.sh/rpc/evm/1329", "https://sei.drpc.org", "https://sei-evm-rpc.stakeme.pro", "https://sei-public.nodies.app", "https://sei.therpc.io", "https://sei.api.pocket.network", "https://rpc.swiftnodes.io/rpc/sei"],
+  "sei": ["https://lb.routeme.sh/rpc/evm/1329", "https://sei.drpc.org", "https://sei-evm-rpc.stakeme.pro", "https://sei-public.nodies.app", "https://sei.therpc.io", "https://sei.api.pocket.network", "https://rpc.swiftnodes.io/rpc/sei", "https://evm-rpc-sei.stingray.plus"],
   "vana": ["https://evm-rpc-vana.josephtran.xyz", "https://evm-rpc-vana.j-node.net", "https://islander-vana-rpc.spidernode.net"],
   "story": ["https://lb.routeme.sh/rpc/evm/1514", "https://mainnet.storyrpc.io", "https://story-evm-rpc.spidernode.net", "https://evm-rpc.story.mainnet.dteam.tech", "https://infra.originstake.com/story/evm", "https://lightnode-json-rpc-mainnet-story.grandvalleys.com", "https://story-mainnet-evm.itrocket.net", "https://evm-rpc-story.j-node.net"],
   "tenet": ["https://lb.routeme.sh/rpc/evm/1559", "https://rpc.ankr.com/tenet_evm", "https://tenet-evm.publicnode.com"],
@@ -82,12 +84,11 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "ronin": ["https://lb.routeme.sh/rpc/evm/2020", "https://ronin.drpc.org", "https://ronin-mainnet.gateway.tatum.io", "https://api-ronin-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c", "https://ronin.gateway.tenderly.co"],
   "snaxchain": ["https://snaxchain.drpc.org"],
   "kava": ["https://lb.routeme.sh/rpc/evm/2222", "https://kava.api.onfinality.io/public", "https://kava-evm-rpc.publicnode.com", "https://kava-public.nodies.app", "https://evm.kava.chainstacklabs.com", "https://rpc.ankr.com/kava_evm", "https://evm.kava-rpc.com", "https://kava.drpc.org"],
-  "inevm": ["https://lb.routeme.sh/rpc/evm/2525"],
+  "inevm": ["https://lb.routeme.sh/rpc/evm/2525", "https://inevm.calderachain.xyz/http"],
   "abstract": ["https://lb.routeme.sh/rpc/evm/2741", "https://abstract.drpc.org", "https://abstract.api.onfinality.io/public", "https://abstract-mainnet.gateway.tatum.io"],
   "morph": ["https://lb.routeme.sh/rpc/evm/2818", "https://rpc-quicknode.morphl2.io", "https://morph.drpc.org"],
-  "peaq": ["https://lb.routeme.sh/rpc/evm/3338"],
+  "peaq": ["https://lb.routeme.sh/rpc/evm/3338", "https://peaq.api.onfinality.io/public"],
   "botanix": ["https://rpc.ankr.com/botanix_mainnet"],
-  "astarzkevm": ["https://rpc.startale.com/astar-zkevm"],
   "merlin": ["https://lb.routeme.sh/rpc/evm/4200", "https://merlin.blockpi.network/v1/rpc/public", "https://rpc-merlin.rockx.com", "https://merlin-mainnet-enterprise.unifra.io", "https://endpoints.omniatech.io/v1/merlin/mainnet/public", "https://merlin.drpc.org"],
   "tempo": ["https://lb.routeme.sh/rpc/evm/4217", "https://rpc.mainnet.tempo.xyz"],
   "megaeth": ["https://lb.routeme.sh/rpc/evm/4326", "https://rpc-megaeth-mainnet.globalstake.io", "https://megaeth.drpc.org", "https://megaeth.rpc.sentio.xyz"],
@@ -97,7 +98,7 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "superseed": ["https://lb.routeme.sh/rpc/evm/5330", "https://superseed.drpc.org"],
   "zetachain": ["https://lb.routeme.sh/rpc/evm/7000", "https://zetachain-mainnet.g.allthatnode.com/archive/evm", "https://zeta-chain.drpc.org", "https://zetachain-mainnet.public.blastapi.io", "https://7000.rpc.thirdweb.com", "https://api-zetachain-mainnet.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c"],
   "cyber": ["https://lb.routeme.sh/rpc/evm/7560", "https://rpc.cyber.co"],
-  "canto": ["https://lb.routeme.sh/rpc/evm/7700", "https://canto.evm.chandrastation.com", "https://jsonrpc.canto.nodestake.top", "https://canto.dexvaults.com", "https://canto-rpc.ansybl.io", "https://canto.dexrouting.com", "https://canto.slingshot.finance", "https://mainnode.plexnode.org:8545"],
+  "canto": ["https://lb.routeme.sh/rpc/evm/7700", "https://canto.evm.chandrastation.com", "https://jsonrpc.canto.nodestake.top", "https://canto.dexvaults.com", "https://canto-rpc.ansybl.io", "https://canto.dexrouting.com", "https://mainnode.plexnode.org:8545", "https://canto.slingshot.finance"],
   "kinto": ["https://rpc.ankr.com/kinto", "https://kinto-mainnet.calderachain.xyz/http"],
   "deprecatedpolynomial": ["https://lb.routeme.sh/rpc/evm/8008"],
   "kaia": ["https://lb.routeme.sh/rpc/evm/8217", "https://alpha-hardworking-orb.kaia-mainnet.quiknode.pro", "https://kaia.api.pocket.network", "https://kaia-public.nodies.app", "https://go.getblock.io/d7094dbd80ab474ba7042603fe912332", "https://klaytn.api.onfinality.io/public", "https://public.1rpc.io/klay", "https://klaytn.drpc.org"],
@@ -106,6 +107,7 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "evmos": ["https://lb.routeme.sh/rpc/evm/9001", "https://evmos.lava.build", "https://evmos-mainnet.public.blastapi.io", "https://evmos-evm-rpc.publicnode.com", "https://jsonrpc-evmos.goldenratiostaking.net", "https://evmos-jsonrpc.cyphercore.io", "https://evmos.drpc.org", "https://jsonrpc-evmos-ia.cosmosia.notional.ventures"],
   "plasma": ["https://lb.routeme.sh/rpc/evm/9745", "https://rpc.nodeflare.app/plasma/public", "https://plasma.drpc.org", "https://plasma.api.onfinality.io/public", "https://rpc.swiftnodes.io/rpc/plasma", "https://plasma-mainnet.gateway.tatum.io"],
   "deprecatedimmutablezkevm": ["https://lb.routeme.sh/rpc/evm/13371", "https://immutable-zkevm.drpc.org", "https://immutable.gateway.tenderly.co"],
+  "zerogravity": ["https://0g.drpc.org"],
   "apechain": ["https://lb.routeme.sh/rpc/evm/33139", "https://rpc.apechain.com", "https://apechain.drpc.org"],
   "funki": ["https://lb.routeme.sh/rpc/evm/33979"],
   "mode": ["https://lb.routeme.sh/rpc/evm/34443", "https://rpc.nodeflare.app/mode/public", "https://public.1rpc.io/mode", "https://mode.drpc.org", "https://mode.gateway.tenderly.co", "https://mode-mainnet.rpc.sentio.xyz"],
@@ -116,8 +118,8 @@ export const EXTRA_RPC_URLS: Record<string, string[]> = {
   "celo": ["https://lb.routeme.sh/rpc/evm/42220", "https://rpc.celocolombia.org", "https://rpc.ankr.com/celo", "https://celo-mainnet.gateway.tatum.io", "https://celo.drpc.org", "https://celo-json-rpc.stakely.io", "https://celo.api.onfinality.io/public", "https://api-celo-mainnet-archive.n.dwellir.com/2ccf18bf-2916-4198-8856-42172854353c"],
   "hemi": ["https://lb.routeme.sh/rpc/evm/43111", "https://hemi.drpc.org"],
   "avalanche": ["https://lb.routeme.sh/rpc/evm/43114", "https://rpc.nodeflare.app/avax/public", "https://avalanche.public-rpc.com", "https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc", "https://avalancheapi.terminet.io/ext/bc/C/rpc", "https://public.1rpc.io/avax/c", "https://avalanche-public.nodies.app/ext/bc/C/rpc", "https://avalanche.api.onfinality.io/public/ext/bc/C/rpc"],
-  "zircuit": ["https://lb.routeme.sh/rpc/evm/48900", "https://rpc.nodeflare.app/zircuit/public", "https://zircuit1-mainnet.liquify.com", "https://zircuit.rpc.sentio.xyz"],
-  "sophon": ["https://lb.routeme.sh/rpc/evm/50104", "https://rpc-quicknode.sophon.xyz"],
+  "zircuit": ["https://lb.routeme.sh/rpc/evm/48900", "https://rpc.nodeflare.app/zircuit/public", "https://zircuit1-mainnet.liquify.com", "https://zircuit.rpc.sentio.xyz", "https://zircuit1-mainnet.p2pify.com", "https://zircuit-mainnet.drpc.org"],
+  "sophon": ["https://lb.routeme.sh/rpc/evm/50104", "https://rpc-quicknode.sophon.xyz", "https://sophon-mainnet-public.unifra.io"],
   "electroneum": ["https://lb.routeme.sh/rpc/evm/52014", "https://rpc.ankr.com/electroneum"],
   "deprecatedsuperposition": ["https://lb.routeme.sh/rpc/evm/55244"],
   "ink": ["https://lb.routeme.sh/rpc/evm/57073", "https://rpc.nodeflare.app/ink/public", "https://ink.drpc.org", "https://ink-public.nodies.app", "https://ink.api.pocket.network"],

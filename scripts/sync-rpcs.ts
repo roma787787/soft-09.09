@@ -33,6 +33,39 @@ const OUT = "src/config/rpcs.generated.ts";
 const REGISTRY = "https://raw.githubusercontent.com/ethereum-lists/chains/master/_data/chains";
 
 /**
+ * And a third: the registry Hyperlane runs its own relayers against. Not
+ * another copy of the same list - a bridge operator has to keep these
+ * answering or its messages stop being delivered, so it carries endpoints
+ * the public lists never got. Zero Network is the case in point: chainlist
+ * and the canonical registry both had only dead hosts for it, Hyperlane has
+ * rpc.zerion.io and zero.drpc.org, and both answer.
+ *
+ * Read from the installed package, so this source costs no network.
+ */
+const HYPERLANE_METADATA = "../node_modules/@hyperlane-xyz/registry/dist/chainMetadata.js";
+
+interface HyperlaneChain {
+  chainId?: number | string;
+  isTestnet?: boolean;
+  rpcUrls?: Array<{ http?: unknown }>;
+}
+
+function hyperlaneRpcs(): Map<number, string[]> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const module = require(HYPERLANE_METADATA);
+  const metadata = module.chainMetadata ?? module.default ?? module;
+  const found = new Map<number, string[]>();
+  for (const chain of Object.values(metadata) as HyperlaneChain[]) {
+    if (chain?.isTestnet) continue;
+    const id = Number(chain?.chainId);
+    if (!Number.isInteger(id)) continue;
+    const urls = (chain.rpcUrls ?? []).map((r) => r?.http).filter(usable);
+    if (urls.length > 0) found.set(id, urls);
+  }
+  return found;
+}
+
+/**
  * Endpoints kept per chain. The reader uses the first six, counting the one
  * viem carries; eight leaves room for the dead ones to be skipped past
  * without the list turning into a queue of timeouts.
@@ -108,6 +141,7 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
   for (const chain of CHAINS) wanted.set(chain.viemChain.id, chain.key);
 
   const registry = await fetchRegistry(CHAINS.map((c) => c.viemChain.id));
+  const hyperlane = hyperlaneRpcs();
 
   const rows: Array<[number, string, string[]]> = [];
   let fromRegistryOnly = 0;
@@ -115,13 +149,17 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
     const entry = extraRpcs[String(chain.viemChain.id)];
     const rpcs = Array.isArray(entry?.rpcs) ? entry.rpcs : [];
 
-    // chainlist first, registry after: chainlist ranks its entries by
-    // observed health, and the registry lists whatever the chain's own team
-    // wrote down. Both are then deduplicated against what viem already
-    // carries, ignoring a trailing slash - the two sources spell the same
-    // node differently often enough to matter when only six are read.
+    // Ordered by how much each source has to lose from a dead entry.
+    // chainlist ranks its own entries by observed health; Hyperlane has to
+    // keep its endpoints answering or its relayers stop delivering; the
+    // canonical registry lists whatever a chain's team wrote down and never
+    // came back to correct. All three are then deduplicated against what
+    // viem already carries and against each other, ignoring a trailing
+    // slash - they spell the same node differently often enough to matter
+    // when only six are read.
     const candidates = [
       ...rpcs.map((rpc: unknown) => (typeof rpc === "string" ? rpc : (rpc as { url?: unknown })?.url)),
+      ...(hyperlane.get(chain.viemChain.id) ?? []),
       ...(registry.get(chain.viemChain.id) ?? []),
     ];
 
@@ -157,11 +195,13 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
  * of the report - and a missing chain reads as "no liquidity here", which is
  * the opposite of what it means.
  *
- * Sources: ${PACKAGE}@${version}, the data behind chainlist.org, and
- * ethereum-lists/chains, the registry chainid.network serves. Two of them
- * because they disagree exactly where it matters: chainlist had Astar zkEVM
- * on a hostname that no longer resolves, while the registry had the live
- * one, and a chain with a single dead entry has no endpoints at all.
+ * Sources: ${PACKAGE}@${version}, the data behind chainlist.org;
+ * @hyperlane-xyz/registry, which a bridge operator keeps answering because
+ * its relayers depend on it; and ethereum-lists/chains, the registry
+ * chainid.network serves. Three of them because they disagree exactly where
+ * it matters - both public lists had only dead hosts for Zero Network while
+ * Hyperlane had two that answer - and a chain whose single entry is dead has
+ * no endpoints at all.
  */
 export const EXTRA_RPC_URLS: Record<string, string[]> = {
 ${body}

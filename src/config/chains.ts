@@ -7,9 +7,7 @@ import {
   apeChain,
   arbitrum,
   arbitrumNova,
-  arthera,
   astar,
-  astarZkEVM,
   aurora,
   avalanche,
   b3,
@@ -41,12 +39,9 @@ import {
   evmos,
   fantom,
   filecoin,
-  flame,
   flare,
   flowMainnet,
-  fluence,
   fluent,
-  form,
   forma,
   fraxtal,
   funkiMainnet,
@@ -54,7 +49,6 @@ import {
   gnosis,
   gravity,
   guruNetwork,
-  ham,
   harmonyOne,
   hashkey,
   hemi,
@@ -91,7 +85,6 @@ import {
   moonbeam,
   moonriver,
   morph,
-  nautilus,
   nibiru,
   opBNB,
   optimism,
@@ -105,12 +98,10 @@ import {
   pulsechain,
   real,
   redstone,
-  rivalz,
   robinhood,
   ronin,
   rootstock,
   saakuru,
-  sanko,
   scroll,
   sei,
   shape,
@@ -130,7 +121,6 @@ import {
   syscoin,
   tac,
   taiko,
-  taraxa,
   telos,
   tempo,
   tenet,
@@ -191,6 +181,26 @@ export interface ChainDef {
   maxConcurrentReads?: number;
 }
 
+/**
+ * Chains removed on 2026-09-10, and why: every hostname they were listed
+ * under - across chainlist, ethereum-lists/chains and Hyperlane's own
+ * registry - had stopped resolving. Not refusing, not rate-limiting: gone
+ * from DNS, with nothing left to point a private RPC at.
+ *
+ *   Arthera, Astar zkEVM, Flame, Fluence, Form Network, Ham, Nautilus,
+ *   Rivalz, Sanko, Taraxa
+ *
+ * The bar was deliberately this narrow. A chain answering 403 or 429 is
+ * alive and refusing a datacenter IP, which a key fixes, so those stayed.
+ * And a hostname that has died is not the same as a chain that has: Astar
+ * zkEVM lost two hosts in two registries before the third was checked, and
+ * Zero Network looked just as dead until Hyperlane turned out to have two
+ * that answer. Both were kept for that reason; these ten survived all three.
+ *
+ * Re-checkable, not a judgement to take on faith: `npm run check:dead`
+ * runs the same sweep. If one of these ever resolves again, it belongs back
+ * here.
+ */
 export const CHAINS: ChainDef[] = [
   {
     key: "ethereum",
@@ -980,17 +990,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["PulseChain"],
   },
   {
-    key: "form",
-    label: "Form Network",
-    viemChain: form,
-    rpcEnvVar: "FORM_RPC_URL",
-    defaultRpcUrls: ["https://rpc.form.network/http"],
-    explorerTxUrl: (h) => `https://explorer.form.network/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.form.network/address/${a}`,
-    aliases: ["form", "formnetwork"],
-    cmcPlatformNames: ["Form Network"],
-  },
-  {
     key: "astar",
     label: "Astar",
     viemChain: astar,
@@ -1046,17 +1045,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["Flow EVM Mainnet", "Flow EVM"],
   },
   {
-    key: "rivalz",
-    label: "Rivalz",
-    viemChain: rivalz,
-    rpcEnvVar: "RIVALZ_RPC_URL",
-    defaultRpcUrls: ["https://rivalz.calderachain.xyz/http"],
-    explorerTxUrl: (h) => `https://rivalz.calderaexplorer.xyz/tx/${h}`,
-    explorerAddressUrl: (a) => `https://rivalz.calderaexplorer.xyz/address/${a}`,
-    aliases: ["rivalz"],
-    cmcPlatformNames: ["Rivalz"],
-  },
-  {
     key: "acala",
     label: "Acala",
     viemChain: acala,
@@ -1066,17 +1054,6 @@ export const CHAINS: ChainDef[] = [
     explorerAddressUrl: (a) => `https://blockscout.acala.network/address/${a}`,
     aliases: ["acala"],
     cmcPlatformNames: ["Acala"],
-  },
-  {
-    key: "taraxa",
-    label: "Taraxa Mainnet",
-    viemChain: taraxa,
-    rpcEnvVar: "TARAXA_RPC_URL",
-    defaultRpcUrls: ["https://rpc.mainnet.taraxa.io"],
-    explorerTxUrl: (h) => `https://explorer.mainnet.taraxa.io/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.mainnet.taraxa.io/address/${a}`,
-    aliases: ["taraxa", "taraxamainnet"],
-    cmcPlatformNames: ["Taraxa Mainnet", "Taraxa"],
   },
   {
     key: "subtensor",
@@ -1233,17 +1210,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["Krown"],
   },
   {
-    key: "sanko",
-    label: "Sanko",
-    viemChain: sanko,
-    rpcEnvVar: "SANKO_RPC_URL",
-    defaultRpcUrls: ["https://mainnet.sanko.xyz"],
-    explorerTxUrl: (h) => `https://explorer.sanko.xyz/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.sanko.xyz/address/${a}`,
-    aliases: ["sanko"],
-    cmcPlatformNames: ["Sanko"],
-  },
-  {
     key: "dogechain",
     label: "Dogechain",
     viemChain: dogechain,
@@ -1332,17 +1298,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["Botanix"],
   },
   {
-    key: "astarzkevm",
-    label: "Astar zkEVM",
-    viemChain: astarZkEVM,
-    rpcEnvVar: "ASTARZKEVM_RPC_URL",
-    defaultRpcUrls: ["https://rpc-zkevm.astar.network"],
-    explorerTxUrl: (h) => `https://astar-zkevm.explorer.startale.com/tx/${h}`,
-    explorerAddressUrl: (a) => `https://astar-zkevm.explorer.startale.com/address/${a}`,
-    aliases: ["astarzkevm"],
-    cmcPlatformNames: ["Astar zkEVM"],
-  },
-  {
     key: "citrea",
     label: "Citrea Mainnet",
     viemChain: citrea,
@@ -1407,17 +1362,6 @@ export const CHAINS: ChainDef[] = [
     explorerAddressUrl: (a) => `https://explorer.somnia.network/address/${a}`,
     aliases: ["somnia"],
     cmcPlatformNames: ["Somnia"],
-  },
-  {
-    key: "ham",
-    label: "Ham",
-    viemChain: ham,
-    rpcEnvVar: "HAM_RPC_URL",
-    defaultRpcUrls: ["https://rpc.ham.fun"],
-    explorerTxUrl: (h) => `https://explorer.ham.fun/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.ham.fun/address/${a}`,
-    aliases: ["ham"],
-    cmcPlatformNames: ["Ham"],
   },
   {
     key: "mantra",
@@ -1541,17 +1485,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["Evmos"],
   },
   {
-    key: "arthera",
-    label: "Arthera",
-    viemChain: arthera,
-    rpcEnvVar: "ARTHERA_RPC_URL",
-    defaultRpcUrls: ["https://rpc.arthera.net"],
-    explorerTxUrl: (h) => `https://explorer.arthera.net/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.arthera.net/address/${a}`,
-    aliases: ["arthera"],
-    cmcPlatformNames: ["Arthera"],
-  },
-  {
     key: "deprecatedimmutablezkevm",
     label: "Immutable zkEVM",
     viemChain: immutableZkEvm,
@@ -1561,17 +1494,6 @@ export const CHAINS: ChainDef[] = [
     explorerAddressUrl: (a) => `https://explorer.immutable.com/address/${a}`,
     aliases: ["deprecatedimmutablezkevm", "immutablezkevm"],
     cmcPlatformNames: ["Immutable zkEVM"],
-  },
-  {
-    key: "nautilus",
-    label: "Nautilus Mainnet",
-    viemChain: nautilus,
-    rpcEnvVar: "NAUTILUS_RPC_URL",
-    defaultRpcUrls: ["https://api.nautilus.nautchain.xyz"],
-    explorerTxUrl: (h) => `https://nautscan.com/tx/${h}`,
-    explorerAddressUrl: (a) => `https://nautscan.com/address/${a}`,
-    aliases: ["nautilus", "nautilusmainnet"],
-    cmcPlatformNames: ["Nautilus Mainnet", "Nautilus"],
   },
   {
     key: "fluent",
@@ -1827,17 +1749,6 @@ export const CHAINS: ChainDef[] = [
     cmcPlatformNames: ["Zora"],
   },
   {
-    key: "fluence",
-    label: "Fluence",
-    viemChain: fluence,
-    rpcEnvVar: "FLUENCE_RPC_URL",
-    defaultRpcUrls: ["https://rpc.mainnet.fluence.dev"],
-    explorerTxUrl: (h) => `https://blockscout.mainnet.fluence.dev/tx/${h}`,
-    explorerAddressUrl: (a) => `https://blockscout.mainnet.fluence.dev/address/${a}`,
-    aliases: ["fluence"],
-    cmcPlatformNames: ["Fluence"],
-  },
-  {
     key: "corn",
     label: "Corn",
     viemChain: corn,
@@ -1847,17 +1758,6 @@ export const CHAINS: ChainDef[] = [
     explorerAddressUrl: (a) => `https://cornscan.io/address/${a}`,
     aliases: ["corn"],
     cmcPlatformNames: ["Corn"],
-  },
-  {
-    key: "flame",
-    label: "Flame",
-    viemChain: flame,
-    rpcEnvVar: "FLAME_RPC_URL",
-    defaultRpcUrls: ["https://rpc.flame.astria.org"],
-    explorerTxUrl: (h) => `https://explorer.flame.astria.org/tx/${h}`,
-    explorerAddressUrl: (a) => `https://explorer.flame.astria.org/address/${a}`,
-    aliases: ["flame"],
-    cmcPlatformNames: ["Flame"],
   },
   {
     key: "degenchain",
