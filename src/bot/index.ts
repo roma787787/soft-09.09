@@ -7,6 +7,7 @@ import { registerUntrackCommand } from "./commands/untrack";
 import { registerListCommand } from "./commands/list";
 import { registerDiagCommand } from "./commands/diag";
 import { registerChainsCommand } from "./commands/chains";
+import { registerGeckoCommand } from "./commands/gecko";
 import { registerLiquidityCommand } from "./commands/liquidity";
 import { registerSourcesCommand } from "./commands/sources";
 import { registerCcipCommand } from "./commands/ccip";
@@ -32,6 +33,7 @@ export function createBot(): Telegraf {
   registerListCommand(bot);
   registerDiagCommand(bot);
   registerChainsCommand(bot);
+  registerGeckoCommand(bot);
   registerLiquidityCommand(bot);
   registerSourcesCommand(bot);
   registerCcipCommand(bot);

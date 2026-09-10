@@ -43,6 +43,7 @@ function helpText(): string {
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
+<code>/gecko</code> — работает ли ключ CoinGecko и сколько квоты осталось.
 <code>/lzprobe &lt;тикер&gt;</code> — сырой ответ реестра LayerZero по тикеру.
 
 Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.

@@ -15,6 +15,7 @@ import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import {
   parseAssetPlatforms,
   parseCoinResponse,
+  parseKeyResponse,
   pickCoin,
   resolveEvmPlatform,
   type AssetPlatform,
@@ -362,6 +363,27 @@ check(
 );
 check("including Optimism, whose slug matches nothing", resolveEvmPlatform(undefined, "optimistic-ethereum") === "optimism");
 check("and a slug for nothing we carry still resolves to nothing", resolveEvmPlatform(undefined, "not-a-chain") === undefined);
+
+// /gecko answers "is the key working" with a request rather than a guess,
+// and the plan's own numbers are what it reports back.
+const keyBody = parseKeyResponse({
+  plan: "Demo",
+  rate_limit_request_per_minute: 30,
+  monthly_call_credit: 10000,
+  current_total_monthly_calls: 123,
+  current_remaining_monthly_calls: 9877,
+});
+check("the plan is read", keyBody.plan === "Demo");
+check("and its per-minute limit", keyBody.perMinute === 30);
+check("and what is left of the month", keyBody.monthlyLeft === 9877);
+
+// Field names here are CoinGecko's to change, so missing ones must come
+// back missing rather than as zero - "0 запросов в минуту" would read as a
+// dead key when it only means the field moved.
+const sparse = parseKeyResponse({ plan: "Pro" });
+check("a missing number stays missing", sparse.perMinute === undefined && sparse.monthlyCredit === undefined);
+check("a nonsense body is not a crash", parseKeyResponse("тьфу").plan === undefined);
+check("and neither is nothing at all", parseKeyResponse(undefined).plan === undefined);
 
 // Node wraps every transport failure as "fetch failed" and puts the
 // diagnosis in `cause`. Sixteen chains reported the wrapper and nothing

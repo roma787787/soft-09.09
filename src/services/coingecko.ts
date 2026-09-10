@@ -448,6 +448,86 @@ export function parseCoinResponse(
   };
 }
 
+/* ------------------------------------------------------------------ */
+
+export interface KeyStatus {
+  /** Whether a key is configured at all. */
+  configured: boolean;
+  /** Its length, never its value: a truncated paste is the usual fault. */
+  keyLength: number;
+  /** Whether the pasted value carries stray whitespace, the other usual fault. */
+  untrimmed: boolean;
+  base: string;
+  header: string;
+  /** Whether the service answered at all. */
+  reachable: boolean;
+  /** Whether the key was accepted, when there is one to accept. */
+  accepted?: boolean;
+  plan?: string;
+  perMinute?: number;
+  monthlyCredit?: number;
+  monthlyUsed?: number;
+  monthlyLeft?: number;
+  error?: string;
+}
+
+/**
+ * Reads /api/v3/key, which is what the Demo and Pro plans answer about
+ * themselves. Kept pure so the shape can be checked offline, and defensive
+ * about field names because they are not what this bot controls.
+ */
+export function parseKeyResponse(body: unknown): Partial<KeyStatus> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+  return {
+    plan: typeof b.plan === "string" ? b.plan : undefined,
+    perMinute: num(b.rate_limit_request_per_minute),
+    monthlyCredit: num(b.monthly_call_credit),
+    monthlyUsed: num(b.current_total_monthly_calls),
+    monthlyLeft: num(b.current_remaining_monthly_calls),
+  };
+}
+
+/**
+ * Answers "is the key actually working" with a request rather than a guess.
+ *
+ * The key never appears in the answer - only its length and whether it was
+ * pasted with whitespace, which are the two ways it usually goes wrong and
+ * neither of which is visible in a hosting panel that masks the value.
+ */
+export async function checkKey(): Promise<KeyStatus> {
+  const raw = env.coingeckoApiKey ?? "";
+  const status: KeyStatus = {
+    configured: raw.length > 0,
+    keyLength: raw.length,
+    untrimmed: raw !== raw.trim(),
+    base: env.coingeckoApiBase,
+    header: env.coingeckoApiBase.includes("pro-api") ? "x-cg-pro-api-key" : "x-cg-demo-api-key",
+    reachable: false,
+  };
+
+  try {
+    await get("/api/v3/ping");
+    status.reachable = true;
+  } catch (err) {
+    status.error = err instanceof Error ? err.message : String(err);
+    return status;
+  }
+
+  if (!status.configured) return status;
+
+  try {
+    Object.assign(status, parseKeyResponse(await get("/api/v3/key")));
+    status.accepted = true;
+  } catch (err) {
+    // Reachable but the key endpoint refused: the key is the problem, and
+    // that is a different answer from "CoinGecko is unreachable".
+    status.accepted = false;
+    status.error = err instanceof Error ? err.message : String(err);
+  }
+  return status;
+}
+
 /**
  * Looks a ticker up on CoinGecko and returns the token's contract address on
  * every network CoinGecko knows about.
