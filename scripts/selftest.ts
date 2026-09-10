@@ -80,6 +80,13 @@ const chainIds = CHAINS.map((c) => c.viemChain.id);
 check("no two chains share a chain id", new Set(chainIds).size === chainIds.length);
 
 check("every chain has somewhere to connect", CHAINS.every((c) => c.defaultRpcUrls.length > 0));
+// A chain may ask for fewer parallel reads, but never for none: a limit of
+// zero would loop forever without reading anything.
+check(
+  "a chain's own read limit is at least one",
+  CHAINS.every((c) => c.maxConcurrentReads === undefined || c.maxConcurrentReads >= 1)
+);
+check("Tron asks for the smallest limit, having been throttled at four", getChain("tron")?.maxConcurrentReads === 1);
 check(
   "every chain builds a real explorer link",
   CHAINS.every((c) => /^https:\/\/.+\/address\/0x1$/.test(c.explorerAddressUrl("0x1")))

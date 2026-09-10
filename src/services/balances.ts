@@ -1,5 +1,6 @@
 import type { Address } from "viem";
 import { getClient } from "./rpcClient";
+import { getChain } from "../config/chains";
 import type { Custodian } from "../bridges/types";
 import { isTransportError } from "../protocols/util";
 
@@ -154,10 +155,13 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
   }
 
   const perChain = await Promise.all(
-    [...byChain.values()].map(async (queue) => {
+    [...byChain.entries()].map(async ([chainKey, queue]) => {
+      // A chain may ask for less: TronGrid throttles four parallel reads
+      // into three failures, and a throttled read costs a whole row.
+      const limit = getChain(chainKey)?.maxConcurrentReads ?? MAX_CONCURRENT_PER_CHAIN;
       const out: Array<CustodianBalance | undefined> = [];
-      for (let i = 0; i < queue.length; i += MAX_CONCURRENT_PER_CHAIN) {
-        out.push(...(await Promise.all(queue.slice(i, i + MAX_CONCURRENT_PER_CHAIN).map((c) => readOne(c)))));
+      for (let i = 0; i < queue.length; i += limit) {
+        out.push(...(await Promise.all(queue.slice(i, i + limit).map((c) => readOne(c)))));
       }
       return out;
     })

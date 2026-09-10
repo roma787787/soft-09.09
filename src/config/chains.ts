@@ -73,6 +73,13 @@ export interface ChainDef {
   aliases: string[];
   /** How CoinMarketCap spells this network in its platform field. */
   cmcPlatformNames?: string[];
+  /**
+   * Reads to run at once against this chain's node. The default suits a
+   * normal endpoint; a chain whose public node rate-limits harder needs
+   * less, and being throttled costs a whole row - which reads as "no
+   * liquidity here" rather than as a node saying no.
+   */
+  maxConcurrentReads?: number;
 }
 
 export const CHAINS: ChainDef[] = [
@@ -584,6 +591,9 @@ export const CHAINS: ChainDef[] = [
     explorerAddressUrl: (a) => `https://tronscan.org/#/address/${a}`,
     aliases: ["tron", "trx"],
     cmcPlatformNames: ["Tron", "Tron20", "TRC20"],
+    // TronGrid without a key throttles hard: four routes read at once left
+    // three of four failing on every run, while one at a time gets through.
+    maxConcurrentReads: 1,
   },
 ];
 
