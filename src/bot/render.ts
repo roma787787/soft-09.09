@@ -1,4 +1,4 @@
-import { getChain } from "../config/chains";
+import { getChain, chainMeta } from "../config/chains";
 import {
   BRIDGE_LABELS,
   BRIDGE_ORDER,
@@ -6,7 +6,7 @@ import {
   BRIDGE_UNITS,
   type BridgeProtocol,
 } from "../bridges/types";
-import { formatAmount, type CustodianBalance } from "../services/balances";
+import { formatAmount, type BalanceRow } from "../services/balances";
 
 /**
  * Telegram counts a message "after entities parsing" - tags and entities do
@@ -99,7 +99,7 @@ export function plural(n: number, one: string, few: string, many: string): strin
 export interface ReportInput {
   symbol: string;
   name: string;
-  balances: CustodianBalance[];
+  balances: BalanceRow[];
   checkedCount: number;
   failuresByChain: Record<string, number>;
   attemptsByChain: Record<string, number>;
@@ -151,7 +151,7 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
 }
 
 function chainName(chainKey: string): string {
-  return getChain(chainKey)?.label ?? chainKey;
+  return chainMeta(chainKey)?.label ?? chainKey;
 }
 
 /**
@@ -160,7 +160,7 @@ function chainName(chainKey: string): string {
  * is in the report above.
  */
 function describeFailures(
-  balances: CustodianBalance[],
+  balances: BalanceRow[],
   failuresByChain: Record<string, number>,
   attemptsByChain: Record<string, number>
 ): { unreachable: string[]; partial: string[] } {
@@ -197,12 +197,12 @@ function toCommonScale(amount: bigint, decimals: number): bigint {
   return shift >= 0 ? amount * 10n ** BigInt(shift) : amount / 10n ** BigInt(-shift);
 }
 
-function rank(b: CustodianBalance): bigint {
+function rank(b: BalanceRow): bigint {
   return toCommonScale(b.amount, b.decimals);
 }
 
 /** Total of a group, on the common 18-decimal scale. */
-function sumOf(rows: CustodianBalance[]): bigint {
+function sumOf(rows: BalanceRow[]): bigint {
   return rows.reduce((total, r) => total + rank(r), 0n);
 }
 
@@ -277,7 +277,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     return capToTelegramLimit(lines.join("\n"));
   }
 
-  const byChain = new Map<string, CustodianBalance[]>();
+  const byChain = new Map<string, BalanceRow[]>();
   for (const b of withLiquidity) {
     if (!byChain.has(b.chainKey)) byChain.set(b.chainKey, []);
     byChain.get(b.chainKey)!.push(b);
@@ -354,7 +354,7 @@ export function renderLiquidityReport(input: ReportInput): string {
   for (const { chainKey, rows } of chains) {
     const block: string[] = ["", `Сеть: <b>${esc(chainName(chainKey))}</b>`];
 
-    const byProtocol = new Map<BridgeProtocol, CustodianBalance[]>();
+    const byProtocol = new Map<BridgeProtocol, BalanceRow[]>();
     for (const r of rows) {
       if (!byProtocol.has(r.protocol)) byProtocol.set(r.protocol, []);
       byProtocol.get(r.protocol)!.push(r);
@@ -369,7 +369,7 @@ export function renderLiquidityReport(input: ReportInput): string {
       const rest = protocolRows.slice(MAX_ROWS_PER_GROUP);
 
       for (const row of shown) {
-        const explorer = getChain(chainKey)?.explorerAddressUrl(row.custodyAddress);
+        const explorer = chainMeta(chainKey)?.explorerAddressUrl(row.custodyAddress);
         // Escaped, not assumed safe: an amount is usually digits, but a
         // balance below the last shown decimal renders as "< 0,0001", and an
         // unescaped "<" makes Telegram reject the whole message as a broken

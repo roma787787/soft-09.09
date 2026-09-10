@@ -1,10 +1,11 @@
 import type { Telegraf, Context } from "telegraf";
-import { getChain, resolveChain } from "../../config/chains";
+import { getChain, resolveChain, chainMeta } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians } from "../../bridges/stargate";
+import { findSolanaBalances } from "../../bridges/svm";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -137,10 +138,13 @@ export async function resolveRegistryDeployments(
   return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters, rejected };
 }
 
-function countByProtocol(custodians: Custodian[]): Partial<Record<BridgeProtocol, number>> {
+function countByProtocol(
+  custodians: Custodian[],
+  extra: Array<{ protocol: BridgeProtocol }> = []
+): Partial<Record<BridgeProtocol, number>> {
   const counts: Partial<Record<BridgeProtocol, number>> = {};
   for (const p of BRIDGE_ORDER) {
-    const n = custodians.filter((c) => c.protocol === p).length;
+    const n = custodians.filter((c) => c.protocol === p).length + extra.filter((c) => c.protocol === p).length;
     if (n > 0) counts[p] = n;
   }
   return counts;
@@ -240,9 +244,19 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     findStargateCustodians(symbol),
   ]);
 
+  // Solana is read on its own terms: the balance there is not at the
+  // contract's address, so it comes back already read rather than as a
+  // custodian to look up later. Fetched before the "nothing found" decision
+  // for the same reason the LayerZero registry is - a token bridged only to
+  // Solana would otherwise be reported as not bridged at all.
+  const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
+  const solanaRows =
+    !chainFilter || chainFilter === "solanamainnet" ? await findSolanaBalances(symbol, solanaMint) : [];
+  const solanaHasSomething = solanaRows.length > 0;
+
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
 
-  if (all.length === 0) {
+  if (all.length === 0 && !solanaHasSomething) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
     if (nativeOftChains.size > 0) {
       lines.push(
@@ -276,18 +290,24 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const { balances, failuresByChain, attemptsByChain, notReadableByChain } =
     await readCustodianBalances(scoped);
 
+  // Solana now counts as a chain the bot checks, so it belongs with the
+  // supported ones rather than in the "not checked" footer.
+  const solanaLabel = solanaMint ? [chainMeta("solanamainnet")?.label ?? "Solana"] : [];
   const supportedChains = [
     ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
   ];
   const unsupportedPlatforms = [
-    ...new Set(token.platforms.filter((p) => !p.chainKey).map((p) => p.platformName)),
+    ...new Set([
+      ...token.platforms.filter((p) => !p.chainKey).map((p) => p.platformName),
+      ...token.otherPlatforms.filter((p) => !p.chainKey).map((p) => p.platformName),
+    ]),
   ];
 
   return renderLiquidityReport({
     symbol: token.symbol,
     name: token.name,
-    balances,
-    checkedCount: scoped.length,
+    balances: [...balances, ...solanaRows],
+    checkedCount: scoped.length + solanaRows.length,
     failuresByChain,
     attemptsByChain,
     notReadableByChain,
@@ -295,9 +315,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
     scope: {
-      supportedChains,
+      supportedChains: [...supportedChains, ...solanaLabel],
       unsupportedPlatforms,
-      byProtocol: countByProtocol(scoped),
+      byProtocol: countByProtocol(scoped, solanaRows),
     },
   });
 }

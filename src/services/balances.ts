@@ -19,6 +19,23 @@ export interface CustodianBalance extends Custodian {
   decimals: number;
 }
 
+/**
+ * A row the report can render, whatever chain it came from. Solana addresses
+ * are base58, so the address here is a plain string - an EVM balance
+ * satisfies this shape unchanged, while a Solana one could never be forced
+ * into viem's hex-typed address.
+ */
+export interface BalanceRow {
+  protocol: Custodian["protocol"];
+  chainKey: string;
+  custodyAddress: string;
+  tokenAddress: string;
+  note?: string;
+  readsNativeCoin?: boolean;
+  amount: bigint;
+  decimals: number;
+}
+
 /** Cached per chain+token: decimals never change for a deployed ERC-20. */
 const decimalsCache = new Map<string, number>();
 

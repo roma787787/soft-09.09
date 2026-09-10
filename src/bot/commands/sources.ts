@@ -1,5 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
+import { SVM_CHAINS } from "../../config/svmChains";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
@@ -19,7 +20,10 @@ export function registerSourcesCommand(bot: Telegraf) {
   bot.command("sources", async (ctx: Context) => {
     const lines: string[] = ["<b>Что бот знает о мостах</b>", ""];
 
-    lines.push(`Сетей подключено: <b>${CHAINS.length}</b>`);
+    lines.push(
+      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length}</b> ` +
+        `(${CHAINS.length} EVM + ${SVM_CHAINS.map((c) => c.label).join(", ")})`
+    );
     lines.push("");
 
     const wormholeChains = Object.keys(PORTAL_TOKEN_BRIDGE_BY_CHAIN).length;
@@ -32,6 +36,7 @@ export function registerSourcesCommand(bot: Telegraf) {
     lines.push(
       `<b>Hyperlane</b> — ${hyperlaneRouteCount()} ${plural(hyperlaneRouteCount(), "маршрут", "маршрута", "маршрутов")} в реестре.`,
       "Ищется по тикеру; показываются только collateral-маршруты, синтетические ничего не держат.",
+      "На Solana признак другой — поле standard, а не наличие collateral: там оно есть и у синтетических.",
       ""
     );
 

@@ -179,6 +179,34 @@ export async function checkCandidates(
   return results;
 }
 
+/**
+ * The confirmed derivations, checked against the chain on four Hyperlane
+ * routes and two Wormhole custodies. The candidate list above stays for the
+ * diagnostic: when a route stops resolving, the question is which derivation
+ * changed, and that is only answerable by trying them all again.
+ */
+const HYPERLANE_ESCROW_SEEDS = [Buffer.from("hyperlane_token"), Buffer.from("-"), Buffer.from("escrow")];
+
+/** The account a Hyperlane Sealevel route keeps its collateral in. */
+export function hyperlaneEscrow(programId: string): string | undefined {
+  try {
+    return pda(HYPERLANE_ESCROW_SEEDS, new PublicKey(programId))?.toBase58();
+  } catch {
+    return undefined;
+  }
+}
+
+/** The account Wormhole's Token Bridge locks a Solana-native token in. */
+export function wormholeCustody(mint: string): string | undefined {
+  const bridge = solanaTokenBridge();
+  if (!bridge) return undefined;
+  try {
+    return pda([new PublicKey(mint).toBuffer()], new PublicKey(bridge))?.toBase58();
+  } catch {
+    return undefined;
+  }
+}
+
 export interface SolanaRoute {
   routeId: string;
   symbol: string;
@@ -219,4 +247,71 @@ export function findSolanaHyperlaneRoutes(symbol: string): SolanaRoute[] {
     }
   }
   return found;
+}
+
+
+export interface SvmBalanceRow {
+  protocol: "hyperlane" | "wormhole";
+  chainKey: string;
+  custodyAddress: string;
+  tokenAddress: string;
+  note?: string;
+  amount: bigint;
+  decimals: number;
+}
+
+/**
+ * Every Solana account holding this token for a bridge, with its balance.
+ *
+ * Read in one call rather than one per account: a public Solana endpoint
+ * rate-limits a burst of small requests far sooner than it refuses a single
+ * batched one, and a chain that drops out of the report reads as "no
+ * liquidity here".
+ */
+export async function findSolanaBalances(symbol: string, mint?: string): Promise<SvmBalanceRow[]> {
+  const chainKey = "solanamainnet";
+  const wanted: Array<{ protocol: "hyperlane" | "wormhole"; address: string; mint: string; note?: string }> = [];
+
+  for (const route of findSolanaHyperlaneRoutes(symbol)) {
+    const escrow = hyperlaneEscrow(route.programId);
+    if (escrow) wanted.push({ protocol: "hyperlane", address: escrow, mint: route.mint, note: route.routeId });
+  }
+
+  if (mint) {
+    const custody = wormholeCustody(mint);
+    if (custody) wanted.push({ protocol: "wormhole", address: custody, mint });
+  }
+
+  if (wanted.length === 0) return [];
+
+  let accounts: Array<any | null>;
+  try {
+    accounts = await withSvmClient(chainKey, (c) =>
+      c.getMultipleParsedAccounts(wanted.map((w) => new PublicKey(w.address))).then((r) => r.value)
+    );
+  } catch (err) {
+    console.error("[svm] не удалось прочитать аккаунты Solana:", err);
+    return [];
+  }
+
+  const rows: SvmBalanceRow[] = [];
+  wanted.forEach((entry, i) => {
+    const info = (accounts[i]?.data as any)?.parsed?.info;
+    // An account that does not exist, or holds a different mint, is not this
+    // token's custody - and inventing a zero for it would claim the bridge
+    // was checked when it was not.
+    if (!info || info.mint !== entry.mint) return;
+
+    rows.push({
+      protocol: entry.protocol,
+      chainKey,
+      custodyAddress: entry.address,
+      tokenAddress: entry.mint,
+      note: entry.note,
+      amount: BigInt(info.tokenAmount?.amount ?? "0"),
+      decimals: Number(info.tokenAmount?.decimals ?? 0),
+    });
+  });
+
+  return rows;
 }

@@ -43,6 +43,7 @@ import {
   zkSync,
 } from "viem/chains";
 import type { Chain } from "viem";
+import { SVM_CHAINS } from "./svmChains";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -583,4 +584,23 @@ export function resolveChain(input: string): ChainDef | undefined {
 
 export function allChainKeys(): string[] {
   return CHAINS.map((c) => c.key);
+}
+
+
+/**
+ * Label and explorer for any chain the bot reads, EVM or not.
+ *
+ * getChain() deliberately answers only for EVM chains, because everything
+ * that calls it needs `viemChain`. The report needs neither - it needs a
+ * name and a link - so it asks this instead, and a Solana row renders like
+ * any other rather than falling back to a bare chain key.
+ */
+export function chainMeta(chainKey: string): { label: string; explorerAddressUrl: (a: string) => string } | undefined {
+  const evm = CHAINS.find((c) => c.key === chainKey);
+  if (evm) return { label: evm.label, explorerAddressUrl: evm.explorerAddressUrl };
+
+  const svm = SVM_CHAINS.find((c) => c.key === chainKey);
+  if (svm) return { label: svm.label, explorerAddressUrl: svm.explorerAddressUrl };
+
+  return undefined;
 }
