@@ -13,7 +13,7 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
-import { factsFor, factsFromRegistryEntry, keyForSlug } from "../src/services/chainDiscovery";
+import { factsFor, factsFromRegistryEntry, keyForSlug, mergeFacts } from "../src/services/chainDiscovery";
 import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
@@ -1672,6 +1672,32 @@ check(
   factsFromRegistryEntry({ ...moonbeamEntry, rpc: ["https://rpc.example/${API_KEY}"] }, 1284) === undefined
 );
 check("nothing at all is not facts", factsFromRegistryEntry(undefined, 1284) === undefined);
+
+// The registries are merged, not tried in order, and that is the whole
+// point: forty-four candidates were refused with "the one node did not
+// answer" - one node, because that is all the local registries carried.
+// Ethereum Classic has five in the canonical registry, ThunderCore three,
+// Boba BNB four. Live chains whose first listed endpoint went stale.
+const localFacts = {
+  name: "Astar zkEVM",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: ["https://one.example"],
+  explorerUrl: undefined,
+};
+const registryFacts2 = {
+  name: "Astar zkEVM Mainnet",
+  nativeCurrency: { name: "Something Else", symbol: "XXX", decimals: 6 },
+  rpcUrls: ["https://one.example", "https://two.example", "https://three.example"],
+  explorerUrl: "https://explorer.example",
+};
+const merged = mergeFacts(localFacts, registryFacts2);
+check("endpoints from both registries are kept", merged?.rpcUrls.length === 3);
+check("and the same node is not counted twice", merged?.rpcUrls.filter((u) => u === "https://one.example").length === 1);
+check("the local name wins", merged?.name === "Astar zkEVM");
+check("and so does the local currency", merged?.nativeCurrency.symbol === "ETH");
+check("an explorer is taken from whichever has one", merged?.explorerUrl === "https://explorer.example");
+check("either side alone still works", mergeFacts(undefined, registryFacts2)?.rpcUrls.length === 3);
+check("and neither side is nothing", mergeFacts(undefined, undefined) === undefined);
 
 // -----------------------------------------------------------------------------
 

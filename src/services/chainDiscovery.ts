@@ -32,8 +32,8 @@ const PROBE_TIMEOUT_MS = 6_000;
 /** Chains probed at once. Each probes its endpoints in parallel. */
 const PROBE_CONCURRENCY = 10;
 
-/** Endpoints tried per candidate chain. */
-const MAX_ENDPOINTS = 4;
+/** Endpoints tried per candidate chain, matching what the reader will use. */
+const MAX_ENDPOINTS = 6;
 
 export interface DiscoveredChain {
   key: string;
@@ -197,6 +197,39 @@ export function factsFromRegistryEntry(
 }
 
 /**
+ * Everything all three registries know about a chain id, merged.
+ *
+ * Merged, not tried in order, and that distinction is the whole point.
+ * The canonical registry used to be consulted only when the local two said
+ * nothing at all, and forty-four candidates were then refused with "the one
+ * node did not answer" - one node, because that is all the local registries
+ * carried. Ethereum Classic has five in the canonical registry, ThunderCore
+ * three, Boba BNB four. Those are not obscure dead chains; they are live
+ * ones whose first listed endpoint has gone stale, which is the same thing
+ * that already cost the bot a chain a week ago.
+ */
+async function mergedFacts(chainId: number): Promise<ChainFacts | undefined> {
+  return mergeFacts(factsFor(chainId), await registryFacts(chainId));
+}
+
+/** The merge itself, without the fetch, so it can be checked offline. */
+export function mergeFacts(
+  local: ChainFacts | undefined,
+  registry: ChainFacts | undefined
+): ChainFacts | undefined {
+  if (!local) return registry;
+  if (!registry) return local;
+  return {
+    // The local registries name a chain the way people do ("Astar zkEVM"),
+    // the canonical one the way its team filed it ("Astar zkEVM Mainnet").
+    name: local.name,
+    nativeCurrency: local.nativeCurrency,
+    rpcUrls: [...new Set([...local.rpcUrls, ...registry.rpcUrls])],
+    explorerUrl: local.explorerUrl ?? registry.explorerUrl,
+  };
+}
+
+/**
  * A key for a chain the bot was not told about.
  *
  * Derived from CoinGecko's slug, which is stable and already lowercase, so
@@ -326,9 +359,7 @@ export async function discoverChains(): Promise<DiscoveryReport> {
       const index = next++;
       if (index >= candidates.length) return;
       const platform = candidates[index];
-      // The local registries first, because they cost nothing; the canonical
-      // one only for what they do not carry.
-      const facts = factsFor(platform.chainId!) ?? (await registryFacts(platform.chainId!));
+      const facts = await mergedFacts(platform.chainId!);
       if (!facts) {
         results[index] = {
           label: platform.name,
