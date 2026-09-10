@@ -9,6 +9,7 @@ import { registerDiagCommand } from "./commands/diag";
 import { registerLiquidityCommand } from "./commands/liquidity";
 import { registerSourcesCommand } from "./commands/sources";
 import { registerCcipCommand } from "./commands/ccip";
+import { registerLzMeshCommand } from "./commands/lzmesh";
 import { registerLzProbeCommand } from "./commands/lzprobe";
 
 export function createBot(): Telegraf {
@@ -23,6 +24,7 @@ export function createBot(): Telegraf {
   registerLiquidityCommand(bot);
   registerSourcesCommand(bot);
   registerCcipCommand(bot);
+  registerLzMeshCommand(bot);
   registerLzProbeCommand(bot);
 
   bot.catch((err, ctx) => {

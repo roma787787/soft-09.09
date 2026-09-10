@@ -6,6 +6,8 @@ import type { Custodian } from "./types";
 import { getChain, resolveChain } from "../config/chains";
 import { getClient } from "../services/rpcClient";
 import { LZ_ENDPOINT_V2 } from "../protocols/addresses/layerzero";
+import { getLzEidMap } from "../services/idMaps";
+import { bytes32ToAddress, isEvmAddressBytes32 } from "../protocols/util";
 
 const OAPP_ABI = [
   { type: "function", name: "endpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
@@ -289,4 +291,141 @@ export function layerZeroRegistrySize(): number | undefined {
 /** How many tickers the manual config covers, for the /sources report. */
 export function layerZeroConfigSize(): number {
   return Object.keys(loadConfig()).length;
+}
+
+// ---------------------------------------------------------------------------
+// Walking the peer mesh
+// ---------------------------------------------------------------------------
+
+const PEERS_ABI = [
+  {
+    type: "function",
+    name: "peers",
+    stateMutability: "view",
+    inputs: [{ name: "eid", type: "uint32" }],
+    outputs: [{ type: "bytes32" }],
+  },
+] as const;
+
+const ERC20_SYMBOL_ABI = [
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+] as const;
+
+export interface MeshResult {
+  custodians: Custodian[];
+  /** Chains whose peer mints its own supply, so nothing is held there. */
+  nativeChains: string[];
+  /** Chains the walk reached, for the report's own accounting. */
+  reached: string[];
+}
+
+/**
+ * Expands one known OFT into the whole deployment it belongs to.
+ *
+ * This is what closes the gap the registries leave. A registry lists a token
+ * only if someone published it there, and LayerZero's covers a few hundred
+ * tickers out of everything that exists. But an OFT knows its own
+ * counterparts: `peers(eid)` returns its address on the destination chain,
+ * because that is how it decides which messages to trust. So a single hit
+ * anywhere - from the registry, from the manual config, or from probing the
+ * token address CoinMarketCap gave us - unfolds into every chain that
+ * deployment reaches, including chains no registry mentions.
+ *
+ * A peer that locks an ERC-20 is a custody contract and holds withdrawable
+ * liquidity. A peer that returns itself mints and burns, and holds nothing -
+ * a different answer from "not bridged here", and one worth stating.
+ */
+export async function expandLayerZeroMesh(
+  seeds: Array<{ chainKey: string; oapp: Address }>,
+  symbol: string,
+  known: Set<string> = new Set()
+): Promise<MeshResult> {
+  if (seeds.length === 0) return { custodians: [], nativeChains: [], reached: [] };
+
+  const eidMap = await getLzEidMap();
+
+  // Two seeds, not all of them: the mesh is fully connected, so the first
+  // one that answers already names every chain. The second is there for the
+  // case where the first sits on a chain whose node is refusing calls.
+  const useful = seeds.slice(0, 2);
+
+  const peerByChain = new Map<string, Address>();
+  await Promise.all(
+    useful.map(async (seed) => {
+      const client = getClient(seed.chainKey);
+      await Promise.all(
+        [...eidMap.chainKeyToId.entries()].map(async ([chainKey, eid]) => {
+          if (chainKey === seed.chainKey || peerByChain.has(chainKey) || known.has(chainKey)) return;
+          try {
+            const raw = (await client.readContract({
+              address: seed.oapp,
+              abi: PEERS_ABI,
+              functionName: "peers",
+              args: [eid],
+            })) as string;
+            if (!isEvmAddressBytes32(raw)) return;
+            peerByChain.set(chainKey, bytes32ToAddress(raw) as Address);
+          } catch {
+            // This chain is simply not a destination for this deployment.
+          }
+        })
+      );
+    })
+  );
+
+  const custodians: Custodian[] = [];
+  const nativeChains: string[] = [];
+  const reached: string[] = [];
+
+  await Promise.all(
+    [...peerByChain.entries()].map(async ([chainKey, peer]) => {
+      const probe = await probeLayerZeroToken(chainKey, peer);
+      if (!probe) return;
+      reached.push(chainKey);
+
+      if (probe.kind === "native" || !probe.wrappedToken) {
+        nativeChains.push(chainKey);
+        return;
+      }
+
+      // The mesh guarantees these contracts talk to each other; it does not
+      // guarantee the ERC-20 underneath is the token that was asked about.
+      // Checking the symbol keeps a mismatched deployment from being
+      // reported under the wrong ticker.
+      if (!(await symbolLooksRight(chainKey, probe.wrappedToken, symbol))) return;
+
+      custodians.push({
+        protocol: "layerzero",
+        chainKey,
+        custodyAddress: peer,
+        tokenAddress: probe.wrappedToken,
+        note: "найден по сети пиров LayerZero",
+      });
+    })
+  );
+
+  return { custodians, nativeChains, reached };
+}
+
+/**
+ * Accepts a token whose symbol matches the ticker, allowing for the variants
+ * a bridged token picks up ("USDT" locked by a "USDT0" deployment). A token
+ * that will not answer symbol() is accepted: the peer link is already strong
+ * evidence, and dropping the row would hide real liquidity.
+ */
+async function symbolLooksRight(chainKey: string, token: Address, symbol: string): Promise<boolean> {
+  try {
+    const actual = (await getClient(chainKey).readContract({
+      address: token,
+      abi: ERC20_SYMBOL_ABI,
+      functionName: "symbol",
+    })) as string;
+    if (!actual) return true;
+
+    const a = actual.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const b = symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return a.includes(b) || b.includes(a);
+  } catch {
+    return true;
+  }
 }

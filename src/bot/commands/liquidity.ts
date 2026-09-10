@@ -9,6 +9,7 @@ import {
   probeLayerZeroToken,
   findLayerZeroRegistryDeployments,
   readAdapterUnderlying,
+  expandLayerZeroMesh,
   type RegistryDeploymentInfo,
 } from "../../bridges/layerzero";
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
@@ -120,13 +121,25 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     (p) => p.chainKey && !deployments.some((d) => d.chainKey === p.chainKey) && !alreadyConfigured.has(p.chainKey)
   );
   const probes = await Promise.all(uncovered.map((p) => probeLayerZeroToken(p.chainKey!, p.tokenAddress)));
+
+  // Any OFT we can find is a way into the rest of the deployment, whether it
+  // holds collateral or not, so plain OFTs are kept as seeds too.
+  const seeds: Array<{ chainKey: string; oapp: Address }> = [
+    ...deployments.map((d) => ({ chainKey: d.chainKey, oapp: d.address })),
+    ...custodians
+      .filter((c) => c.protocol === "layerzero")
+      .map((c) => ({ chainKey: c.chainKey, oapp: c.custodyAddress })),
+  ];
+
   for (const probe of probes) {
     if (!probe) continue;
+    const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
+    if (platform) seeds.push({ chainKey: probe.chainKey, oapp: platform.tokenAddress });
+
     if (probe.kind === "native") {
       nativeOftChains.add(probe.chainKey);
       continue;
     }
-    const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
     if (probe.wrappedToken && platform) {
       found.push({
         protocol: "layerzero",
@@ -137,6 +150,18 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
       });
     }
   }
+
+  // One OFT names its counterparts on every chain it talks to, so a single
+  // hit anywhere unfolds into the whole deployment - including chains no
+  // registry lists and CoinMarketCap never mentioned.
+  const covered = new Set<string>([
+    ...found.map((c) => c.chainKey),
+    ...nativeOftChains,
+    ...alreadyConfigured,
+  ]);
+  const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
+  found.push(...mesh.custodians);
+  for (const chainKey of mesh.nativeChains) nativeOftChains.add(chainKey);
 
   // Shared vaults answer for any token at all - one contract per chain holds
   // everything that bridge carries - so they are asked regardless of whether
