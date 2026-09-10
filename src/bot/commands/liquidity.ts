@@ -33,6 +33,13 @@ export interface RegistryResolution {
   nativeOftChains: string[];
   /** Adapters skipped because they lock a different project's token. */
   mismatchedAdapters: number;
+  /**
+   * Which ones were skipped and why. Two rounds of debugging went into
+   * "16 adapters skipped" with no way to see which sixteen or on what
+   * grounds; a count alone cannot tell an over-strict rule from a registry
+   * full of other projects.
+   */
+  rejected: Array<{ chainKey: string; address: Address; reason: string }>;
 }
 
 /**
@@ -54,7 +61,13 @@ export async function resolveRegistryDeployments(
 ): Promise<RegistryResolution> {
   const custodians: Custodian[] = [];
   const nativeOftChains = new Set<string>();
+  const rejected: RegistryResolution["rejected"] = [];
   let mismatchedAdapters = 0;
+
+  const reject = (d: RegistryDeploymentInfo, reason: string) => {
+    mismatchedAdapters++;
+    rejected.push({ chainKey: d.chainKey, address: d.address, reason });
+  };
 
   for (const deployment of deployments) {
     if (alreadyConfigured.has(deployment.chainKey)) continue;
@@ -71,29 +84,44 @@ export async function resolveRegistryDeployments(
     // listed address would let any similarly named project's adapter in,
     // which is the whole risk of widening the search.
     if (deployment.viaAlias) {
+      // An alias candidate must say what it locks; there is no falling back
+      // to the listed address for one, since guessing is the only thing
+      // that could put another project's balance under this ticker.
       if (!onChain) {
-        mismatchedAdapters++;
+        reject(deployment, "не сказал, что блокирует");
         continue;
       }
-      // Where CoinMarketCap lists the token, that address is the proof.
-      // Where it does not - and a bridged deployment routinely reaches
-      // chains CMC has never heard of, which is exactly the coverage worth
-      // having - the locked ERC-20 is asked for its own symbol instead.
-      // Requiring CMC there would throw away the chains this was for.
-      const proven = listed
-        ? onChain.toLowerCase() === listed.toLowerCase()
-        : await checkSymbol(deployment.chainKey, onChain, symbol);
-      if (!proven) {
-        mismatchedAdapters++;
+      // Then either proof is enough. CoinMarketCap's address for that chain
+      // is the strongest, but a bridged deployment routinely locks its own
+      // variant - USDT0 beside USDT - and reaches chains CoinMarketCap never
+      // lists at all. Both are the same asset to anyone asking whether their
+      // transfer can be withdrawn, so the locked ERC-20's own symbol proves
+      // it too. Demanding the address alone rejected sixteen of USDT's
+      // twenty-three real deployments.
+      const matchesListed = !!listed && onChain.toLowerCase() === listed.toLowerCase();
+      if (!matchesListed && !(await checkSymbol(deployment.chainKey, onChain, symbol))) {
+        reject(deployment, `блокирует ${onChain}, тикер не совпал`);
         continue;
       }
+
+      custodians.push({
+        protocol: "layerzero",
+        chainKey: deployment.chainKey,
+        custodyAddress: deployment.address,
+        tokenAddress: onChain,
+        note: deployment.viaAlias,
+      });
+      continue;
     }
 
     const underlying = onChain ?? listed;
     if (!underlying) continue;
 
+    // An exact-ticker deployment locking something else is a different
+    // project sharing the symbol, and reading its balance under this ticker
+    // would be worse than omitting it.
     if (listed && underlying.toLowerCase() !== listed.toLowerCase()) {
-      mismatchedAdapters++;
+      reject(deployment, `блокирует ${underlying}, а CMC указал ${listed}`);
       continue;
     }
 
@@ -102,11 +130,11 @@ export async function resolveRegistryDeployments(
       chainKey: deployment.chainKey,
       custodyAddress: deployment.address,
       tokenAddress: underlying,
-      note: deployment.viaAlias ?? "реестр",
+      note: "реестр",
     });
   }
 
-  return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters };
+  return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters, rejected };
 }
 
 function countByProtocol(custodians: Custodian[]): Partial<Record<BridgeProtocol, number>> {

@@ -2,6 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import type { Address } from "viem";
 import { getChain } from "../../config/chains";
 import { lookupToken } from "../../services/cmc";
+import { resolveRegistryDeployments } from "./liquidity";
 import {
   findLayerZeroRegistryDeployments,
   probeLayerZeroToken,
@@ -67,6 +68,15 @@ export function registerLzMeshCommand(bot: Telegraf) {
           `${d.locksCollateral ? " (держит залог)" : " (чеканит)"}` +
           `${d.viaAlias ? ` — по тикеру ${esc(d.viaAlias)}` : ""}`
       );
+    }
+
+    const resolution = await resolveRegistryDeployments(deployments, token.platforms, new Set(), symbol);
+    lines.push(
+      "",
+      `<b>Из реестра принято</b>: ${resolution.custodians.length}, отсеяно: ${resolution.rejected.length}`
+    );
+    for (const r of resolution.rejected.slice(0, 8)) {
+      lines.push(`  ${esc(chainName(r.chainKey))} — ${esc(r.reason)}`);
     }
 
     lines.push("", `<b>Опрос контрактов токена</b>: ${probed.length === 0 ? "OFT не найден" : `${probed.length}`}`);

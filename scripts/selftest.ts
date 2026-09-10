@@ -861,9 +861,24 @@ async function asyncChecks(): Promise<void> {
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(),
     "TKN",
-    async () => OTHER_TOKEN
+    async () => OTHER_TOKEN,
+    async () => false
   );
   check("an alias deployment locking something else is rejected", aliasWrong.custodians.length === 0);
+
+  // A bridged deployment locks its own variant of the token rather than the
+  // one CoinMarketCap lists, and to anyone asking whether a transfer can be
+  // withdrawn that is the same asset. Requiring the listed address alone
+  // rejected sixteen of USDT's twenty-three real deployments.
+  const aliasVariant = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => OTHER_TOKEN,
+    async () => true
+  );
+  check("but a variant of the same token, by symbol, is kept", aliasVariant.custodians.length === 1);
 
   const aliasUnlisted = await resolveRegistryDeployments(
     [aliasDeployment],
