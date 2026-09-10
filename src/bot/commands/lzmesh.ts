@@ -63,7 +63,9 @@ export function registerLzMeshCommand(bot: Telegraf) {
     lines.push(`<b>Реестр OFT</b>: ${deployments.length === 0 ? "тикера нет" : `${deployments.length}`}`);
     for (const d of deployments.slice(0, 8)) {
       lines.push(
-        `  ${esc(chainName(d.chainKey))} — <code>${esc(d.rawType)}</code>${d.locksCollateral ? " (держит залог)" : " (чеканит)"}`
+        `  ${esc(chainName(d.chainKey))} — <code>${esc(d.rawType)}</code>` +
+          `${d.locksCollateral ? " (держит залог)" : " (чеканит)"}` +
+          `${d.viaAlias ? ` — по тикеру ${esc(d.viaAlias)}` : ""}`
       );
     }
 

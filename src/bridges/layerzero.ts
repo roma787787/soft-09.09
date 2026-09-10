@@ -194,6 +194,14 @@ export interface RegistryDeploymentInfo {
   /** True when the contract locks a separate ERC-20 and so holds liquidity. */
   locksCollateral: boolean;
   rawType: string;
+  /**
+   * The registry key this came from, when it was not the ticker itself.
+   * A bridged token often lives in the registry under its own name - USDT's
+   * current LayerZero deployment is listed as USDT0 - so an exact-ticker
+   * lookup finds the old adapter and misses the one holding the money.
+   * These are only trusted once the contract confirms what it locks.
+   */
+  viaAlias?: string;
 }
 
 /**
@@ -209,8 +217,35 @@ export async function findLayerZeroRegistryDeployments(symbol: string): Promise<
   const registry = await fetchOftRegistry();
   if (!registry) return [];
 
-  const entries = registry[symbol.toUpperCase()] ?? registry[symbol];
-  return extractDeployments(entries);
+  const wanted = symbol.toUpperCase();
+  const found = extractDeployments(registry[wanted] ?? registry[symbol]);
+
+  for (const key of aliasKeysFor(wanted, Object.keys(registry))) {
+    for (const deployment of extractDeployments(registry[key])) {
+      found.push({ ...deployment, viaAlias: key });
+    }
+  }
+  return found;
+}
+
+/**
+ * Registry keys that plausibly hold the same token under a different name.
+ *
+ * A bridged token is often listed under its own ticker rather than the
+ * original's: USDT's live LayerZero deployment is USDT0, and looking up
+ * "USDT" finds only a deprecated adapter holding a few thousand while the
+ * one holding the real balance sits one key away.
+ *
+ * The rule is deliberately narrow - the ticker plus at most two characters -
+ * because it is a way to generate candidates, not a way to conclude
+ * anything. Every candidate still has to prove, on-chain, that it locks the
+ * exact token being asked about, so a wrong guess costs a call and produces
+ * no row.
+ */
+export function aliasKeysFor(symbol: string, keys: string[]): string[] {
+  if (symbol.length < 3) return [];
+  const pattern = new RegExp(`^${symbol.replace(/[^A-Z0-9]/g, "")}[0-9A-Z.]{1,2}$`);
+  return keys.filter((k) => k !== symbol && pattern.test(k.toUpperCase()));
 }
 
 /**

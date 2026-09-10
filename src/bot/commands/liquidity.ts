@@ -61,7 +61,20 @@ export async function resolveRegistryDeployments(
     }
 
     const listed = platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
-    const underlying = (await readUnderlying(deployment.chainKey, deployment.address)) ?? listed;
+    const onChain = await readUnderlying(deployment.chainKey, deployment.address);
+
+    // A deployment found under a neighbouring ticker has to prove itself:
+    // it is only this token if the contract says so. Falling back to the
+    // listed address here would let any similarly named project's adapter
+    // in, which is the whole risk of widening the search.
+    if (deployment.viaAlias) {
+      if (!onChain || !listed || onChain.toLowerCase() !== listed.toLowerCase()) {
+        mismatchedAdapters++;
+        continue;
+      }
+    }
+
+    const underlying = onChain ?? listed;
     if (!underlying) continue;
 
     if (listed && underlying.toLowerCase() !== listed.toLowerCase()) {
@@ -74,7 +87,9 @@ export async function resolveRegistryDeployments(
       chainKey: deployment.chainKey,
       custodyAddress: deployment.address,
       tokenAddress: underlying,
-      note: `из реестра LayerZero (${deployment.rawType})`,
+      note: deployment.viaAlias
+        ? `из реестра LayerZero, тикер ${deployment.viaAlias} (${deployment.rawType})`
+        : `из реестра LayerZero (${deployment.rawType})`,
     });
   }
 

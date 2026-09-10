@@ -18,7 +18,7 @@ import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain, resolveChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
-import { extractDeployments, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
+import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
@@ -109,6 +109,21 @@ const v1FromEid = (eid: number) => (eid - 30000 > 0 && eid - 30000 < 1000 ? eid 
 check("Ethereum's V1 id comes out of its eid", v1FromEid(30101) === 101);
 check("Base's V1 id comes out of its eid", v1FromEid(30184) === 184);
 check("a testnet or malformed eid yields no V1 id", v1FromEid(40161) === undefined && v1FromEid(101) === undefined);
+
+// --- LayerZero ticker aliases ------------------------------------------------
+// A bridged token is often listed under its own name rather than the
+// original's: looking up USDT finds a deprecated adapter holding a few
+// thousand, while USDT0 - one key away - holds the real balance. The rule
+// generates candidates only; each still has to prove on-chain what it locks.
+
+const REGISTRY_KEYS = ["USDT", "USDT0", "USDTB", "USDC", "USDC.E", "USDCE", "USD", "USDTABCDEF", "WETH", "ETH"];
+check("the token's own ticker is not returned as its alias", !aliasKeysFor("USDT", REGISTRY_KEYS).includes("USDT"));
+check("a one-character suffix is a candidate", aliasKeysFor("USDT", REGISTRY_KEYS).includes("USDT0"));
+check("so is a two-character one", aliasKeysFor("USDC", REGISTRY_KEYS).includes("USDC.E"));
+check("but not an arbitrarily longer name", !aliasKeysFor("USDT", REGISTRY_KEYS).includes("USDTABCDEF"));
+// "ETH" would otherwise pull in WETH's neighbours and half the registry.
+check("a short ticker generates no candidates at all", aliasKeysFor("ET", REGISTRY_KEYS).length === 0);
+check("a ticker that is a prefix of nothing yields nothing", aliasKeysFor("WETH", REGISTRY_KEYS).length === 0);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
