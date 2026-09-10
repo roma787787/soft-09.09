@@ -305,6 +305,54 @@ const bracketed = parseCmcInfoResponse(
 );
 check("a bracketed network name still resolves", bracketed?.platforms[0]?.chainKey === "polygon");
 
+// The same contradiction with the qualifier appended instead of bracketed:
+// CMC calls it "World Chain Mainnet", the bot calls it "World Chain", and a
+// WLD report listed World Chain under "not checked" two screens below the
+// rows it had just printed for it.
+const suffixed = parseCmcInfoResponse(
+  {
+    data: {
+      WLD: [
+        {
+          symbol: "WLD",
+          name: "Worldcoin",
+          contract_address: [
+            {
+              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              platform: { name: "World Chain Mainnet" },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  "WLD"
+);
+check("a trailing qualifier still resolves", suffixed?.platforms[0]?.chainKey === "worldchain");
+
+// And the guard on that stripping: a chain must not be matched by a name
+// that survives only because the qualifier was chewed off something else.
+const unrelated = parseCmcInfoResponse(
+  {
+    data: {
+      ZZZ: [
+        {
+          symbol: "ZZZ",
+          name: "Nothing",
+          contract_address: [
+            {
+              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              platform: { name: "Mainnet" },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  "ZZZ"
+);
+check("a bare qualifier matches no chain", unrelated?.platforms[0]?.chainKey === undefined);
+
 check("the EVM deployment is still read as before", withSolana?.platforms.length === 1);
 check("the Solana mint is kept rather than discarded", withSolana?.otherPlatforms.length === 1);
 check(

@@ -55,7 +55,42 @@ function normalise(s: string): string {
  */
 function nameCandidates(platformName: string, slug: string | undefined): string[] {
   const withoutBrackets = platformName.replace(/\s*\(.*?\)\s*/g, " ").trim();
-  return [normalise(platformName), normalise(withoutBrackets), slug ? normalise(slug) : ""].filter(Boolean);
+  return [
+    normalise(platformName),
+    normalise(withoutBrackets),
+    normalise(stripTrailingQualifier(withoutBrackets)),
+    slug ? normalise(slug) : "",
+  ].filter(Boolean);
+}
+
+/**
+ * The other half of the same problem: CMC also qualifies a network by
+ * appending a word rather than bracketing it - "World Chain Mainnet" for a
+ * chain this bot calls "World Chain". Stripped in a loop because the
+ * qualifiers stack ("... Mainnet Network"), and only from the end, so
+ * "Mainnet Capital" or any chain whose own name starts with one of these
+ * words is left alone.
+ */
+const TRAILING_QUALIFIERS = ["mainnet", "main net", "network", "blockchain", "protocol"];
+
+function stripTrailingQualifier(name: string): string {
+  let out = name.trim();
+  for (let stripped = true; stripped; ) {
+    stripped = false;
+    for (const word of TRAILING_QUALIFIERS) {
+      const pattern = new RegExp(`\\s+${word}$`, "i");
+      if (pattern.test(out)) {
+        const shorter = out.replace(pattern, "").trim();
+        // Never strip a chain down to nothing: "Mainnet" on its own is a
+        // useless candidate, and an empty one matches a chain with an empty
+        // alias.
+        if (!shorter) continue;
+        out = shorter;
+        stripped = true;
+      }
+    }
+  }
+  return out;
 }
 
 function resolvePlatform(platformName: string, slug: string | undefined): string | undefined {

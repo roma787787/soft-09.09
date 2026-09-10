@@ -8,8 +8,29 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Chains probed at once. Enough to stay quick, few enough to be honest. */
-const HEALTH_CHECK_BATCH = 12;
+/**
+ * Chains in flight at once. Not all at once: firing a hundred and fifty
+ * requests together does not measure a hundred and fifty nodes, they queue
+ * inside Node and the timings report how long each waited its turn -
+ * Avalanche on a private endpoint went from 326 ms to 71 seconds.
+ */
+const HEALTH_CHECK_CONCURRENCY = 20;
+
+/**
+ * How long one chain gets. A chain with four fallback endpoints and a 12 s
+ * transport timeout can otherwise spend a minute and a half proving it is
+ * down, which it does not need: a node that has not produced a block number
+ * in five seconds is not one this bot can read a balance from anyway.
+ */
+const CHAIN_DEADLINE_MS = 5_000;
+
+/**
+ * And how long the whole sweep gets. Telegraf abandons a handler after 90
+ * seconds and answers with its generic error, which from the phone is
+ * indistinguishable from a bot that is down - so the sweep has to finish
+ * well inside that on its own.
+ */
+const TOTAL_BUDGET_MS = 50_000;
 
 interface ChainHealth {
   chainKey: string;
@@ -18,6 +39,8 @@ interface ChainHealth {
   blockNumber?: bigint;
   ms?: number;
   error?: string;
+  /** Never asked: the sweep ran out of time before reaching this chain. */
+  skipped?: boolean;
   custom: boolean;
 }
 
@@ -25,7 +48,15 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
   const custom = hasCustomRpc(chainKey);
   const started = Date.now();
   try {
-    const blockNumber = await getClient(chainKey).getBlockNumber();
+    // Raced against a deadline rather than left to the transport's own
+    // timeouts, which multiply: every fallback endpoint gets its full
+    // timeout, and each of those is retried.
+    const blockNumber = await Promise.race([
+      getClient(chainKey).getBlockNumber(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`нет ответа за ${CHAIN_DEADLINE_MS / 1000} с`)), CHAIN_DEADLINE_MS)
+      ),
+    ]);
     return { chainKey, label, ok: true, blockNumber, ms: Date.now() - started, custom };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -41,6 +72,40 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
 }
 
 /**
+ * A pool, not lockstep batches. Batches wait for their slowest member, so a
+ * single dead chain stalls eleven healthy ones and the sweep takes as long
+ * as the sum of the worst chain in each batch.
+ */
+async function sweep(deadline: number): Promise<ChainHealth[]> {
+  const health: ChainHealth[] = new Array(CHAINS.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = next++;
+      if (index >= CHAINS.length) return;
+      const chain = CHAINS[index];
+      if (Date.now() > deadline) {
+        health[index] = {
+          chainKey: chain.key,
+          label: chain.label,
+          ok: false,
+          skipped: true,
+          custom: hasCustomRpc(chain.key),
+        };
+        continue;
+      }
+      health[index] = await checkChain(chain.key, chain.label);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(HEALTH_CHECK_CONCURRENCY, CHAINS.length) }, () => worker())
+  );
+  return health;
+}
+
+/**
  * Reports whether each chain's RPC actually answers. Without this, an
  * unreachable node is indistinguishable from "the address is not a bridge",
  * and there is no way to tell them apart from a phone.
@@ -49,19 +114,10 @@ export function registerDiagCommand(bot: Telegraf) {
   bot.command("diag", async (ctx: Context) => {
     await ctx.sendChatAction("typing");
 
-    // In batches, not all at once. Firing a hundred and fifty requests
-    // together does not measure a hundred and fifty nodes: they queue inside
-    // Node, so the timings report how long each waited its turn - Avalanche
-    // on a private endpoint went from 326 ms to 71 seconds - and the ones at
-    // the back of the queue time out and are reported as down when they were
-    // never asked.
-    const health: ChainHealth[] = [];
-    for (let i = 0; i < CHAINS.length; i += HEALTH_CHECK_BATCH) {
-      const batch = CHAINS.slice(i, i + HEALTH_CHECK_BATCH);
-      health.push(...(await Promise.all(batch.map((c) => checkChain(c.key, c.label)))));
-    }
+    const health = await sweep(Date.now() + TOTAL_BUDGET_MS);
 
-    const failed = health.filter((h) => !h.ok);
+    const skipped = health.filter((h) => h.skipped);
+    const failed = health.filter((h) => !h.ok && !h.skipped);
     const ok = health.filter((h) => h.ok);
 
     // A line per chain stopped fitting somewhere past forty of them. What
@@ -97,10 +153,20 @@ export function registerDiagCommand(bot: Telegraf) {
       }
     }
 
-    const okCount = health.filter((h) => h.ok).length;
-    const header = `🩺 Связь с сетями: ${okCount} из ${health.length}\n\n`;
+    const header = `🩺 Связь с сетями: ${ok.length} из ${health.length}\n\n`;
 
     let footer = "";
+    if (skipped.length > 0) {
+      // Said outright rather than counted with the failures: these chains
+      // were never asked, and reporting them as down would be a lie that
+      // sends the user hunting for RPC keys they do not need.
+      footer +=
+        `\n\n⏳ Не успели проверить ${skipped.length} ` +
+        `${plural(skipped.length, "сеть", "сети", "сетей")} за ${TOTAL_BUDGET_MS / 1000} с — ` +
+        `это не отказ, просто очередь. Повтори /diag: ` +
+        `${esc(skipped.slice(0, 12).map((h) => h.label).join(", "))}` +
+        `${skipped.length > 12 ? " и другие" : ""}.`;
+    }
     if (failed.length > 0) {
       // Naming the variables outright: deriving SWELL_RPC_URL from
       // "Swellchain" is a small step at a desk and an annoying one on a
@@ -110,7 +176,7 @@ export function registerDiagCommand(bot: Telegraf) {
         .filter((v): v is string => !!v)
         .map((v) => `<code>${esc(v)}</code>`)
         .join(", ");
-      footer =
+      footer +=
         `\n\nСети с ❌ сейчас не проверяются командой /info. ` +
         `Публичные ноды часто отказывают серверам хостинга. ` +
         `Лечится своим RPC — пропиши его в ${vars}.`;
