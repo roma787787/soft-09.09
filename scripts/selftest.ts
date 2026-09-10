@@ -1067,6 +1067,35 @@ const oneAdapter = renderLiquidityReport({
 });
 check("a lone row is not cluttered with a note it does not need", !oneAdapter.includes("TKN0"));
 
+// "Checked and empty" is the most useful answer this report can give - do
+// not send here - and hiding it made an empty route indistinguishable from
+// one that was never looked at.
+const withEmpty = renderLiquidityReport({
+  symbol: "TKN",
+  name: "Token",
+  balances: [
+    fakeBalance("ethereum", "wormhole", 5_000n),
+    { ...fakeBalance("ethereum", "layerzero", 0n) },
+    { ...fakeBalance("ethereum", "across", 0n) },
+  ],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 3 },
+});
+check("a bridge that holds nothing is named as empty", withEmpty.includes("пусто:"));
+check("and both empty bridges are listed", withEmpty.includes("LayerZero") && withEmpty.includes("Across"));
+check("a bridge that does hold something is not called empty", !/пусто:[^\n]*Wormhole/.test(withEmpty));
+
+const nothingEmpty = renderLiquidityReport({
+  symbol: "TKN",
+  name: "Token",
+  balances: [fakeBalance("ethereum", "wormhole", 5_000n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+});
+check("with nothing empty the line does not appear", !nothingEmpty.includes("пусто:"));
+
 check("a dust balance is shown, not rounded away to zero", dusty.includes("0,0001"));
 
 // A native pool holds the chain's coin, so a WETH report shows those rows in

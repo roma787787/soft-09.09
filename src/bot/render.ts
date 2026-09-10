@@ -283,6 +283,17 @@ export function renderLiquidityReport(input: ReportInput): string {
     byChain.get(b.chainKey)!.push(b);
   }
 
+  // Bridges that answered with zero. For a report about whether funds can be
+  // withdrawn, this is the single most useful answer there is - "this route
+  // is empty, do not send here" - and hiding it made an empty route look
+  // exactly like one that was never checked.
+  const emptyByChain = new Map<string, Set<BridgeProtocol>>();
+  for (const b of balances) {
+    if (b.amount > 0n) continue;
+    if (!emptyByChain.has(b.chainKey)) emptyByChain.set(b.chainKey, new Set());
+    emptyByChain.get(b.chainKey)!.add(b.protocol);
+  }
+
   const chains = [...byChain.entries()]
     .map(([chainKey, rows]) => ({
       chainKey,
@@ -388,6 +399,15 @@ export function renderLiquidityReport(input: ReportInput): string {
             : plural(rest.length, "контракт", "контракта", "контрактов");
         block.push(`   и ещё ${rest.length} ${noun} поменьше, суммарно ${total} ${esc(symbol)}`);
       }
+    }
+
+    // Only bridges with nothing left in them, and only those that hold
+    // something somewhere else on this chain would already be listed above.
+    const empty = [...(emptyByChain.get(chainKey) ?? [])].filter(
+      (p) => !rows.some((r) => r.protocol === p)
+    );
+    if (empty.length > 0) {
+      block.push(`   <i>пусто: ${esc(empty.map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))}</i>`);
     }
 
     const blockText = block.join("\n");
