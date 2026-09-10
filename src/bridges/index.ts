@@ -38,8 +38,16 @@ export function resolveCustodians(symbol: string, platforms: TokenPlatform[]): C
     ...findWormholeCustodians(tokenByChain),
   ];
 
-  // One contract can legitimately appear twice (two warp routes sharing a
-  // router); collapse so a balance is never counted or shown twice.
+  return dedupeCustodians(custodians);
+}
+
+/**
+ * Collapses custodians that name the same contract on the same chain. One
+ * contract legitimately arrives twice - two warp routes sharing a router, or
+ * the registry and a contract probe agreeing - and a duplicated row would
+ * read as twice the liquidity that actually exists.
+ */
+export function dedupeCustodians(custodians: Custodian[]): Custodian[] {
   const seen = new Set<string>();
   return custodians.filter((c) => {
     const key = `${c.protocol}:${c.chainKey}:${c.custodyAddress.toLowerCase()}:${c.tokenAddress.toLowerCase()}`;

@@ -8,6 +8,48 @@ const MAX_MESSAGE_CHARS = 3600;
 /** Rows shown per protocol per chain before the rest are summarised. */
 const MAX_ROWS_PER_GROUP = 3;
 
+/**
+ * Re-closes tags left open by a cut. Telegram parses the whole message as
+ * HTML and rejects it outright if a tag is unbalanced, so a careless
+ * truncation produces the same generic failure the cap exists to avoid.
+ */
+function closeOpenTags(text: string): string {
+  const open: string[] = [];
+  const tag = /<(\/?)([a-zA-Z]+)[^>]*>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tag.exec(text))) {
+    const name = m[2].toLowerCase();
+    if (m[1]) {
+      const at = open.lastIndexOf(name);
+      if (at >= 0) open.splice(at, 1);
+    } else {
+      open.push(name);
+    }
+  }
+  return text + open.reverse().map((name) => `</${name}>`).join("");
+}
+
+/**
+ * Last-resort guard. The per-chain budget bounds the body, but the closing
+ * notes grow with the number of chains, and a message Telegram refuses is
+ * indistinguishable to the user from the bot being broken.
+ *
+ * Every line the report builds is self-contained markup, so a line boundary
+ * is the safe place to cut. A single line longer than the budget has no such
+ * boundary; there the cut is repaired instead - the half-written tag or HTML
+ * entity is dropped and whatever it left open is closed.
+ */
+function capToTelegramLimit(text: string): string {
+  if (text.length <= 4000) return text;
+
+  const head = text.slice(0, 3900);
+  const lastLine = head.lastIndexOf("\n");
+  const cut =
+    lastLine > 0 ? head.slice(0, lastLine) : head.replace(/<[^>]*$/, "").replace(/&[^;\s]*$/, "");
+
+  return `${closeOpenTags(cut)}\n\n… отчёт обрезан, чтобы уместиться в сообщение.`;
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -36,6 +78,8 @@ export interface ReportInput {
   nativeOftChains?: string[];
   /** Chains with a Hyperlane route that mints instead of locking. */
   syntheticHyperlaneChains?: string[];
+  /** Registry adapters skipped because they lock a different contract. */
+  mismatchedAdapters?: number;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinMarketCap listed that this bot supports. */
@@ -155,6 +199,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     attemptsByChain,
     nativeOftChains = [],
     syntheticHyperlaneChains = [],
+    mismatchedAdapters = 0,
     scope,
   } = input;
   const withLiquidity = balances.filter((b) => b.amount > 0n);
@@ -185,7 +230,7 @@ export function renderLiquidityReport(input: ReportInput): string {
       lines.push(
         "Через известные боту мосты этот токен не заведён.",
         "",
-        "<b>Если он ходит через LayerZero</b>, у которого нет публичного реестра, адрес адаптера ищется так:",
+        "<b>Если он ходит через LayerZero</b>, но в реестре OFT его нет, адрес адаптера ищется вручную:",
         "1. Открыть токен в эксплорере, вкладка Holders.",
         "2. Найти контракт с самым большим балансом — обычно это и есть адаптер, он держит заблокированный запас.",
         "3. Проверить его: <code>/info &lt;адрес&gt; &lt;сеть&gt;</code>. Бот подтвердит, что это OFT Adapter, и покажет связанные сети.",
@@ -199,7 +244,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     }
     const scopeText = scopeLines(scope);
     if (scopeText.length > 0) lines.push("", ...scopeText);
-    return lines.join("\n");
+    return capToTelegramLimit(lines.join("\n"));
   }
 
   const byChain = new Map<string, CustodianBalance[]>();
@@ -283,8 +328,14 @@ export function renderLiquidityReport(input: ReportInput): string {
       `⚠️ Ответили не полностью: ${esc(partial.join(", "))}. Эти сети в отчёте есть, но часть их контрактов пропущена.`
     );
   }
+  if (mismatchedAdapters > 0) {
+    notes.push(
+      `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
+        " LayerZero: они блокируют не тот контракт, который CoinMarketCap указал для этого тикера."
+    );
+  }
   notes.push(`Всего проверено контрактов: ${checkedCount}.`);
   notes.push(...scopeLines(scope));
 
-  return [...lines, "", ...notes].join("\n");
+  return capToTelegramLimit([...lines, "", ...notes].join("\n"));
 }

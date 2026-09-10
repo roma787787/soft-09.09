@@ -4,6 +4,7 @@
  *
  * Run with: npm run selftest
  */
+import "./offline-env";
 import { encodeEventTopics, parseAbi, type Log } from "viem";
 import { computePollRange } from "../src/services/tracker";
 import { parseAddressChainArgs } from "../src/bot/parse";
@@ -17,7 +18,11 @@ import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
-import { extractDeployments } from "../src/bridges/layerzero";
+import { extractDeployments, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
+import { dedupeCustodians } from "../src/bridges";
+import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
+import type { Custodian } from "../src/bridges/types";
+import type { Address } from "viem";
 
 let failures = 0;
 
@@ -582,6 +587,186 @@ check("adapters are no longer described as living in the config", !scopedWith(1,
 check("adapters are counted as adapters", scopedWith(1, 1).includes("LayerZero — 1 адаптер"));
 
 // -----------------------------------------------------------------------------
+// A registry entry is not yet a custody contract: it still has to be checked
+// against what the token actually is on that chain. These were live-only
+// decisions until the step was split out of the command.
+// -----------------------------------------------------------------------------
 
-console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
-if (failures > 0) process.exit(1);
+const ADAPTER = "0x1111111111111111111111111111111111111111" as Address;
+const TOKEN = "0x2222222222222222222222222222222222222222" as Address;
+const OTHER_TOKEN = "0x3333333333333333333333333333333333333333" as Address;
+
+function deployment(chainKey: string, locksCollateral: boolean, address: Address = ADAPTER): RegistryDeploymentInfo {
+  return { chainKey, address, locksCollateral, rawType: locksCollateral ? "OFTAdapter" : "OFT" };
+}
+
+async function asyncChecks(): Promise<void> {
+  const native = await resolveRegistryDeployments(
+    [deployment("ethereum", false)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    async () => undefined
+  );
+  check("a plain OFT yields no custody contract", native.custodians.length === 0);
+  check("and is reported as an omnichain chain instead", native.nativeOftChains.includes("ethereum"));
+
+  const adapter = await resolveRegistryDeployments(
+    [deployment("ethereum", true)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    async () => TOKEN
+  );
+  check("an adapter locking the listed token becomes a custodian", adapter.custodians.length === 1);
+  check(
+    "the balance is read against the locked ERC-20, not the adapter",
+    adapter.custodians[0]?.tokenAddress === TOKEN && adapter.custodians[0]?.custodyAddress === ADAPTER
+  );
+
+  // Tickers are not unique. An adapter under the same symbol that locks some
+  // other project's token would otherwise be reported as this token's
+  // liquidity - a wrong number reads worse than a missing one.
+  const foreign = await resolveRegistryDeployments(
+    [deployment("ethereum", true)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    async () => OTHER_TOKEN
+  );
+  check("an adapter locking a different token is skipped", foreign.custodians.length === 0);
+  check("and is counted so the report can say so", foreign.mismatchedAdapters === 1);
+
+  // The manual config exists to override the registry, so a chain it already
+  // covers must not pick up a second, contradictory row from the registry.
+  const overridden = await resolveRegistryDeployments(
+    [deployment("ethereum", true)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(["ethereum"]),
+    async () => TOKEN
+  );
+  check("the manual config wins over the registry", overridden.custodians.length === 0);
+
+  // A node that will not answer token() is not a reason to drop the chain:
+  // CoinMarketCap already told us which ERC-20 lives there.
+  const fallback = await resolveRegistryDeployments(
+    [deployment("ethereum", true)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    async () => undefined
+  );
+  check("an unreadable adapter falls back to the listed token", fallback.custodians[0]?.tokenAddress === TOKEN);
+
+  const unknown = await resolveRegistryDeployments(
+    [deployment("ethereum", true)],
+    [],
+    new Set(),
+    async () => undefined
+  );
+  check("with nothing to lock, the adapter is dropped rather than guessed", unknown.custodians.length === 0);
+}
+
+// -----------------------------------------------------------------------------
+// The same contract arrives from the registry and from probing the token
+// itself. Listing it twice would read as twice the liquidity that exists.
+// -----------------------------------------------------------------------------
+
+const fromRegistry: Custodian = {
+  protocol: "layerzero",
+  chainKey: "ethereum",
+  custodyAddress: ADAPTER,
+  tokenAddress: TOKEN,
+  note: "из реестра LayerZero (OFTAdapter)",
+};
+const fromProbe: Custodian = {
+  protocol: "layerzero",
+  chainKey: "ethereum",
+  // Same contract, different casing: addresses arrive checksummed from one
+  // source and lowercase from another.
+  custodyAddress: ADAPTER.toUpperCase().replace("0X", "0x") as Address,
+  tokenAddress: TOKEN,
+  note: "адаптер определён по контракту",
+};
+const onAnotherChain: Custodian = { ...fromRegistry, chainKey: "arbitrum" };
+const otherProtocol: Custodian = { ...fromRegistry, protocol: "wormhole" };
+
+const deduped = dedupeCustodians([fromRegistry, fromProbe, onAnotherChain, otherProtocol]);
+check("the same contract from two sources is counted once", deduped.length === 3);
+check("case alone does not make two contracts", !deduped.some((c) => c === fromProbe));
+check("the same address on another chain is kept", deduped.some((c) => c.chainKey === "arbitrum"));
+check("two bridges holding the same token are both kept", deduped.some((c) => c.protocol === "wormhole"));
+
+// -----------------------------------------------------------------------------
+// Telegram rejects a message over 4096 characters outright, and the reply is
+// then not a shortened report but a generic error. The caps upstream are
+// sized by hand, so this is the backstop for whatever they missed.
+// -----------------------------------------------------------------------------
+
+const runaway = renderLiquidityReport({
+  symbol: "HUGE",
+  name: "A".repeat(9000),
+  balances: [],
+  checkedCount: 0,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: Array.from({ length: 400 }, () => "ethereum"),
+  scope: {
+    supportedChains: Array.from({ length: 200 }, (_, i) => `Сеть номер ${i}`),
+    unsupportedPlatforms: Array.from({ length: 200 }, (_, i) => `Платформа номер ${i}`),
+    wormhole: 0,
+    hyperlane: 0,
+    layerzero: 0,
+  },
+});
+check("a runaway report still fits Telegram's limit", runaway.length <= 4096, `${runaway.length} chars`);
+check("and says it was cut rather than ending mid-word", runaway.includes("обрезан"));
+
+// Telegram parses the whole message as HTML and refuses an unbalanced one,
+// so a cut through a tag fails to send - the exact outcome the cap prevents.
+function tagsBalanced(html: string): boolean {
+  const open: string[] = [];
+  const tag = /<(\/?)([a-zA-Z]+)[^>]*>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tag.exec(html))) {
+    const name = m[2].toLowerCase();
+    if (m[1]) {
+      if (open.pop() !== name) return false;
+    } else {
+      open.push(name);
+    }
+  }
+  return open.length === 0;
+}
+check("the truncated report is still valid HTML", tagsBalanced(runaway));
+
+
+// The cut lands mid-line only when a single line outgrows the whole budget;
+// the usual case must land on a line boundary, tags intact.
+const manyLines = renderLiquidityReport({
+  symbol: "MANY",
+  name: "Many Lines",
+  balances: [],
+  checkedCount: 0,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: Array.from({ length: 500 }, () => "ethereum"),
+  scope: {
+    supportedChains: Array.from({ length: 300 }, (_, i) => `Длинное имя сети номер ${i}`),
+    unsupportedPlatforms: [],
+    wormhole: 0,
+    hyperlane: 0,
+    layerzero: 0,
+  },
+});
+check("a long multi-line report is capped too", manyLines.length <= 4096, `${manyLines.length} chars`);
+check("and stays valid HTML", tagsBalanced(manyLines));
+
+// -----------------------------------------------------------------------------
+
+asyncChecks().then(
+  () => {
+    console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
+    if (failures > 0) process.exit(1);
+  },
+  (err) => {
+    console.error("async checks threw:", err);
+    process.exit(1);
+  }
+);

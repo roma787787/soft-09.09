@@ -1,14 +1,17 @@
 import type { Telegraf, Context } from "telegraf";
 import { getChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
-import { resolveCustodians } from "../../bridges";
+import { resolveCustodians, dedupeCustodians } from "../../bridges";
 import {
   probeLayerZeroToken,
   findLayerZeroRegistryDeployments,
   readAdapterUnderlying,
+  type RegistryDeploymentInfo,
 } from "../../bridges/layerzero";
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import type { Custodian } from "../../bridges/types";
+import type { TokenPlatform } from "../../services/cmc";
+import type { Address } from "viem";
 import { readCustodianBalances } from "../../services/balances";
 import { renderLiquidityReport } from "../render";
 
@@ -18,36 +21,33 @@ function esc(s: string): string {
 
 const REPLY_OPTS = { parse_mode: "HTML", link_preview_options: { is_disabled: true } } as const;
 
-export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
-  const symbol = rawSymbol.trim().replace(/^\$/, "").toUpperCase();
+export interface RegistryResolution {
+  custodians: Custodian[];
+  /** Chains where the OFT mints its own supply, so no contract holds anything. */
+  nativeOftChains: string[];
+  /** Adapters skipped because they lock a different project's token. */
+  mismatchedAdapters: number;
+}
 
-  const token = await lookupToken(symbol);
-  if (!token) {
-    return `Тикер <b>${esc(symbol)}</b> не найден на CoinMarketCap. Проверьте написание.`;
-  }
-
-  const custodians = resolveCustodians(symbol, token.platforms);
-  if (custodians.length === 0) {
-    return (
-      `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
-      "По этому токену нет данных о бридж-контрактах.\n\n" +
-      "Wormhole и Hyperlane подтягиваются автоматически, а адаптеры LayerZero ведутся вручную: " +
-      "добавьте адрес в <code>config/layerzero-lockboxes.json</code>."
-    );
-  }
-
+/**
+ * Turns LayerZero registry entries into custody contracts.
+ *
+ * Split out of the command so the two decisions it makes are covered by
+ * tests rather than only by a live registry: a plain OFT holds nothing and
+ * must not be reported as empty custody, and an adapter that locks a
+ * contract other than the one CoinMarketCap lists for this ticker belongs to
+ * a different project that happens to share the symbol.
+ */
+export async function resolveRegistryDeployments(
+  deployments: RegistryDeploymentInfo[],
+  platforms: TokenPlatform[],
+  alreadyConfigured: Set<string>,
+  readUnderlying: (chainKey: string, address: Address) => Promise<Address | undefined> = readAdapterUnderlying
+): Promise<RegistryResolution> {
+  const custodians: Custodian[] = [];
   const nativeOftChains = new Set<string>();
-  const found: Custodian[] = [];
-  const alreadyConfigured = new Set(
-    custodians.filter((c) => c.protocol === "layerzero").map((c) => c.chainKey)
-  );
+  let mismatchedAdapters = 0;
 
-  // LayerZero's own registry, keyed by ticker. An adapter there locks a real
-  // token and is exactly the custody contract this report is about; a plain
-  // OFT holds nothing anywhere, which is why an empty result for it must not
-  // read as "not bridged". A chain already covered by the manual config is
-  // left alone: a hand-entered address is a deliberate override.
-  const deployments = await findLayerZeroRegistryDeployments(symbol);
   for (const deployment of deployments) {
     if (alreadyConfigured.has(deployment.chainKey)) continue;
     if (!deployment.locksCollateral) {
@@ -55,12 +55,16 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
       continue;
     }
 
-    const underlying =
-      (await readAdapterUnderlying(deployment.chainKey, deployment.address)) ??
-      token.platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
+    const listed = platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
+    const underlying = (await readUnderlying(deployment.chainKey, deployment.address)) ?? listed;
     if (!underlying) continue;
 
-    found.push({
+    if (listed && underlying.toLowerCase() !== listed.toLowerCase()) {
+      mismatchedAdapters++;
+      continue;
+    }
+
+    custodians.push({
       protocol: "layerzero",
       chainKey: deployment.chainKey,
       custodyAddress: deployment.address,
@@ -69,8 +73,37 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     });
   }
 
-  // Fall back to asking the token contracts directly for chains the registry
-  // did not cover - it lists 358 tickers, not every token in existence.
+  return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters };
+}
+
+export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
+  // Trimmed to a plausible ticker length: the "not found" reply quotes what
+  // was asked for, and a 4000-character argument would push that reply past
+  // Telegram's own limit, turning a clear answer into a send failure.
+  const symbol = rawSymbol.trim().replace(/^\$/, "").slice(0, 32).toUpperCase();
+
+  const token = await lookupToken(symbol);
+  if (!token) {
+    return `Тикер <b>${esc(symbol)}</b> не найден на CoinMarketCap. Проверьте написание.`;
+  }
+
+  const custodians = resolveCustodians(symbol, token.platforms);
+
+  const alreadyConfigured = new Set(
+    custodians.filter((c) => c.protocol === "layerzero").map((c) => c.chainKey)
+  );
+
+  // LayerZero is resolved before deciding there is nothing to report: a token
+  // bridged only by LayerZero has no Wormhole or Hyperlane custodian, and
+  // giving up here would skip the very registry that covers it.
+  const deployments = await findLayerZeroRegistryDeployments(symbol);
+  const registry = await resolveRegistryDeployments(deployments, token.platforms, alreadyConfigured);
+
+  const nativeOftChains = new Set<string>(registry.nativeOftChains);
+  const found: Custodian[] = [...registry.custodians];
+  const mismatchedAdapters = registry.mismatchedAdapters;
+
+  // Chains the registry did not cover: ask the token contracts themselves.
   const uncovered = token.platforms.filter(
     (p) => p.chainKey && !deployments.some((d) => d.chainKey === p.chainKey) && !alreadyConfigured.has(p.chainKey)
   );
@@ -93,7 +126,24 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     }
   }
 
-  const all = found.length > 0 ? [...custodians, ...found] : custodians;
+  const all = dedupeCustodians([...custodians, ...found]);
+
+  if (all.length === 0) {
+    const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
+    if (nativeOftChains.size > 0) {
+      lines.push(
+        "",
+        `Это омничейн-токен LayerZero (OFT) в сетях: ${[...nativeOftChains].map((c) => getChain(c)?.label ?? c).join(", ")}.`,
+        "У такого токена хранилища нет: он сжигается в одной сети и чеканится в другой."
+      );
+    } else {
+      lines.push(
+        "",
+        "Адреса берутся из реестров Wormhole, Hyperlane и LayerZero — ни в одном из них этот тикер не встречается."
+      );
+    }
+    return lines.join("\n");
+  }
 
   const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(all);
 
@@ -112,6 +162,7 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     failuresByChain,
     attemptsByChain,
     nativeOftChains: [...nativeOftChains],
+    mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
     scope: {
       supportedChains,
