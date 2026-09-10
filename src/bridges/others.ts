@@ -236,3 +236,91 @@ export async function findOtherBalances(symbol: string): Promise<OtherBalanceRow
 export function otherChainCount(): number {
   return OTHER_CHAINS.length;
 }
+
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+export interface OtherProbe {
+  step: string;
+  outcome: string;
+  ok: boolean;
+}
+
+/**
+ * Shows the exact request each reader makes and what came back.
+ *
+ * Three of these four chains produced no rows on their first live run, and
+ * "no rows" is the same output whether the endpoint refused, the entry point
+ * is named differently, or the contract genuinely holds nothing. Only the
+ * raw reply separates them.
+ */
+export async function probeOtherRoute(route: OtherRoute): Promise<OtherProbe[]> {
+  const chain = getOtherChain(route.chainKey);
+  if (!chain) return [];
+
+  const out: OtherProbe[] = [];
+  const say = (step: string, ok: boolean, outcome: string) =>
+    out.push({ step, ok, outcome: outcome.replace(/\s+/g, " ").slice(0, 180) });
+
+  if (route.protocol === "starknet") {
+    if (!route.collateral) {
+      say("залог", false, "маршрут не называет токен, который держит");
+      return out;
+    }
+    for (const name of ["balanceOf", "balance_of"]) {
+      const selector = starknetSelector(name);
+      try {
+        const response = await fetch(chain.rpcUrls[0], {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "starknet_call",
+            params: [
+              { contract_address: route.collateral, entry_point_selector: selector, calldata: [route.address] },
+              "latest",
+            ],
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const text = await response.text();
+        say(`${name} (${selector.slice(0, 12)}…)`, response.ok && !text.includes('"error"'), `HTTP ${response.status} ${text}`);
+      } catch (err) {
+        say(name, false, err instanceof Error ? err.message : String(err));
+      }
+    }
+    return out;
+  }
+
+  if (route.protocol === "radix") {
+    try {
+      const response = await fetch(`${chain.rpcUrls[0].replace(/\/$/, "")}/state/entity/details`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ addresses: [route.address] }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const text = await response.text();
+      say("state/entity/details", response.ok, `HTTP ${response.status} ${text}`);
+    } catch (err) {
+      say("state/entity/details", false, err instanceof Error ? err.message : String(err));
+    }
+    return out;
+  }
+
+  if (route.protocol === "aleo") {
+    const address = route.address.includes("/") ? route.address.split("/")[1] : route.address;
+    try {
+      const url = `${chain.rpcUrls[0].replace(/\/$/, "")}/mainnet/program/credits.aleo/mapping/account/${address}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      say("credits.aleo/account", response.ok, `HTTP ${response.status} ${await response.text()}`);
+    } catch (err) {
+      say("credits.aleo/account", false, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return out;
+}

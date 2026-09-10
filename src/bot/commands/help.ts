@@ -26,6 +26,7 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 <code>/lzchains</code> — у каких сетей известен eid LayerZero и откуда.
 <code>/svm &lt;тикер&gt;</code> — как бот находит хранилища на сетях VM Solana, по шагам.
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
+<code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.
