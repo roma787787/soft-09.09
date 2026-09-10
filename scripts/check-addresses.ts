@@ -11,7 +11,7 @@
  *
  * Run with: npm run check:addresses  (no network access required)
  */
-import { getAddress, isAddress } from "viem";
+import { validateAddress } from "../src/protocols/addresses/validate";
 import { LZ_ENDPOINT_V2 } from "../src/protocols/addresses/layerzero";
 import { HYPERLANE_MAILBOX_BY_CHAIN } from "../src/protocols/addresses/hyperlane";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
@@ -41,25 +41,13 @@ const entries: Entry[] = [
 let failures = 0;
 
 for (const [name, address] of entries) {
-  const hexLength = address.replace(/^0x/, "").length;
-  const problems: string[] = [];
-
-  if (hexLength !== 40) problems.push(`expected 40 hex chars, got ${hexLength}`);
-  if (!isAddress(address, { strict: false })) problems.push("not a well-formed address");
-
-  const isMixedCase = address !== address.toLowerCase() && address !== address.toUpperCase();
-  if (isMixedCase) {
-    try {
-      getAddress(address);
-    } catch {
-      problems.push("EIP-55 checksum mismatch (likely a typo)");
-    }
-  }
+  const problems = validateAddress(address);
 
   if (problems.length > 0) {
     failures++;
     console.error(`FAIL  ${name}\n      ${address}\n      ${problems.join("; ")}`);
   } else {
+    const isMixedCase = address !== address.toLowerCase() && address !== address.toUpperCase();
     const verified = isMixedCase ? "checksum-verified" : "lowercase (checksum not applicable)";
     console.log(`ok    ${name.padEnd(32)} ${address}  [${verified}]`);
   }

@@ -14,7 +14,9 @@
     "selftest": "tsx scripts/selftest.ts"
   },
   "dependencies": {
+    "@across-protocol/constants": "^3.1.125",
     "@hyperlane-xyz/registry": "^26.1.0",
+    "@wormhole-foundation/sdk-base": "^6.1.5",
     "better-sqlite3": "^11.9.1",
     "dotenv": "^16.4.5",
     "telegraf": "^4.16.3",

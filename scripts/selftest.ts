@@ -23,6 +23,8 @@ import { dedupeCustodians } from "../src/bridges";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
+import { validateAddress } from "../src/protocols/addresses/validate";
+import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
 
 let failures = 0;
 
@@ -34,6 +36,42 @@ function check(name: string, condition: boolean, detail?: string): void {
     console.error(`FAIL  ${name}${detail ? `\n      ${detail}` : ""}`);
   }
 }
+
+// --- address validation ------------------------------------------------------
+// This guard was silently passing everything: viem's getAddress() returns a
+// mixed-case input unchanged instead of validating it, so the old
+// try/catch around it approved any capitalisation. Two addresses in the
+// repo were wrong and the check reported 28/28. These cases fail if the
+// technique ever regresses to something that always agrees.
+
+const GOOD = "0x3ee18B2214AFF97000D974cf647E7C347E8fa585";
+check("a correctly checksummed address passes", validateAddress(GOOD).length === 0);
+check("an all-lowercase address passes, having no checksum to check", validateAddress(GOOD.toLowerCase()).length === 0);
+check(
+  "a single flipped letter is caught",
+  validateAddress("0x3ee18B2214AFF97000D974cf647E7C347E8fa585".replace("B2214", "b2214")).length === 1
+);
+check("a dropped character is caught", validateAddress(GOOD.slice(0, -1)).length > 0);
+check("something that is not an address at all is caught", validateAddress("0xnope").length > 0);
+
+// --- Wormhole address book ---------------------------------------------------
+// Derived from Wormhole's own registry rather than typed in. If that
+// derivation ever breaks - a renamed export, a changed lookup - the map goes
+// quietly empty and every Wormhole row disappears from every report, which
+// reads as "this token has no liquidity" rather than as a broken import.
+
+const portalMap = PORTAL_TOKEN_BRIDGE_BY_CHAIN as Record<string, string>;
+check("the Wormhole map is not empty", Object.keys(portalMap).length >= 10, `${Object.keys(portalMap).length} chains`);
+check(
+  "and still resolves the Token Bridge everyone knows by sight",
+  portalMap.ethereum === "0x3ee18B2214AFF97000D974cf647E7C347E8fa585",
+  portalMap.ethereum
+);
+check("every derived address survives validation", Object.values(portalMap).every((a) => validateAddress(a).length === 0));
+check(
+  "chains Wormhole never deployed to are absent rather than guessed",
+  portalMap.linea === undefined && portalMap.blast === undefined && portalMap.mode === undefined
+);
 
 // --- tracker block range arithmetic -----------------------------------------
 
