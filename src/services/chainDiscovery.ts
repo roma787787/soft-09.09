@@ -56,6 +56,16 @@ export interface DiscoveryReport {
   known: number;
   added: DiscoveredChain[];
   rejected: RejectedChain[];
+  /**
+   * Probed successfully, then refused by the table because the chain was
+   * already there.
+   *
+   * Its own bucket rather than nothing at all, which is where these went:
+   * eighty-seven chains passed every check and then vanished from the
+   * report, and the only sign of it was that the numbers did not add up -
+   * 120 known plus 0 added plus 68 refused, out of 275.
+   */
+  duplicates: number;
   error?: string;
 }
 
@@ -330,7 +340,24 @@ function chainDefFor(platform: AssetPlatform, facts: ChainFacts, rpcUrl: string)
  * anything about.
  */
 export async function discoverChains(): Promise<DiscoveryReport> {
-  const report: DiscoveryReport = { at: new Date(), listed: 0, known: 0, added: [], rejected: [] };
+  // One scan at a time. Startup begins one without waiting for it, so a
+  // /chains обнови a few seconds later used to start a second: both then
+  // took their "already known" count before either had added anything, both
+  // probed the same hundred and fifty chains, and the one that finished
+  // second reported nothing added - having done all the work and found the
+  // table already full. It also doubled the requests to every registry and
+  // every node involved.
+  if (scanInFlight) return scanInFlight;
+  scanInFlight = runDiscovery().finally(() => {
+    scanInFlight = undefined;
+  });
+  return scanInFlight;
+}
+
+let scanInFlight: Promise<DiscoveryReport> | undefined;
+
+async function runDiscovery(): Promise<DiscoveryReport> {
+  const report: DiscoveryReport = { at: new Date(), listed: 0, known: 0, added: [], rejected: [], duplicates: 0 };
 
   let platforms: Map<string, AssetPlatform>;
   try {
@@ -398,6 +425,8 @@ export async function discoverChains(): Promise<DiscoveryReport> {
         chainId: def.viemChain.id,
         rpcUrl: result.url,
       });
+    } else {
+      report.duplicates++;
     }
   }
 
@@ -425,7 +454,8 @@ export function startChainDiscovery(): () => void {
         }
         console.log(
           `[chains] CoinGecko знает ${report.listed} EVM-сетей, из них было ${report.known}; ` +
-            `добавлено ${report.added.length}, отклонено ${report.rejected.length}, всего ${CHAINS.length}`
+            `добавлено ${report.added.length}, отклонено ${report.rejected.length}, ` +
+            `уже были ${report.duplicates}, всего ${CHAINS.length}`
         );
         for (const chain of report.added) console.log(`[chains] + ${chain.label} (${chain.chainId}) ${chain.rpcUrl}`);
       })

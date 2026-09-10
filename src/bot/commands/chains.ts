@@ -37,12 +37,22 @@ export function registerChainsCommand(bot: Telegraf) {
       return;
     }
 
+    // Every candidate accounted for, and the arithmetic shown. The counts
+    // stopped adding up once - 120 known plus 0 added plus 68 refused, out
+    // of 275 - and that discrepancy was the only visible sign that eighty-
+    // seven chains had passed every check and then been dropped in silence.
+    const accounted =
+      report.known + report.added.length + report.rejected.length + report.duplicates;
     lines.push(
       `CoinGecko перечисляет ${report.listed} EVM-сетей: ${report.known} уже были, ` +
         `${report.added.length} ${plural(report.added.length, "добавлена", "добавлено", "добавлено")}, ` +
-        `${report.rejected.length} не подошли.`,
-      ""
+        `${report.rejected.length} не подошли` +
+        `${report.duplicates > 0 ? `, ${report.duplicates} уже успели добавиться` : ""}.`
     );
+    if (accounted !== report.listed) {
+      lines.push(`⚠️ Сходится ${accounted} из ${report.listed} — где-то теряются сети, это баг.`);
+    }
+    lines.push("");
 
     // Compact, and the refusals before the additions. A line and a URL per
     // added chain filled the message on its own - sixty-one of them - and

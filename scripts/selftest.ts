@@ -13,7 +13,13 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
-import { factsFor, factsFromRegistryEntry, keyForSlug, mergeFacts } from "../src/services/chainDiscovery";
+import {
+  factsFor,
+  factsFromRegistryEntry,
+  keyForSlug,
+  mergeFacts,
+  type DiscoveryReport,
+} from "../src/services/chainDiscovery";
 import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
@@ -1698,6 +1704,25 @@ check("and so does the local currency", merged?.nativeCurrency.symbol === "ETH")
 check("an explorer is taken from whichever has one", merged?.explorerUrl === "https://explorer.example");
 check("either side alone still works", mergeFacts(undefined, registryFacts2)?.rpcUrls.length === 3);
 check("and neither side is nothing", mergeFacts(undefined, undefined) === undefined);
+
+// Every candidate has to land in exactly one bucket. When one did not, the
+// only sign was arithmetic: 120 known plus 0 added plus 68 refused, out of
+// 275 listed. Eighty-seven chains had passed every check and been dropped
+// without a word, because a second scan had started while the first was
+// still running and the table was already full by the time it finished.
+const balanced: DiscoveryReport = {
+  at: new Date(),
+  listed: 275,
+  known: 120,
+  added: [{ key: "a", label: "A", chainId: 1, rpcUrl: "https://a.example" }],
+  rejected: [{ label: "B", chainId: 2, reason: "нет узлов" }],
+  duplicates: 153,
+};
+check(
+  "a report accounts for every candidate",
+  balanced.known + balanced.added.length + balanced.rejected.length + balanced.duplicates ===
+    balanced.listed
+);
 
 // -----------------------------------------------------------------------------
 
