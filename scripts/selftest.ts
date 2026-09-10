@@ -16,7 +16,7 @@ import { parseCmcInfoResponse } from "../src/services/cmc";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
-import { getChain, resolveChain, CHAINS } from "../src/config/chains";
+import { getChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
@@ -264,6 +264,17 @@ check(
   withSolana?.otherPlatforms[0]?.tokenAddress === "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 );
 check("nonsense is still thrown away", (withSolana?.platforms.length ?? 0) + (withSolana?.otherPlatforms.length ?? 0) === 2);
+
+// A person typing "solana" after a ticker is naming a chain the bot reads.
+// Telling them it is not connected, while the report shows Solana rows two
+// lines above, is the bot contradicting itself.
+check("solana resolves as a chain", resolveAnyChain("solana")?.key === "solanamainnet");
+check("so does its registry name", resolveAnyChain("solanamainnet")?.key === "solanamainnet");
+check("and its short form", resolveAnyChain("sol")?.key === "solanamainnet");
+check("EVM chains still resolve as before", resolveAnyChain("eth")?.key === "ethereum");
+check("a chain that does not exist still resolves to nothing", resolveAnyChain("нетакой") === undefined);
+// getChain stays EVM-only: everything calling it needs viemChain.
+check("but Solana is still not an EVM chain", getChain("solanamainnet") === undefined);
 
 // --- Solana routes -----------------------------------------------------------
 // The EVM rule "has collateralAddressOrDenom, therefore holds collateral" is

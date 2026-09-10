@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from "telegraf";
-import { getChain, resolveChain, chainMeta } from "../../config/chains";
+import { getChain, resolveChain, resolveAnyChain, chainMeta } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
@@ -278,8 +278,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // also what keeps a widely bridged token from overflowing the message and
   // dropping the very chain that was being asked about.
   const scoped = chainFilter ? all.filter((c) => c.chainKey === chainFilter) : all;
-  if (chainFilter && scoped.length === 0) {
-    const label = getChain(chainFilter)?.label ?? chainFilter;
+  // Solana rows are counted here too: narrowing to Solana finds nothing
+  // among the EVM custodians by definition, and saying "nothing here" while
+  // holding its balances would be the report contradicting itself.
+  if (chainFilter && scoped.length === 0 && solanaRows.length === 0) {
+    const label = chainMeta(chainFilter)?.label ?? chainFilter;
     return (
       `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
       `В сети ${esc(label)} контрактов-хранилищ по этому токену не найдено.\n\n` +
@@ -330,7 +333,7 @@ export function registerLiquidityCommand(bot: Telegraf) {
       await ctx.reply("Укажите тикер. Пример: <code>/liquidity ARB</code>", { parse_mode: "HTML" });
       return;
     }
-    await replyWithLiquidity(ctx, arg, resolveChain(parts[2] ?? "")?.key);
+    await replyWithLiquidity(ctx, arg, resolveAnyChain(parts[2] ?? "")?.key);
   });
 }
 

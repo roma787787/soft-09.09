@@ -2,7 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
-import { CHAINS, getChain, resolveChain } from "../../config/chains";
+import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
 
@@ -75,7 +75,7 @@ export function registerInfoCommand(bot: Telegraf) {
     if (firstArg && !isAddress(firstArg, { strict: false })) {
       // A second word narrows the report to one chain: "/info USDC base"
       // answers the question actually being asked before a transfer.
-      const chain = parts[2] ? resolveChain(parts[2]) : undefined;
+      const chain = parts[2] ? resolveAnyChain(parts[2]) : undefined;
       if (parts[2] && !chain) {
         await ctx.reply(`Сеть <b>${esc(parts[2])}</b> не подключена. Список: <code>/diag</code>`, REPLY_OPTS);
         return;

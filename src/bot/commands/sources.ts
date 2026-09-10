@@ -28,7 +28,7 @@ export function registerSourcesCommand(bot: Telegraf) {
 
     const wormholeChains = Object.keys(PORTAL_TOKEN_BRIDGE_BY_CHAIN).length;
     lines.push(
-      `<b>Wormhole</b> — Token Bridge в ${wormholeChains} из ${CHAINS.length} сетей.`,
+      `<b>Wormhole</b> — Token Bridge в ${wormholeChains} из ${CHAINS.length} сетей EVM, плюс Solana.`,
       "Адреса из официального реестра Wormhole, держит любой токен, который через него проходил.",
       ""
     );

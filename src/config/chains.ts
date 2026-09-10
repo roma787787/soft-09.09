@@ -43,7 +43,7 @@ import {
   zkSync,
 } from "viem/chains";
 import type { Chain } from "viem";
-import { SVM_CHAINS } from "./svmChains";
+import { SVM_CHAINS, resolveSvmChain } from "./svmChains";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -601,6 +601,25 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
 
   const svm = SVM_CHAINS.find((c) => c.key === chainKey);
   if (svm) return { label: svm.label, explorerAddressUrl: svm.explorerAddressUrl };
+
+  return undefined;
+}
+
+
+/**
+ * Resolves a chain the user typed, EVM or not.
+ *
+ * resolveChain() answers only for EVM chains because its callers need
+ * `viemChain`. But a person typing "solana" after a ticker is naming a chain
+ * the bot now reads, and telling them it is not connected - while the report
+ * shows Solana rows two lines above - is simply wrong.
+ */
+export function resolveAnyChain(name: string): { key: string; label: string } | undefined {
+  const evm = resolveChain(name);
+  if (evm) return { key: evm.key, label: evm.label };
+
+  const svm = resolveSvmChain(name);
+  if (svm) return { key: svm.key, label: svm.label };
 
   return undefined;
 }
