@@ -50,7 +50,7 @@ for (const id of [...want].sort((a,b)=>a-b)) {
     explorerTxUrl: (h) => \`${explorer}/tx/\${h}\`,
     explorerAddressUrl: (a) => \`${explorer}/address/\${a}\`,
     aliases: [${JSON.stringify(key)}${slug(v.name) !== key ? ", " + JSON.stringify(slug(v.name)) : ""}],
-    cmcPlatformNames: [${JSON.stringify(v.name)}${/ Mainnet$| Chain$/.test(v.name) ? ", " + JSON.stringify(v.name.replace(/ (Mainnet|Chain)$/, "")) : ""}],
+    platformNames: [${JSON.stringify(v.name)}${/ Mainnet$| Chain$/.test(v.name) ? ", " + JSON.stringify(v.name.replace(/ (Mainnet|Chain)$/, "")) : ""}],
   },`);
 }
 require("node:fs").writeFileSync("/tmp/newchains.txt", out.join("\n") + "\n");

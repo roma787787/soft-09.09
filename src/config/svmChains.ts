@@ -22,12 +22,12 @@ export interface SvmChainDef {
   defaultRpcUrls: string[];
   explorerAddressUrl: (address: string) => string;
   aliases: string[];
-  cmcPlatformNames?: string[];
+  platformNames?: string[];
 }
 
 /**
  * What the registry does not carry: the names a person might type, and the
- * spellings CoinMarketCap uses. Everything else - the chain list, its
+ * spellings the price API uses. Everything else - the chain list, its
  * endpoints and its explorer - is generated from Hyperlane's registry.
  */
 const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; rpcUrls?: string[]; env?: string }> = {
@@ -70,7 +70,7 @@ export const SVM_CHAINS: SvmChainDef[] = GENERATED_SVM_CHAINS.map((chain) => {
     defaultRpcUrls: [...chain.rpcUrls, ...(extra.rpcUrls ?? [])],
     explorerAddressUrl: explorerBuilder(chain.explorer),
     aliases: [...new Set([chain.key.toLowerCase(), ...(extra.aliases ?? [])])],
-    cmcPlatformNames: extra.cmc,
+    platformNames: extra.cmc,
   };
 });
 

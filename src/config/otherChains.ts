@@ -15,7 +15,7 @@ export interface OtherChainDef {
   rpcUrls: string[];
   explorerAddressUrl: (address: string) => string;
   aliases: string[];
-  cmcPlatformNames?: string[];
+  platformNames?: string[];
 }
 
 const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; path?: string; rpcUrls?: string[] }> = {
@@ -65,7 +65,7 @@ export const OTHER_CHAINS: OtherChainDef[] = GENERATED_OTHER_CHAINS.map((chain) 
       ? (a) => `${chain.explorer!.replace(/\/$/, "")}/${segment}/${a}`
       : (a) => a,
     aliases: [...new Set([chain.key.toLowerCase(), ...(extra.aliases ?? [])])],
-    cmcPlatformNames: extra.cmc,
+    platformNames: extra.cmc,
   };
 });
 

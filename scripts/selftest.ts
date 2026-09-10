@@ -12,7 +12,7 @@ import { tryDecodeEvent } from "../src/services/eventCatalog";
 import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
-import { parseCmcInfoResponse } from "../src/services/cmc";
+import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
 import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
@@ -258,101 +258,80 @@ check(
   /только описание сети/.test(explainMissing("described", 999998))
 );
 
+// CoinGecko keys its platform map by its own slug and publishes what each
+// slug means in /asset_platforms - including chain_identifier, the EVM chain
+// id. The whole of this block is about resolving a slug to one of our chains.
+const gecko = parseAssetPlatforms([
+  { id: "ethereum", chain_identifier: 1, name: "Ethereum" },
+  { id: "polygon-pos", chain_identifier: 137, name: "Polygon POS" },
+  { id: "world-chain", chain_identifier: 480, name: "World Chain Mainnet" },
+  { id: "solana", chain_identifier: null, name: "Solana" },
+  { id: "some-chain-we-do-not-support", chain_identifier: 999999, name: "Nowhere" },
+  { id: "nonsense-platform", chain_identifier: null, name: "Mainnet" },
+]);
+check("the platform list is keyed by slug", gecko.get("polygon-pos")?.chainId === 137);
+check("a platform without a chain id keeps its name", gecko.get("solana")?.chainId === undefined);
+
 // A base58 mint is not an EVM address, and rejecting it as malformed is
 // what hid every non-EVM deployment before anything could look at it.
-const withSolana = parseCmcInfoResponse(
+const withSolana = parseCoinResponse(
   {
-    data: {
-      USDC: [
-        {
-          symbol: "USDC",
-          name: "USDC",
-          contract_address: [
-            { contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", platform: { name: "Ethereum" } },
-            {
-              contract_address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-              platform: { name: "Solana" },
-            },
-            { contract_address: "не адрес вовсе", platform: { name: "Ерунда" } },
-          ],
-        },
-      ],
+    symbol: "usdc",
+    name: "USDC",
+    platforms: {
+      ethereum: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      solana: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "nonsense-platform": "не адрес",
     },
   },
-  "USDC"
+  "USDC",
+  gecko
 );
-// CoinMarketCap qualifies some names in brackets, and the bracketed form
-// matched nothing - so the chain appeared in the report's "not checked"
-// footer while the report showed rows for it, which is the bot contradicting
-// itself in one message.
-const bracketed = parseCmcInfoResponse(
-  {
-    data: {
-      CARR: [
-        {
-          symbol: "CARR",
-          name: "Carnomaly",
-          contract_address: [
-            {
-              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-              platform: { name: "Polygon (prev. MATIC)" },
-            },
-          ],
-        },
-      ],
-    },
-  },
-  "CARR"
-);
-check("a bracketed network name still resolves", bracketed?.platforms[0]?.chainKey === "polygon");
 
-// The same contradiction with the qualifier appended instead of bracketed:
-// CMC calls it "World Chain Mainnet", the bot calls it "World Chain", and a
-// WLD report listed World Chain under "not checked" two screens below the
-// rows it had just printed for it.
-const suffixed = parseCmcInfoResponse(
-  {
-    data: {
-      WLD: [
-        {
-          symbol: "WLD",
-          name: "Worldcoin",
-          contract_address: [
-            {
-              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-              platform: { name: "World Chain Mainnet" },
-            },
-          ],
-        },
-      ],
-    },
-  },
-  "WLD"
+// The bug this whole source change removes. CoinGecko calls chain 480
+// "World Chain Mainnet"; the bot calls it "World Chain"; the name matched
+// nothing, so the chain landed in the report's "not checked" footer two
+// screens below the rows the same report had just printed for it. The chain
+// id agrees where the spellings do not.
+const suffixed = parseCoinResponse(
+  { symbol: "wld", name: "Worldcoin", platforms: { "world-chain": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" } },
+  "WLD",
+  gecko
 );
-check("a trailing qualifier still resolves", suffixed?.platforms[0]?.chainKey === "worldchain");
+check("a name the bot spells differently resolves by chain id", suffixed?.platforms[0]?.chainKey === "worldchain");
 
-// And the guard on that stripping: a chain must not be matched by a name
-// that survives only because the qualifier was chewed off something else.
-const unrelated = parseCmcInfoResponse(
-  {
-    data: {
-      ZZZ: [
-        {
-          symbol: "ZZZ",
-          name: "Nothing",
-          contract_address: [
-            {
-              contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-              platform: { name: "Mainnet" },
-            },
-          ],
-        },
-      ],
-    },
-  },
-  "ZZZ"
+// The other half of that class: a name qualified rather than renamed -
+// "Polygon POS" here, "Polygon (prev. MATIC)" at the API this replaced.
+const bracketed = parseCoinResponse(
+  { symbol: "carr", name: "Carnomaly", platforms: { "polygon-pos": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" } },
+  "CARR",
+  gecko
 );
-check("a bare qualifier matches no chain", unrelated?.platforms[0]?.chainKey === undefined);
+check("a qualified network name still resolves", bracketed?.platforms[0]?.chainKey === "polygon");
+
+// A chain id we do not carry must resolve to nothing rather than to
+// whichever chain happens to answer to a similar word.
+const unrelated = parseCoinResponse(
+  {
+    symbol: "zzz",
+    name: "Nothing",
+    platforms: { "some-chain-we-do-not-support": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
+  },
+  "ZZZ",
+  gecko
+);
+check("an unsupported chain id matches no chain", unrelated?.platforms[0]?.chainKey === undefined);
+check("and it is kept in the report rather than dropped", unrelated?.platforms[0]?.platformName === "Nowhere");
+
+// A slug the platform list has never heard of still has to survive: the list
+// is cached for half a day, and a chain can appear on a token before it
+// appears in the platform list.
+const unknownSlug = parseCoinResponse(
+  { symbol: "new", name: "New", platforms: { "chain-launched-yesterday": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" } },
+  "NEW",
+  gecko
+);
+check("an unknown slug is kept under its own name", unknownSlug?.platforms[0]?.platformName === "chain-launched-yesterday");
 
 // Node wraps every transport failure as "fetch failed" and puts the
 // diagnosis in `cause`. Sixteen chains reported the wrapper and nothing
@@ -834,40 +813,31 @@ check(
   formatInfoCard("ethereum", PORTAL_ETH as `0x${string}`, []).includes("не относится ни к LayerZero")
 );
 
-// --- CoinMarketCap response parsing ------------------------------------------
+// --- CoinGecko response parsing ----------------------------------------------
 
-const cmcBody = {
-  status: { error_code: 0 },
-  data: {
-    ARB: [
-      {
-        name: "Arbitrum",
-        symbol: "ARB",
-        platform: { name: "Ethereum", slug: "ethereum", token_address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1" },
-        contract_address: [
-          {
-            contract_address: "0x912CE59144191C1204E64559FE8253a0e49E6548",
-            platform: { name: "Arbitrum", coin: { slug: "arbitrum" } },
-          },
-          {
-            contract_address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1",
-            platform: { name: "Ethereum", coin: { slug: "ethereum" } },
-          },
-          {
-            contract_address: "0xf2c2b3d6a5b1d4b2c8e0a9f7d6c5b4a3e2d1c0b9",
-            platform: { name: "Some Chain We Do Not Support", coin: { slug: "whatever" } },
-          },
-          { contract_address: "not-an-address", platform: { name: "Broken", coin: { slug: "broken" } } },
-        ],
-      },
-    ],
+const platformList = parseAssetPlatforms([
+  { id: "ethereum", chain_identifier: 1, name: "Ethereum" },
+  { id: "arbitrum-one", chain_identifier: 42161, name: "Arbitrum One" },
+  { id: "binance-smart-chain", chain_identifier: 56, name: "BNB Smart Chain" },
+  { id: "nowhere", chain_identifier: 999999, name: "Some Chain We Do Not Support" },
+]);
+
+const coinBody = {
+  id: "arbitrum",
+  symbol: "arb",
+  name: "Arbitrum",
+  platforms: {
+    "arbitrum-one": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+    ethereum: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1",
+    nowhere: "0xf2c2b3d6a5b1d4b2c8e0a9f7d6c5b4a3e2d1c0b9",
+    broken: "не адрес",
   },
 };
 
-const parsed = parseCmcInfoResponse(cmcBody, "ARB");
-check("parses the CMC payload", parsed?.symbol === "ARB" && parsed?.name === "Arbitrum");
+const parsed = parseCoinResponse(coinBody, "ARB", platformList);
+check("parses the CoinGecko payload", parsed?.symbol === "ARB" && parsed?.name === "Arbitrum");
 check(
-  "maps CMC platform names onto our chain keys",
+  "maps a platform slug onto our chain key",
   parsed?.platforms.find((p) => p.chainKey === "arbitrum")?.tokenAddress ===
     "0x912CE59144191C1204E64559FE8253a0e49E6548"
 );
@@ -876,31 +846,44 @@ check(
   parsed?.platforms.some((p) => p.chainKey === undefined && p.platformName.includes("Do Not Support")) === true
 );
 check("skips malformed addresses", parsed?.platforms.every((p) => p.tokenAddress.length === 42) === true);
+check("lists each platform once", parsed?.platforms.filter((p) => p.chainKey === "ethereum").length === 1);
 check(
-  "does not duplicate a platform present in both fields",
-  parsed?.platforms.filter((p) => p.chainKey === "ethereum").length === 1
+  "a coin with no platforms at all parses to an empty report",
+  parseCoinResponse({ symbol: "btc", name: "Bitcoin" }, "BTC", platformList)?.platforms.length === 0
 );
-check("returns undefined for an unknown ticker", parseCmcInfoResponse({ data: {} }, "NOPE") === undefined);
+check(
+  "maps BNB Chain through its chain id, not its spelling",
+  parseCoinResponse(
+    { symbol: "x", name: "X", platforms: { "binance-smart-chain": "0x912CE59144191C1204E64559FE8253a0e49E6548" } },
+    "X",
+    platformList
+  )?.platforms[0]?.chainKey === "bsc"
+);
 
-check("maps the BNB Chain spelling CMC uses", (() => {
-  const body = {
-    data: {
-      X: [
-        {
-          name: "X",
-          symbol: "X",
-          contract_address: [
-            {
-              contract_address: "0x912CE59144191C1204E64559FE8253a0e49E6548",
-              platform: { name: "BNB Smart Chain (BEP20)", coin: { slug: "bnb" } },
-            },
-          ],
-        },
-      ],
-    },
-  };
-  return parseCmcInfoResponse(body, "X")?.platforms[0]?.chainKey === "bsc";
-})());
+// Tickers are not unique, and the copies outnumber the originals: reporting
+// bridge liquidity for a namesake of USDT would be worse than reporting
+// none. Market capitalisation is what settles it.
+const searchBody = {
+  coins: [
+    { id: "fake-tether", symbol: "USDT", name: "Tether Imposter", market_cap_rank: null },
+    { id: "tether", symbol: "USDT", name: "Tether", market_cap_rank: 3 },
+    { id: "another-usdt", symbol: "USDT", name: "USDT Clone", market_cap_rank: 4210 },
+  ],
+};
+check("the best-known coin with the ticker wins", pickCoin(searchBody, "USDT") === "tether");
+check("an unranked namesake does not win", pickCoin(searchBody, "usdt") === "tether");
+check(
+  "a name is accepted when no ticker matches",
+  pickCoin({ coins: [{ id: "wormhole", symbol: "W", name: "Wormhole", market_cap_rank: 200 }] }, "Wormhole") ===
+    "wormhole"
+);
+check(
+  "a partial name is not accepted",
+  pickCoin({ coins: [{ id: "wormhole", symbol: "W", name: "Wormhole", market_cap_rank: 200 }] }, "worm") === undefined
+);
+check("an unknown ticker resolves to nothing", pickCoin({ coins: [] }, "NOPE") === undefined);
+check("a malformed search answer resolves to nothing", pickCoin({}, "NOPE") === undefined);
+
 
 // --- amount formatting -------------------------------------------------------
 
@@ -1136,7 +1119,7 @@ check("it names the counts per bridge", scoped.includes("Wormhole — 2 сети
 // A bridge that contributed nothing is left out rather than listed as zero:
 // with five bridges, a line of zeroes buries the one number that matters.
 check("and leaves out the bridges that contributed nothing", !scoped.includes("Hyperlane — 0"));
-check("it names the networks CoinMarketCap listed", scoped.includes("Ethereum, BNB Chain"));
+check("it names the networks CoinGecko listed", scoped.includes("Ethereum, BNB Chain"));
 check("it names networks outside the bot's coverage", scoped.includes("TON"));
 check("the scoped report still fits the message limit", scoped.length < 4096);
 
@@ -1275,7 +1258,7 @@ async function asyncChecks(): Promise<void> {
   check("the manual config wins over the registry", overridden.custodians.length === 0);
 
   // A node that will not answer token() is not a reason to drop the chain:
-  // CoinMarketCap already told us which ERC-20 lives there.
+  // CoinGecko already told us which ERC-20 lives there.
   const fallback = await resolveRegistryDeployments(
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
@@ -1286,8 +1269,8 @@ async function asyncChecks(): Promise<void> {
   check("an unreadable adapter falls back to the listed token", fallback.custodians[0]?.tokenAddress === TOKEN);
 
   // A deployment found under a neighbouring ticker must prove itself. The
-  // interesting case is a chain CoinMarketCap does not list: that is exactly
-  // where a bridged deployment adds coverage, so requiring CMC there would
+  // interesting case is a chain CoinGecko does not list: that is exactly
+  // where a bridged deployment adds coverage, so requiring CoinGecko there would
   // discard the chains the wider search was for.
   const aliasDeployment = { ...deployment("ethereum", true), viaAlias: "TKN0" };
 
@@ -1311,7 +1294,7 @@ async function asyncChecks(): Promise<void> {
   check("an alias deployment locking something else is rejected", aliasWrong.custodians.length === 0);
 
   // A bridged deployment locks its own variant of the token rather than the
-  // one CoinMarketCap lists, and to anyone asking whether a transfer can be
+  // one CoinGecko lists, and to anyone asking whether a transfer can be
   // withdrawn that is the same asset. Requiring the listed address alone
   // rejected sixteen of USDT's twenty-three real deployments.
   const aliasVariant = await resolveRegistryDeployments(
@@ -1332,7 +1315,7 @@ async function asyncChecks(): Promise<void> {
     async () => TOKEN,
     async () => true
   );
-  check("on a chain CMC does not list, the token's own symbol is the proof", aliasUnlisted.custodians.length === 1);
+  check("on a chain CoinGecko does not list, the token's own symbol is the proof", aliasUnlisted.custodians.length === 1);
 
   const aliasUnlistedWrongSymbol = await resolveRegistryDeployments(
     [aliasDeployment],

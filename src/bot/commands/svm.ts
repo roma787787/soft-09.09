@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from "telegraf";
-import { lookupToken } from "../../services/cmc";
+import { lookupToken } from "../../services/coingecko";
 import {
   findSolanaHyperlaneRoutes,
   hyperlaneEscrowCandidates,
@@ -70,7 +70,7 @@ export function registerSvmCommand(bot: Telegraf) {
     lines.push("", `<b>Wormhole</b>: программа <code>${esc(solanaTokenBridge() ?? "неизвестна")}</code>`);
 
     if (!solanaMint) {
-      lines.push("  CoinMarketCap не знает этот токен на Solana — минта нет, выводить нечего.");
+      lines.push("  CoinGecko не знает этот токен на Solana — минта нет, выводить нечего.");
     } else {
       lines.push(`  минт: <code>${esc(solanaMint)}</code>`);
       const checks = await checkCandidates("solanamainnet", solanaMint, wormholeCustodyCandidates(solanaMint));

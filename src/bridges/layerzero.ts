@@ -51,7 +51,7 @@ export interface OftProbe {
  * Asks the token contract itself whether it is a LayerZero OFT.
  *
  * LayerZero publishes no ticker-to-adapter registry, which is why adapters
- * are configured by hand. But when the token address CoinMarketCap gives us
+ * are configured by hand. But when the token address CoinGecko gives us
  * is itself the OFT, the contract answers for itself - and the answer
  * decides whether "no custody balance" means no liquidity or means the
  * design has no custody contract at all.
@@ -325,9 +325,9 @@ export async function readAdapterUnderlying(
  *   }
  * }
  *
- * The short form uses the token address CoinMarketCap reported for that
+ * The short form uses the token address CoinGecko reported for that
  * chain. The long form is for the case where the adapter locks a different
- * contract than the one CMC lists.
+ * contract than the one CoinGecko lists.
  */
 export interface LockboxEntry {
   custody: string;
@@ -483,7 +483,7 @@ export interface MeshResult {
  * counterparts: `peers(eid)` returns its address on the destination chain,
  * because that is how it decides which messages to trust. So a single hit
  * anywhere - from the registry, from the manual config, or from probing the
- * token address CoinMarketCap gave us - unfolds into every chain that
+ * token address CoinGecko gave us - unfolds into every chain that
  * deployment reaches, including chains no registry mentions.
  *
  * A peer that locks an ERC-20 is a custody contract and holds withdrawable

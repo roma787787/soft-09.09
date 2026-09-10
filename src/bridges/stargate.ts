@@ -43,8 +43,8 @@ function chainKeyForId(chainId: number): string | undefined {
  * Every Stargate pool holding this token, on the chains we support.
  *
  * The pool is asked which ERC-20 it holds rather than being paired with
- * whatever CoinMarketCap listed for that chain: the pool is the authority on
- * its own collateral, and this also works on chains CoinMarketCap does not
+ * whatever CoinGecko listed for that chain: the pool is the authority on
+ * its own collateral, and this also works on chains CoinGecko does not
  * list the token for at all.
  */
 export async function findStargateCustodians(symbol: string): Promise<Custodian[]> {

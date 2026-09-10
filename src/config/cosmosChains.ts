@@ -15,12 +15,12 @@ export interface CosmosChainDef {
   restUrls: string[];
   explorerAddressUrl: (address: string) => string;
   aliases: string[];
-  cmcPlatformNames?: string[];
+  platformNames?: string[];
   nativeDenom?: string;
   nativeDecimals?: number;
 }
 
-/** Names a person might type, and CoinMarketCap's spellings. */
+/** Names a person might type, and CoinGecko's spellings. */
 const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; restUrls?: string[] }> = {
   // Extra hosts for the chains whose routes live in Hyperlane's own module:
   // a public node serving only the standard modules answers 501 to anything
@@ -58,7 +58,7 @@ export const COSMOS_CHAINS: CosmosChainDef[] = GENERATED_COSMOS_CHAINS.map((chai
     restUrls: [...chain.restUrls, ...(extra.restUrls ?? [])],
     explorerAddressUrl: explorerBuilder(chain.explorer),
     aliases: [...new Set([chain.key.toLowerCase(), ...(extra.aliases ?? [])])],
-    cmcPlatformNames: extra.cmc,
+    platformNames: extra.cmc,
     nativeDenom: chain.nativeDenom,
     nativeDecimals: chain.nativeDecimals,
   };

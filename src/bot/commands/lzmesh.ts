@@ -1,7 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import type { Address } from "viem";
 import { getChain } from "../../config/chains";
-import { lookupToken } from "../../services/cmc";
+import { lookupToken } from "../../services/coingecko";
 import { resolveRegistryDeployments } from "./liquidity";
 import {
   findLayerZeroRegistryDeployments,
@@ -39,7 +39,7 @@ export function registerLzMeshCommand(bot: Telegraf) {
 
     const token = await lookupToken(symbol);
     if (!token) {
-      await ctx.reply(`Тикер <b>${esc(symbol)}</b> не найден на CoinMarketCap.`, { parse_mode: "HTML" });
+      await ctx.reply(`Тикер <b>${esc(symbol)}</b> не найден на CoinGecko.`, { parse_mode: "HTML" });
       return;
     }
 

@@ -3,7 +3,7 @@ import type { Custodian } from "./types";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../protocols/addresses/portal";
 import { findHyperlaneCustodians } from "./hyperlane";
 import { findLayerZeroCustodians } from "./layerzero";
-import type { TokenPlatform } from "../services/cmc";
+import type { TokenPlatform } from "../services/coingecko";
 
 /**
  * Wormhole's Token Bridge is one fixed contract per chain that holds every
@@ -23,8 +23,8 @@ function findWormholeCustodians(tokenByChain: Map<string, Address>): Custodian[]
 /**
  * Collects every known custody contract for a token across the supported
  * bridges. Hyperlane routes are matched by ticker in its registry, so they
- * can name a chain CoinMarketCap did not list; those are kept, since the
- * question is where liquidity sits, not what CMC happens to know.
+ * can name a chain CoinGecko did not list; those are kept, since the
+ * question is where liquidity sits, not what CoinGecko happens to know.
  */
 export function tokenByChainFrom(platforms: TokenPlatform[]): Map<string, Address> {
   const tokenByChain = new Map<string, Address>();

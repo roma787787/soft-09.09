@@ -113,9 +113,9 @@ export interface ReportInput {
   notReadableByChain?: Record<string, number>;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
-    /** Chains CoinMarketCap listed that this bot supports. */
+    /** Chains CoinGecko listed that this bot supports. */
     supportedChains: string[];
-    /** Networks CoinMarketCap listed that this bot does not cover. */
+    /** Networks CoinGecko listed that this bot does not cover. */
     unsupportedPlatforms: string[];
     /** How many contracts each bridge contributed. */
     byProtocol: Partial<Record<BridgeProtocol, number>>;
@@ -125,7 +125,7 @@ export interface ReportInput {
 /**
  * Explains the size of the check. "Checked 2 contracts" invites the obvious
  * question of why only two, and the answer is always the same three inputs:
- * the chains CoinMarketCap knows the token on, the warp routes carrying that
+ * the chains CoinGecko knows the token on, the warp routes carrying that
  * ticker, and the adapters someone entered by hand.
  */
 function scopeLines(scope: ReportInput["scope"]): string[] {
@@ -140,7 +140,7 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
   const lines = parts.length > 0 ? [`Откуда взялись контракты: ${parts.join(", ")}.`] : [];
 
   if (scope.supportedChains.length > 0) {
-    lines.push(`CoinMarketCap знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
+    lines.push(`CoinGecko знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
   }
   if (scope.unsupportedPlatforms.length > 0) {
     lines.push(

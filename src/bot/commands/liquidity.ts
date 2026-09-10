@@ -3,7 +3,11 @@ import { getChain, resolveChain, resolveAnyChain, chainMeta } from "../../config
 import { getSvmChain } from "../../config/svmChains";
 import { getCosmosChain } from "../../config/cosmosChains";
 import { getOtherChain } from "../../config/otherChains";
-import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
+import {
+  lookupToken,
+  TokenSourceNotConfiguredError,
+  TokenSourceRequestError,
+} from "../../services/coingecko";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
@@ -22,7 +26,7 @@ import {
 } from "../../bridges/layerzero";
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import type { Custodian } from "../../bridges/types";
-import type { TokenPlatform } from "../../services/cmc";
+import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
 import { readCustodianBalances } from "../../services/balances";
 import { renderLiquidityReport } from "../render";
@@ -54,7 +58,7 @@ export interface RegistryResolution {
  * Split out of the command so the two decisions it makes are covered by
  * tests rather than only by a live registry: a plain OFT holds nothing and
  * must not be reported as empty custody, and an adapter that locks a
- * contract other than the one CoinMarketCap lists for this ticker belongs to
+ * contract other than the one CoinGecko lists for this ticker belongs to
  * a different project that happens to share the symbol.
  */
 export async function resolveRegistryDeployments(
@@ -97,9 +101,9 @@ export async function resolveRegistryDeployments(
         reject(deployment, "не сказал, что блокирует");
         continue;
       }
-      // Then either proof is enough. CoinMarketCap's address for that chain
+      // Then either proof is enough. CoinGecko's address for that chain
       // is the strongest, but a bridged deployment routinely locks its own
-      // variant - USDT0 beside USDT - and reaches chains CoinMarketCap never
+      // variant - USDT0 beside USDT - and reaches chains CoinGecko never
       // lists at all. Both are the same asset to anyone asking whether their
       // transfer can be withdrawn, so the locked ERC-20's own symbol proves
       // it too. Demanding the address alone rejected sixteen of USDT's
@@ -127,7 +131,7 @@ export async function resolveRegistryDeployments(
     // project sharing the symbol, and reading its balance under this ticker
     // would be worse than omitting it.
     if (listed && underlying.toLowerCase() !== listed.toLowerCase()) {
-      reject(deployment, `блокирует ${underlying}, а CMC указал ${listed}`);
+      reject(deployment, `блокирует ${underlying}, а CoinGecko указал ${listed}`);
       continue;
     }
 
@@ -163,7 +167,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   const token = await lookupToken(symbol);
   if (!token) {
-    return `Тикер <b>${esc(symbol)}</b> не найден на CoinMarketCap. Проверьте написание.`;
+    return `Тикер <b>${esc(symbol)}</b> не найден на CoinGecko. Проверьте написание.`;
   }
 
   const custodians = resolveCustodians(symbol, token.platforms);
@@ -224,7 +228,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   // One OFT names its counterparts on every chain it talks to, so a single
   // hit anywhere unfolds into the whole deployment - including chains no
-  // registry lists and CoinMarketCap never mentioned.
+  // registry lists and CoinGecko never mentioned.
   const covered = new Set<string>([
     ...found.map((c) => c.chainKey),
     ...nativeOftChains,
@@ -375,16 +379,18 @@ export async function replyWithLiquidity(
   try {
     await ctx.reply(await buildLiquidityReport(symbol, chainKey), REPLY_OPTS);
   } catch (err) {
-    if (err instanceof CmcNotConfiguredError) {
+    if (err instanceof TokenSourceNotConfiguredError) {
       await ctx.reply(
-        "Поиск по тикеру не настроен: не задан ключ CoinMarketCap.\n\n" +
-          "Добавьте переменную <code>CMC_API_KEY</code> в настройки хостинга.",
+        "Поиск по тикеру не настроен.\n\n" +
+          "CoinGecko отвечает и без ключа, но лимит общий на IP, а хостинг делит адрес " +
+          "с чужими ботами. Бесплатный ключ снимает это: coingecko.com → API → Demo, " +
+          "затем переменная <code>COINGECKO_API_KEY</code> в настройках хостинга.",
         { parse_mode: "HTML" }
       );
       return;
     }
-    if (err instanceof CmcRequestError) {
-      await ctx.reply(`Не удалось получить данные от CoinMarketCap: ${esc(err.message)}`, {
+    if (err instanceof TokenSourceRequestError) {
+      await ctx.reply(`Не удалось получить данные от CoinGecko: ${esc(err.message)}`, {
         parse_mode: "HTML",
       });
       return;

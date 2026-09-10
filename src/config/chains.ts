@@ -170,8 +170,8 @@ export interface ChainDef {
   explorerAddressUrl: (address: string) => string;
   /** Alternate names users may type after /info or /track. */
   aliases: string[];
-  /** How CoinMarketCap spells this network in its platform field. */
-  cmcPlatformNames?: string[];
+  /** How CoinGecko spells this network in its platform field. */
+  platformNames?: string[];
   /**
    * Reads to run at once against this chain's node. The default suits a
    * normal endpoint; a chain whose public node rate-limits harder needs
@@ -216,7 +216,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://etherscan.io/address/${a}`,
     aliases: ["eth", "mainnet", "ethereum"],
-    cmcPlatformNames: ["Ethereum", "ERC20"],
+    platformNames: ["Ethereum", "ERC20"],
   },
   {
     key: "arbitrum",
@@ -231,7 +231,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://arbiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://arbiscan.io/address/${a}`,
     aliases: ["arb", "arbitrum", "arbitrum-one"],
-    cmcPlatformNames: ["Arbitrum", "Arbitrum One"],
+    platformNames: ["Arbitrum", "Arbitrum One"],
   },
   {
     key: "optimism",
@@ -246,7 +246,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://optimistic.etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://optimistic.etherscan.io/address/${a}`,
     aliases: ["op", "optimism"],
-    cmcPlatformNames: ["Optimism", "OP Mainnet"],
+    platformNames: ["Optimism", "OP Mainnet"],
   },
   {
     key: "base",
@@ -260,7 +260,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://basescan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://basescan.org/address/${a}`,
     aliases: ["base"],
-    cmcPlatformNames: ["Base"],
+    platformNames: ["Base"],
   },
   {
     key: "polygon",
@@ -275,7 +275,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://polygonscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://polygonscan.com/address/${a}`,
     aliases: ["polygon", "matic", "pol"],
-    cmcPlatformNames: ["Polygon", "Polygon PoS", "Polygon Ecosystem"],
+    platformNames: ["Polygon", "Polygon PoS", "Polygon Ecosystem"],
   },
   {
     key: "bsc",
@@ -290,7 +290,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://bscscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://bscscan.com/address/${a}`,
     aliases: ["bsc", "bnb", "binance"],
-    cmcPlatformNames: ["BNB Smart Chain (BEP20)", "BNB Smart Chain", "Binance Smart Chain", "BNB"],
+    platformNames: ["BNB Smart Chain (BEP20)", "BNB Smart Chain", "Binance Smart Chain", "BNB"],
   },
   {
     key: "avalanche",
@@ -304,7 +304,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://snowtrace.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://snowtrace.io/address/${a}`,
     aliases: ["avax", "avalanche"],
-    cmcPlatformNames: ["Avalanche C-Chain", "Avalanche"],
+    platformNames: ["Avalanche C-Chain", "Avalanche"],
   },
   // --- added later; RPC and explorer come from viem's own chain metadata
   // rather than being retyped here, and the `key` must match the chain name
@@ -318,7 +318,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://uniscan.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://uniscan.xyz/address/${a}`,
     aliases: ["unichain", "uni"],
-    cmcPlatformNames: ["Unichain"],
+    platformNames: ["Unichain"],
   },
   {
     key: "ink",
@@ -329,7 +329,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.inkonchain.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.inkonchain.com/address/${a}`,
     aliases: ["ink"],
-    cmcPlatformNames: ["Ink"],
+    platformNames: ["Ink"],
   },
   {
     key: "linea",
@@ -340,7 +340,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://lineascan.build/tx/${h}`,
     explorerAddressUrl: (a) => `https://lineascan.build/address/${a}`,
     aliases: ["linea"],
-    cmcPlatformNames: ["Linea"],
+    platformNames: ["Linea"],
   },
   {
     key: "worldchain",
@@ -351,7 +351,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://worldscan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://worldscan.org/address/${a}`,
     aliases: ["worldchain", "world"],
-    cmcPlatformNames: ["World Chain", "Worldchain"],
+    platformNames: ["World Chain", "Worldchain"],
   },
   {
     key: "mode",
@@ -362,7 +362,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://modescan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://modescan.io/address/${a}`,
     aliases: ["mode"],
-    cmcPlatformNames: ["Mode"],
+    platformNames: ["Mode"],
   },
   {
     key: "berachain",
@@ -373,7 +373,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://berascan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://berascan.com/address/${a}`,
     aliases: ["berachain", "bera"],
-    cmcPlatformNames: ["Berachain"],
+    platformNames: ["Berachain"],
   },
   {
     key: "blast",
@@ -384,7 +384,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blastscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://blastscan.io/address/${a}`,
     aliases: ["blast"],
-    cmcPlatformNames: ["Blast"],
+    platformNames: ["Blast"],
   },
   {
     key: "celo",
@@ -395,7 +395,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://celoscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://celoscan.io/address/${a}`,
     aliases: ["celo"],
-    cmcPlatformNames: ["Celo"],
+    platformNames: ["Celo"],
   },
   {
     key: "katana",
@@ -416,7 +416,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://hyperevmscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://hyperevmscan.io/address/${a}`,
     aliases: ["hyperevm", "hyperliquid", "hype"],
-    cmcPlatformNames: ["HyperEVM", "Hyperliquid"],
+    platformNames: ["HyperEVM", "Hyperliquid"],
   },
   {
     key: "monad",
@@ -427,7 +427,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://monadscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://monadscan.com/address/${a}`,
     aliases: ["monad"],
-    cmcPlatformNames: ["Monad"],
+    platformNames: ["Monad"],
   },
   {
     key: "plasma",
@@ -448,7 +448,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://seiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://seiscan.io/address/${a}`,
     aliases: ["sei"],
-    cmcPlatformNames: ["Sei v2", "Sei"],
+    platformNames: ["Sei v2", "Sei"],
   },
   {
     key: "swell",
@@ -483,7 +483,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://fraxscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://fraxscan.com/address/${a}`,
     aliases: ["fraxtal"],
-    cmcPlatformNames: ["Fraxtal"],
+    platformNames: ["Fraxtal"],
   },
   {
     key: "zircuit",
@@ -504,7 +504,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://soneium.blockscout.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://soneium.blockscout.com/address/${a}`,
     aliases: ["soneium"],
-    cmcPlatformNames: ["Soneium"],
+    platformNames: ["Soneium"],
   },
   {
     key: "mantle",
@@ -515,7 +515,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://mantlescan.xyz//tx/${h}`,
     explorerAddressUrl: (a) => `https://mantlescan.xyz//address/${a}`,
     aliases: ["mantle"],
-    cmcPlatformNames: ["Mantle"],
+    platformNames: ["Mantle"],
   },
   {
     key: "taiko",
@@ -526,7 +526,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://taikoscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://taikoscan.io/address/${a}`,
     aliases: ["taiko"],
-    cmcPlatformNames: ["Taiko"],
+    platformNames: ["Taiko"],
   },
   {
     key: "xlayer",
@@ -547,7 +547,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.plume.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.plume.org/address/${a}`,
     aliases: ["plume"],
-    cmcPlatformNames: ["Plume"],
+    platformNames: ["Plume"],
   },
   {
     key: "sonic",
@@ -558,7 +558,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://sonicscan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://sonicscan.org/address/${a}`,
     aliases: ["sonic"],
-    cmcPlatformNames: ["Sonic", "Fantom"],
+    platformNames: ["Sonic", "Fantom"],
   },
   {
     key: "scroll",
@@ -569,7 +569,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scrollscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://scrollscan.com/address/${a}`,
     aliases: ["scroll"],
-    cmcPlatformNames: ["Scroll"],
+    platformNames: ["Scroll"],
   },
   {
     key: "bob",
@@ -590,7 +590,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blockscout.lisk.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://blockscout.lisk.com/address/${a}`,
     aliases: ["lisk"],
-    cmcPlatformNames: ["Lisk"],
+    platformNames: ["Lisk"],
   },
   {
     key: "metal",
@@ -611,7 +611,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://gnosisscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://gnosisscan.io/address/${a}`,
     aliases: ["gnosis", "xdai"],
-    cmcPlatformNames: ["Gnosis Chain", "Gnosis", "xDai"],
+    platformNames: ["Gnosis Chain", "Gnosis", "xDai"],
   },
   {
     key: "zerogravity",
@@ -632,7 +632,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.zksync.io//tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.zksync.io//address/${a}`,
     aliases: ["zksync", "zksyncera", "era"],
-    cmcPlatformNames: ["zkSync Era", "zkSync"],
+    platformNames: ["zkSync Era", "zkSync"],
   },
   {
     key: "cronoszkevm",
@@ -658,7 +658,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://moonscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://moonscan.io/address/${a}`,
     aliases: ["moonbeam"],
-    cmcPlatformNames: ["Moonbeam"],
+    platformNames: ["Moonbeam"],
   },
   {
     key: "aurora",
@@ -669,7 +669,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://aurorascan.dev/tx/${h}`,
     explorerAddressUrl: (a) => `https://aurorascan.dev/address/${a}`,
     aliases: ["aurora"],
-    cmcPlatformNames: ["Aurora"],
+    platformNames: ["Aurora"],
   },
   {
     key: "ronin",
@@ -680,7 +680,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://app.roninchain.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://app.roninchain.com/address/${a}`,
     aliases: ["ronin"],
-    cmcPlatformNames: ["Ronin"],
+    platformNames: ["Ronin"],
   },
   {
     key: "boba",
@@ -691,7 +691,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://bobascan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://bobascan.com/address/${a}`,
     aliases: ["boba"],
-    cmcPlatformNames: ["Boba Network"],
+    platformNames: ["Boba Network"],
   },
   {
     key: "tron",
@@ -709,7 +709,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://tronscan.org/#/transaction/${h}`,
     explorerAddressUrl: (a) => `https://tronscan.org/#/address/${a}`,
     aliases: ["tron", "trx"],
-    cmcPlatformNames: ["Tron", "Tron20", "TRC20"],
+    platformNames: ["Tron", "Tron20", "TRC20"],
     // TronGrid without a key throttles hard: four routes read at once left
     // three of four failing on every run, while one at a time gets through.
     maxConcurrentReads: 1,
@@ -723,7 +723,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://flare-explorer.flare.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://flare-explorer.flare.network/address/${a}`,
     aliases: ["flare", "flaremainnet"],
-    cmcPlatformNames: ["Flare Mainnet", "Flare"],
+    platformNames: ["Flare Mainnet", "Flare"],
   },
   {
     key: "cronos",
@@ -734,7 +734,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.cronos.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.cronos.org/address/${a}`,
     aliases: ["cronos", "cronosmainnet"],
-    cmcPlatformNames: ["Cronos Mainnet", "Cronos"],
+    platformNames: ["Cronos Mainnet", "Cronos"],
   },
   {
     key: "deprecatedrootstock",
@@ -745,7 +745,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.rsk.co/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.rsk.co/address/${a}`,
     aliases: ["deprecatedrootstock", "rootstockmainnet"],
-    cmcPlatformNames: ["Rootstock Mainnet", "Rootstock"],
+    platformNames: ["Rootstock Mainnet", "Rootstock"],
   },
   {
     key: "xpla",
@@ -756,7 +756,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.conx.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.conx.xyz/address/${a}`,
     aliases: ["xpla", "conxchain"],
-    cmcPlatformNames: ["CONX Chain", "CONX"],
+    platformNames: ["CONX Chain", "CONX"],
   },
   {
     key: "telos",
@@ -767,7 +767,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://www.teloscan.io//tx/${h}`,
     explorerAddressUrl: (a) => `https://www.teloscan.io//address/${a}`,
     aliases: ["telos"],
-    cmcPlatformNames: ["Telos"],
+    platformNames: ["Telos"],
   },
   {
     key: "lukso",
@@ -778,7 +778,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.execution.mainnet.lukso.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.execution.mainnet.lukso.network/address/${a}`,
     aliases: ["lukso"],
-    cmcPlatformNames: ["LUKSO"],
+    platformNames: ["LUKSO"],
   },
   {
     key: "syscoin",
@@ -789,7 +789,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.syscoin.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.syscoin.org/address/${a}`,
     aliases: ["syscoin", "syscoinmainnet"],
-    cmcPlatformNames: ["Syscoin Mainnet", "Syscoin"],
+    platformNames: ["Syscoin Mainnet", "Syscoin"],
   },
   {
     key: "viction",
@@ -800,7 +800,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://vicscan.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://vicscan.xyz/address/${a}`,
     aliases: ["viction"],
-    cmcPlatformNames: ["Viction"],
+    platformNames: ["Viction"],
   },
   {
     key: "shibarium",
@@ -811,7 +811,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://shibariumscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://shibariumscan.io/address/${a}`,
     aliases: ["shibarium"],
-    cmcPlatformNames: ["Shibarium"],
+    platformNames: ["Shibarium"],
   },
   {
     key: "fusemainnet",
@@ -822,7 +822,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.fuse.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.fuse.io/address/${a}`,
     aliases: ["fusemainnet", "fuse"],
-    cmcPlatformNames: ["Fuse"],
+    platformNames: ["Fuse"],
   },
   {
     key: "mantapacific",
@@ -833,7 +833,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://pacific-explorer.manta.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://pacific-explorer.manta.network/address/${a}`,
     aliases: ["mantapacific", "mantapacificmainnet"],
-    cmcPlatformNames: ["Manta Pacific Mainnet", "Manta Pacific"],
+    platformNames: ["Manta Pacific Mainnet", "Manta Pacific"],
   },
   {
     key: "eni",
@@ -844,7 +844,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.eniac.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.eniac.network/address/${a}`,
     aliases: ["eni", "enimainnet"],
-    cmcPlatformNames: ["ENI Mainnet", "ENI"],
+    platformNames: ["ENI Mainnet", "ENI"],
   },
   {
     key: "hashkey",
@@ -855,7 +855,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://hashkey.blockscout.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://hashkey.blockscout.com/address/${a}`,
     aliases: ["hashkey", "hashkeychain"],
-    cmcPlatformNames: ["HashKey Chain", "HashKey"],
+    platformNames: ["HashKey Chain", "HashKey"],
   },
   {
     key: "mint",
@@ -866,7 +866,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.mintchain.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.mintchain.io/address/${a}`,
     aliases: ["mint", "mintmainnet"],
-    cmcPlatformNames: ["Mint Mainnet", "Mint"],
+    platformNames: ["Mint Mainnet", "Mint"],
   },
   {
     key: "opbnb",
@@ -877,7 +877,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://opbnb.bscscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://opbnb.bscscan.com/address/${a}`,
     aliases: ["opbnb"],
-    cmcPlatformNames: ["opBNB"],
+    platformNames: ["opBNB"],
   },
   {
     key: "bsquared",
@@ -888,7 +888,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.bsquared.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.bsquared.network/address/${a}`,
     aliases: ["bsquared", "b2"],
-    cmcPlatformNames: ["B2"],
+    platformNames: ["B2"],
   },
   {
     key: "lens",
@@ -899,7 +899,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.lens.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.lens.xyz/address/${a}`,
     aliases: ["lens"],
-    cmcPlatformNames: ["Lens"],
+    platformNames: ["Lens"],
   },
   {
     key: "tac",
@@ -910,7 +910,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://tac.blockscout.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://tac.blockscout.com/address/${a}`,
     aliases: ["tac"],
-    cmcPlatformNames: ["TAC"],
+    platformNames: ["TAC"],
   },
   {
     key: "fantom",
@@ -921,7 +921,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://ftmscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://ftmscan.com/address/${a}`,
     aliases: ["fantom"],
-    cmcPlatformNames: ["Fantom"],
+    platformNames: ["Fantom"],
   },
   {
     key: "kroma",
@@ -932,7 +932,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blockscout.kroma.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://blockscout.kroma.network/address/${a}`,
     aliases: ["kroma"],
-    cmcPlatformNames: ["Kroma"],
+    platformNames: ["Kroma"],
   },
   {
     key: "guru",
@@ -943,7 +943,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.gurunetwork.ai/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.gurunetwork.ai/address/${a}`,
     aliases: ["guru", "gurunetworkmainnet"],
-    cmcPlatformNames: ["Guru Network Mainnet", "Guru Network"],
+    platformNames: ["Guru Network Mainnet", "Guru Network"],
   },
   {
     key: "orderly",
@@ -954,7 +954,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.orderly.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.orderly.network/address/${a}`,
     aliases: ["orderly"],
-    cmcPlatformNames: ["Orderly"],
+    platformNames: ["Orderly"],
   },
   {
     key: "filecoin",
@@ -965,7 +965,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://filfox.info/en/tx/${h}`,
     explorerAddressUrl: (a) => `https://filfox.info/en/address/${a}`,
     aliases: ["filecoin", "filecoinmainnet"],
-    cmcPlatformNames: ["Filecoin Mainnet", "Filecoin"],
+    platformNames: ["Filecoin Mainnet", "Filecoin"],
   },
   {
     key: "molten",
@@ -976,7 +976,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://shapescan.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://shapescan.xyz/address/${a}`,
     aliases: ["molten", "shape"],
-    cmcPlatformNames: ["Shape"],
+    platformNames: ["Shape"],
   },
   {
     key: "pulsechain",
@@ -987,7 +987,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://ipfs.scan.pulsechain.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://ipfs.scan.pulsechain.com/address/${a}`,
     aliases: ["pulsechain"],
-    cmcPlatformNames: ["PulseChain"],
+    platformNames: ["PulseChain"],
   },
   {
     key: "astar",
@@ -998,7 +998,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://astar.subscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://astar.subscan.io/address/${a}`,
     aliases: ["astar"],
-    cmcPlatformNames: ["Astar"],
+    platformNames: ["Astar"],
   },
   {
     key: "redstone",
@@ -1009,7 +1009,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.redstone.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.redstone.xyz/address/${a}`,
     aliases: ["redstone"],
-    cmcPlatformNames: ["Redstone"],
+    platformNames: ["Redstone"],
   },
   {
     key: "matchain",
@@ -1020,7 +1020,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://matchscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://matchscan.io/address/${a}`,
     aliases: ["matchain"],
-    cmcPlatformNames: ["Matchain"],
+    platformNames: ["Matchain"],
   },
   {
     key: "eden",
@@ -1031,7 +1031,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://eden.blockscout.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://eden.blockscout.com/address/${a}`,
     aliases: ["eden"],
-    cmcPlatformNames: ["Eden"],
+    platformNames: ["Eden"],
   },
   {
     key: "deprecatedflow",
@@ -1042,7 +1042,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://evm.flowscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://evm.flowscan.io/address/${a}`,
     aliases: ["deprecatedflow", "flowevmmainnet"],
-    cmcPlatformNames: ["Flow EVM Mainnet", "Flow EVM"],
+    platformNames: ["Flow EVM Mainnet", "Flow EVM"],
   },
   {
     key: "acala",
@@ -1053,7 +1053,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blockscout.acala.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://blockscout.acala.network/address/${a}`,
     aliases: ["acala"],
-    cmcPlatformNames: ["Acala"],
+    platformNames: ["Acala"],
   },
   {
     key: "subtensor",
@@ -1064,7 +1064,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://evm.taostats.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://evm.taostats.io/address/${a}`,
     aliases: ["subtensor", "subtensorevm"],
-    cmcPlatformNames: ["Subtensor EVM"],
+    platformNames: ["Subtensor EVM"],
   },
   {
     key: "stable",
@@ -1075,7 +1075,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://stablescan.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://stablescan.xyz/address/${a}`,
     aliases: ["stable", "stablemainnet"],
-    cmcPlatformNames: ["Stable Mainnet", "Stable"],
+    platformNames: ["Stable Mainnet", "Stable"],
   },
   {
     key: "conflux",
@@ -1086,7 +1086,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://evm.confluxscan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://evm.confluxscan.org/address/${a}`,
     aliases: ["conflux", "confluxespace"],
-    cmcPlatformNames: ["Conflux eSpace"],
+    platformNames: ["Conflux eSpace"],
   },
   {
     key: "metis",
@@ -1097,7 +1097,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.metis.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.metis.io/address/${a}`,
     aliases: ["metis"],
-    cmcPlatformNames: ["Metis"],
+    platformNames: ["Metis"],
   },
   {
     key: "polygonzkevm",
@@ -1108,7 +1108,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://zkevm.polygonscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://zkevm.polygonscan.com/address/${a}`,
     aliases: ["polygonzkevm"],
-    cmcPlatformNames: ["Polygon zkEVM"],
+    platformNames: ["Polygon zkEVM"],
   },
   {
     key: "coredao",
@@ -1119,7 +1119,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.coredao.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.coredao.org/address/${a}`,
     aliases: ["coredao"],
-    cmcPlatformNames: ["Core Dao"],
+    platformNames: ["Core Dao"],
   },
   {
     key: "moonriver",
@@ -1130,7 +1130,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://moonriver.moonscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://moonriver.moonscan.io/address/${a}`,
     aliases: ["moonriver"],
-    cmcPlatformNames: ["Moonriver"],
+    platformNames: ["Moonriver"],
   },
   {
     key: "vana",
@@ -1141,7 +1141,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://vanascan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://vanascan.io/address/${a}`,
     aliases: ["vana"],
-    cmcPlatformNames: ["Vana"],
+    platformNames: ["Vana"],
   },
   {
     key: "story",
@@ -1152,7 +1152,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://datanetscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://datanetscan.io/address/${a}`,
     aliases: ["story", "datanetwork"],
-    cmcPlatformNames: ["Data Network"],
+    platformNames: ["Data Network"],
   },
   {
     key: "tenet",
@@ -1163,7 +1163,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://tenetscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://tenetscan.io/address/${a}`,
     aliases: ["tenet"],
-    cmcPlatformNames: ["Tenet"],
+    platformNames: ["Tenet"],
   },
   {
     key: "gravity",
@@ -1174,7 +1174,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.gravity.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.gravity.xyz/address/${a}`,
     aliases: ["gravity", "gravityalphamainnet"],
-    cmcPlatformNames: ["Gravity Alpha Mainnet", "Gravity Alpha"],
+    platformNames: ["Gravity Alpha Mainnet", "Gravity Alpha"],
   },
   {
     key: "kiichain",
@@ -1185,7 +1185,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.kiichain.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.kiichain.io/address/${a}`,
     aliases: ["kiichain"],
-    cmcPlatformNames: ["KiiChain"],
+    platformNames: ["KiiChain"],
   },
   {
     key: "lightlinkphoenixmainnet",
@@ -1196,7 +1196,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://phoenix.lightlink.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://phoenix.lightlink.io/address/${a}`,
     aliases: ["lightlinkphoenixmainnet"],
-    cmcPlatformNames: ["LightLink Phoenix Mainnet", "LightLink Phoenix"],
+    platformNames: ["LightLink Phoenix Mainnet", "LightLink Phoenix"],
   },
   {
     key: "krown",
@@ -1207,7 +1207,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.krown.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.krown.network/address/${a}`,
     aliases: ["krown"],
-    cmcPlatformNames: ["Krown"],
+    platformNames: ["Krown"],
   },
   {
     key: "dogechain",
@@ -1218,7 +1218,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.dogechain.dog/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.dogechain.dog/address/${a}`,
     aliases: ["dogechain"],
-    cmcPlatformNames: ["Dogechain"],
+    platformNames: ["Dogechain"],
   },
   {
     key: "snaxchain",
@@ -1229,7 +1229,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.snaxchain.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.snaxchain.io/address/${a}`,
     aliases: ["snaxchain"],
-    cmcPlatformNames: ["SnaxChain"],
+    platformNames: ["SnaxChain"],
   },
   {
     key: "kava",
@@ -1240,7 +1240,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://kavascan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://kavascan.com/address/${a}`,
     aliases: ["kava", "kavaevm"],
-    cmcPlatformNames: ["Kava EVM"],
+    platformNames: ["Kava EVM"],
   },
   {
     key: "inevm",
@@ -1251,7 +1251,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://inevm.calderaexplorer.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://inevm.calderaexplorer.xyz/address/${a}`,
     aliases: ["inevm", "inevmmainnet"],
-    cmcPlatformNames: ["inEVM Mainnet", "inEVM"],
+    platformNames: ["inEVM Mainnet", "inEVM"],
   },
   {
     key: "abstract",
@@ -1262,7 +1262,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://abscan.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://abscan.org/address/${a}`,
     aliases: ["abstract"],
-    cmcPlatformNames: ["Abstract"],
+    platformNames: ["Abstract"],
   },
   {
     key: "morph",
@@ -1273,7 +1273,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.morphl2.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.morphl2.io/address/${a}`,
     aliases: ["morph"],
-    cmcPlatformNames: ["Morph"],
+    platformNames: ["Morph"],
   },
   {
     key: "peaq",
@@ -1284,7 +1284,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://peaq.subscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://peaq.subscan.io/address/${a}`,
     aliases: ["peaq"],
-    cmcPlatformNames: ["Peaq"],
+    platformNames: ["Peaq"],
   },
   {
     key: "botanix",
@@ -1295,7 +1295,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://botanixscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://botanixscan.io/address/${a}`,
     aliases: ["botanix"],
-    cmcPlatformNames: ["Botanix"],
+    platformNames: ["Botanix"],
   },
   {
     key: "citrea",
@@ -1306,7 +1306,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.mainnet.citrea.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.mainnet.citrea.xyz/address/${a}`,
     aliases: ["citrea", "citreamainnet"],
-    cmcPlatformNames: ["Citrea Mainnet", "Citrea"],
+    platformNames: ["Citrea Mainnet", "Citrea"],
   },
   {
     key: "merlin",
@@ -1317,7 +1317,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.merlinchain.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.merlinchain.io/address/${a}`,
     aliases: ["merlin"],
-    cmcPlatformNames: ["Merlin"],
+    platformNames: ["Merlin"],
   },
   {
     key: "tempo",
@@ -1328,7 +1328,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explore.tempo.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explore.tempo.xyz/address/${a}`,
     aliases: ["tempo", "tempomainnet"],
-    cmcPlatformNames: ["Tempo Mainnet", "Tempo"],
+    platformNames: ["Tempo Mainnet", "Tempo"],
   },
   {
     key: "megaeth",
@@ -1339,7 +1339,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://mega.etherscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://mega.etherscan.io/address/${a}`,
     aliases: ["megaeth"],
-    cmcPlatformNames: ["MegaETH"],
+    platformNames: ["MegaETH"],
   },
   {
     key: "robinhood",
@@ -1350,7 +1350,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://robinhoodchain.blockscout.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://robinhoodchain.blockscout.com/address/${a}`,
     aliases: ["robinhood", "robinhoodchain"],
-    cmcPlatformNames: ["Robinhood Chain", "Robinhood"],
+    platformNames: ["Robinhood Chain", "Robinhood"],
   },
   {
     key: "somnia",
@@ -1361,7 +1361,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.somnia.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.somnia.network/address/${a}`,
     aliases: ["somnia"],
-    cmcPlatformNames: ["Somnia"],
+    platformNames: ["Somnia"],
   },
   {
     key: "mantra",
@@ -1372,7 +1372,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blockscout.mantrascan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://blockscout.mantrascan.io/address/${a}`,
     aliases: ["mantra", "mantraevm"],
-    cmcPlatformNames: ["MANTRA EVM"],
+    platformNames: ["MANTRA EVM"],
   },
   {
     key: "bouncebit",
@@ -1383,7 +1383,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://bbscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://bbscan.io/address/${a}`,
     aliases: ["bouncebit", "bouncebitmainnet"],
-    cmcPlatformNames: ["BounceBit Mainnet", "BounceBit"],
+    platformNames: ["BounceBit Mainnet", "BounceBit"],
   },
   {
     key: "nibiru",
@@ -1394,7 +1394,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://nibiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://nibiscan.io/address/${a}`,
     aliases: ["nibiru"],
-    cmcPlatformNames: ["Nibiru"],
+    platformNames: ["Nibiru"],
   },
   {
     key: "zetachain",
@@ -1405,7 +1405,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://zetascan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://zetascan.com/address/${a}`,
     aliases: ["zetachain"],
-    cmcPlatformNames: ["ZetaChain"],
+    platformNames: ["ZetaChain"],
   },
   {
     key: "cyber",
@@ -1416,7 +1416,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://cyberscan.co/tx/${h}`,
     explorerAddressUrl: (a) => `https://cyberscan.co/address/${a}`,
     aliases: ["cyber"],
-    cmcPlatformNames: ["Cyber"],
+    platformNames: ["Cyber"],
   },
   {
     key: "canto",
@@ -1427,7 +1427,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://tuber.build/tx/${h}`,
     explorerAddressUrl: (a) => `https://tuber.build/address/${a}`,
     aliases: ["canto"],
-    cmcPlatformNames: ["Canto"],
+    platformNames: ["Canto"],
   },
   {
     key: "kinto",
@@ -1438,7 +1438,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.kinto.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.kinto.xyz/address/${a}`,
     aliases: ["kinto", "kintomainnet"],
-    cmcPlatformNames: ["Kinto Mainnet", "Kinto"],
+    platformNames: ["Kinto Mainnet", "Kinto"],
   },
   {
     key: "deprecatedpolynomial",
@@ -1449,7 +1449,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://polynomialscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://polynomialscan.io/address/${a}`,
     aliases: ["deprecatedpolynomial", "polynomial"],
-    cmcPlatformNames: ["Polynomial"],
+    platformNames: ["Polynomial"],
   },
   {
     key: "kaia",
@@ -1460,7 +1460,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://kaiascan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://kaiascan.io/address/${a}`,
     aliases: ["kaia"],
-    cmcPlatformNames: ["Kaia"],
+    platformNames: ["Kaia"],
   },
   {
     key: "b3",
@@ -1471,7 +1471,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.b3.fun/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.b3.fun/address/${a}`,
     aliases: ["b3"],
-    cmcPlatformNames: ["B3"],
+    platformNames: ["B3"],
   },
   {
     key: "evmos",
@@ -1482,7 +1482,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://escan.live/tx/${h}`,
     explorerAddressUrl: (a) => `https://escan.live/address/${a}`,
     aliases: ["evmos"],
-    cmcPlatformNames: ["Evmos"],
+    platformNames: ["Evmos"],
   },
   {
     key: "deprecatedimmutablezkevm",
@@ -1493,7 +1493,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.immutable.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.immutable.com/address/${a}`,
     aliases: ["deprecatedimmutablezkevm", "immutablezkevm"],
-    cmcPlatformNames: ["Immutable zkEVM"],
+    platformNames: ["Immutable zkEVM"],
   },
   {
     key: "fluent",
@@ -1504,7 +1504,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://fluentscan.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://fluentscan.xyz/address/${a}`,
     aliases: ["fluent"],
-    cmcPlatformNames: ["Fluent"],
+    platformNames: ["Fluent"],
   },
   {
     key: "apechain",
@@ -1515,7 +1515,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://apescan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://apescan.io/address/${a}`,
     aliases: ["apechain"],
-    cmcPlatformNames: ["ApeChain"],
+    platformNames: ["ApeChain"],
   },
   {
     key: "funki",
@@ -1526,7 +1526,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://funkiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://funkiscan.io/address/${a}`,
     aliases: ["funki"],
-    cmcPlatformNames: ["Funki"],
+    platformNames: ["Funki"],
   },
   {
     key: "adichain",
@@ -1537,7 +1537,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.adifoundation.ai/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.adifoundation.ai/address/${a}`,
     aliases: ["adichain"],
-    cmcPlatformNames: ["ADI_Chain"],
+    platformNames: ["ADI_Chain"],
   },
   {
     key: "igra",
@@ -1548,7 +1548,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.igralabs.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.igralabs.com/address/${a}`,
     aliases: ["igra", "igranetwork"],
-    cmcPlatformNames: ["Igra Network"],
+    platformNames: ["Igra Network"],
   },
   {
     key: "alephzeroevmmainnet",
@@ -1559,7 +1559,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://evm-explorer.alephzero.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://evm-explorer.alephzero.org/address/${a}`,
     aliases: ["alephzeroevmmainnet", "alephzero"],
-    cmcPlatformNames: ["Aleph Zero"],
+    platformNames: ["Aleph Zero"],
   },
   {
     key: "arbitrumnova",
@@ -1570,7 +1570,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://nova.arbiscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://nova.arbiscan.io/address/${a}`,
     aliases: ["arbitrumnova"],
-    cmcPlatformNames: ["Arbitrum Nova"],
+    platformNames: ["Arbitrum Nova"],
   },
   {
     key: "hemi",
@@ -1581,7 +1581,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.hemi.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.hemi.xyz/address/${a}`,
     aliases: ["hemi"],
-    cmcPlatformNames: ["Hemi"],
+    platformNames: ["Hemi"],
   },
   {
     key: "sophon",
@@ -1592,7 +1592,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.sophon.xyz/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.sophon.xyz/address/${a}`,
     aliases: ["sophon"],
-    cmcPlatformNames: ["Sophon"],
+    platformNames: ["Sophon"],
   },
   {
     key: "electroneum",
@@ -1603,7 +1603,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://blockexplorer.electroneum.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://blockexplorer.electroneum.com/address/${a}`,
     aliases: ["electroneum", "electroneummainnet"],
-    cmcPlatformNames: ["Electroneum Mainnet", "Electroneum"],
+    platformNames: ["Electroneum Mainnet", "Electroneum"],
   },
   {
     key: "deprecatedsuperposition",
@@ -1614,7 +1614,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.superposition.so/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.superposition.so/address/${a}`,
     aliases: ["deprecatedsuperposition", "superposition"],
-    cmcPlatformNames: ["Superposition"],
+    platformNames: ["Superposition"],
   },
   {
     key: "treasure",
@@ -1625,7 +1625,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://treasurescan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://treasurescan.io/address/${a}`,
     aliases: ["treasure"],
-    cmcPlatformNames: ["Treasure"],
+    platformNames: ["Treasure"],
   },
   {
     key: "chilizmainnet",
@@ -1636,7 +1636,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.chiliz.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.chiliz.com/address/${a}`,
     aliases: ["chilizmainnet", "chilizchain"],
-    cmcPlatformNames: ["Chiliz Chain", "Chiliz"],
+    platformNames: ["Chiliz Chain", "Chiliz"],
   },
   {
     key: "sova",
@@ -1647,7 +1647,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.sova.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.sova.io/address/${a}`,
     aliases: ["sova"],
-    cmcPlatformNames: ["Sova"],
+    platformNames: ["Sova"],
   },
   {
     key: "real",
@@ -1658,7 +1658,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.re.al/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.re.al/address/${a}`,
     aliases: ["real"],
-    cmcPlatformNames: ["re.al"],
+    platformNames: ["re.al"],
   },
   {
     key: "bitlayer",
@@ -1669,7 +1669,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://www.btrscan.com/tx/${h}`,
     explorerAddressUrl: (a) => `https://www.btrscan.com/address/${a}`,
     aliases: ["bitlayer", "bitlayermainnet"],
-    cmcPlatformNames: ["Bitlayer Mainnet", "Bitlayer"],
+    platformNames: ["Bitlayer Mainnet", "Bitlayer"],
   },
   {
     key: "zeronetwork",
@@ -1680,7 +1680,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.zero.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.zero.network/address/${a}`,
     aliases: ["zeronetwork"],
-    cmcPlatformNames: ["Zero Network"],
+    platformNames: ["Zero Network"],
   },
   {
     key: "xai",
@@ -1691,7 +1691,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.xai-chain.net/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.xai-chain.net/address/${a}`,
     aliases: ["xai", "xaimainnet"],
-    cmcPlatformNames: ["Xai Mainnet", "Xai"],
+    platformNames: ["Xai Mainnet", "Xai"],
   },
   {
     key: "zklink",
@@ -1702,7 +1702,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.zklink.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.zklink.io/address/${a}`,
     aliases: ["zklink", "zklinknova"],
-    cmcPlatformNames: ["zkLink Nova"],
+    platformNames: ["zkLink Nova"],
   },
   {
     key: "forma",
@@ -1713,7 +1713,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.forma.art/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.forma.art/address/${a}`,
     aliases: ["forma"],
-    cmcPlatformNames: ["Forma"],
+    platformNames: ["Forma"],
   },
   {
     key: "xrplevm",
@@ -1724,7 +1724,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.xrplevm.org/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.xrplevm.org/address/${a}`,
     aliases: ["xrplevm"],
-    cmcPlatformNames: ["XRPL EVM"],
+    platformNames: ["XRPL EVM"],
   },
   {
     key: "saakuru",
@@ -1735,7 +1735,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.saakuru.network/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.saakuru.network/address/${a}`,
     aliases: ["saakuru", "saakurumainnet"],
-    cmcPlatformNames: ["Saakuru Mainnet", "Saakuru"],
+    platformNames: ["Saakuru Mainnet", "Saakuru"],
   },
   {
     key: "zoramainnet",
@@ -1746,7 +1746,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.zora.energy/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.zora.energy/address/${a}`,
     aliases: ["zoramainnet", "zora"],
-    cmcPlatformNames: ["Zora"],
+    platformNames: ["Zora"],
   },
   {
     key: "corn",
@@ -1757,7 +1757,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://cornscan.io/tx/${h}`,
     explorerAddressUrl: (a) => `https://cornscan.io/address/${a}`,
     aliases: ["corn"],
-    cmcPlatformNames: ["Corn"],
+    platformNames: ["Corn"],
   },
   {
     key: "degenchain",
@@ -1768,7 +1768,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.degen.tips/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.degen.tips/address/${a}`,
     aliases: ["degenchain", "degen"],
-    cmcPlatformNames: ["Degen"],
+    platformNames: ["Degen"],
   },
   {
     key: "ancient8",
@@ -1779,7 +1779,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://scan.ancient8.gg/tx/${h}`,
     explorerAddressUrl: (a) => `https://scan.ancient8.gg/address/${a}`,
     aliases: ["ancient8"],
-    cmcPlatformNames: ["Ancient8"],
+    platformNames: ["Ancient8"],
   },
   {
     key: "lumia",
@@ -1790,7 +1790,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.lumia.org//tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.lumia.org//address/${a}`,
     aliases: ["lumia", "lumiamainnet"],
-    cmcPlatformNames: ["Lumia Mainnet", "Lumia"],
+    platformNames: ["Lumia Mainnet", "Lumia"],
   },
   {
     key: "harmony",
@@ -1801,7 +1801,7 @@ export const CHAINS: ChainDef[] = [
     explorerTxUrl: (h) => `https://explorer.harmony.one/tx/${h}`,
     explorerAddressUrl: (a) => `https://explorer.harmony.one/address/${a}`,
     aliases: ["harmony", "harmonyone"],
-    cmcPlatformNames: ["Harmony One"],
+    platformNames: ["Harmony One"],
   },
 ];
 
