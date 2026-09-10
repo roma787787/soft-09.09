@@ -64,10 +64,46 @@ function loadRegistry(): Record<string, WarpRouteConfig> {
  * real ERC-20 are useful here: a synthetic route mints its own supply on the
  * far side and holds nothing, so it says nothing about withdrawable liquidity.
  */
+/**
+ * Of the names one contract is filed under, the one that answers the
+ * question asked.
+ *
+ * A route id's prefix is usually the asset - "USDT/moonpay" - but not
+ * always: "CROSS/moonpay" is named after the kind of router, and tells
+ * someone asking about USDT0 nothing at all. So an exact ticker wins, then
+ * a ticker that is a variant of it (USDT holds the collateral behind USDT0,
+ * and each is a prefix of the other), then alphabetical order, so that the
+ * same contract is named the same way twice running.
+ *
+ * Three characters at least before two names count as variants; shorter
+ * than that and unrelated tickers start matching each other.
+ */
+const MIN_VARIANT_PREFIX = 3;
+
+export function preferredRouteId(routeIds: string[], wanted: string): string {
+  const score = (routeId: string): number => {
+    const prefix = (routeId.split("/")[0] ?? "").toUpperCase();
+    if (!prefix) return 0;
+    if (prefix === wanted) return 3;
+    const shorter = Math.min(prefix.length, wanted.length);
+    if (shorter >= MIN_VARIANT_PREFIX && (wanted.startsWith(prefix) || prefix.startsWith(wanted))) return 2;
+    return 1;
+  };
+  return [...new Set(routeIds)].sort((a, b) => score(b) - score(a) || a.localeCompare(b))[0];
+}
+
 export function findHyperlaneCustodians(symbol: string): Custodian[] {
   const registry = loadRegistry();
   const wanted = symbol.toUpperCase();
-  const found: Custodian[] = [];
+
+  // Grouped by the contract, not by the name the registry filed it under.
+  // The same deployment is listed more than once - Polygon's MoonPay router
+  // 0x766A…1270 appears as both "USDT/moonpay" and "CROSS/moonpay" - and
+  // whichever name sorted first was the one shown, so asking about USDT0
+  // produced "CROSS/moonpay", a name with no visible connection to the
+  // question. The balance was never wrong and never doubled; only the
+  // provenance was, and provenance is what this bot is for.
+  const byContract = new Map<string, { custodian: Custodian; routeIds: string[] }>();
 
   for (const [routeId, config] of Object.entries(registry)) {
     const routeSymbol = routeId.split("/")[0]?.toUpperCase();
@@ -83,17 +119,29 @@ export function findHyperlaneCustodians(symbol: string): Custodian[] {
       const chainKey = token.chainName && getChain(token.chainName) ? token.chainName : undefined;
       if (!chainKey) continue;
 
-      found.push({
-        protocol: "hyperlane",
-        chainKey,
-        custodyAddress: custody as Address,
-        tokenAddress: collateral as Address,
-        note: routeId,
+      const key = `${chainKey}:${custody.toLowerCase()}:${collateral.toLowerCase()}`;
+      const existing = byContract.get(key);
+      if (existing) {
+        existing.routeIds.push(routeId);
+        continue;
+      }
+      byContract.set(key, {
+        routeIds: [routeId],
+        custodian: {
+          protocol: "hyperlane",
+          chainKey,
+          custodyAddress: custody as Address,
+          tokenAddress: collateral as Address,
+          note: routeId,
+        },
       });
     }
   }
 
-  return found;
+  return [...byContract.values()].map(({ custodian, routeIds }) => ({
+    ...custodian,
+    note: preferredRouteId(routeIds, wanted),
+  }));
 }
 
 /**

@@ -35,6 +35,7 @@ import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
 import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport } from "../src/bot/render";
+import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
 import { extractEids, lastMetadataChainCount, explainMissing } from "../src/bridges/lzMetadata";
@@ -1673,6 +1674,32 @@ const oneHugeLine = capToTelegramLimit(
 check("a report that is one long line is capped", visibleLength(oneHugeLine) <= 4096);
 check("and survives with its tags closed", tagsBalanced(oneHugeLine));
 check("and says it was cut", oneHugeLine.includes("обрезан"));
+
+// Hyperlane files one contract under more than one name. Polygon's MoonPay
+// router 0x766A…1270 is both "USDT/moonpay" and "CROSS/moonpay", and the
+// name shown was whichever sorted first - so asking about USDT0 produced
+// "CROSS/moonpay", a name with no visible connection to the question. The
+// balance was never wrong; the provenance was, and provenance is the point.
+check("an exact ticker wins", preferredRouteId(["CROSS/moonpay", "USDT/moonpay"], "USDT") === "USDT/moonpay");
+check(
+  "a variant of it wins over a router's own name",
+  preferredRouteId(["CROSS/moonpay", "USDT/moonpay"], "USDT0") === "USDT/moonpay"
+);
+check(
+  "and the exact one still beats the variant",
+  preferredRouteId(["USDT/moonpay", "USDT0/somewhere"], "USDT0") === "USDT0/somewhere"
+);
+check(
+  "with nothing related, order is at least stable",
+  preferredRouteId(["ZZZ/b", "AAA/a"], "USDT") === "AAA/a"
+);
+check("one name is just itself", preferredRouteId(["USDT/moonpay"], "USDT") === "USDT/moonpay");
+check("duplicates collapse", preferredRouteId(["A/x", "A/x"], "A") === "A/x");
+// Two-letter tickers must not count as variants of each other. "AAA" sorts
+// first, so it can only lose here if "OP" was wrongly treated as a variant
+// of "OPX" - which is the whole thing being guarded against.
+check("a short prefix is not a variant", preferredRouteId(["OP/route", "AAA/route"], "OPX") === "AAA/route");
+check("while a long enough one is", preferredRouteId(["USDC/route", "AAA/route"], "USDCE") === "USDC/route");
 
 // The cut must not leave half an entity or half a tag behind, which is what
 // makes Telegram reject the whole message rather than render it short.
