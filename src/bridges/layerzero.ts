@@ -307,6 +307,9 @@ const PEERS_ABI = [
   },
 ] as const;
 
+/** Peer lookups per round against a single node. */
+const PEER_QUERY_BATCH = 8;
+
 const ERC20_SYMBOL_ABI = [
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
 ] as const;
@@ -350,12 +353,18 @@ export async function expandLayerZeroMesh(
   const useful = seeds.slice(0, 2);
 
   const peerByChain = new Map<string, Address>();
-  await Promise.all(
-    useful.map(async (seed) => {
-      const client = getClient(seed.chainKey);
+  for (const seed of useful) {
+    const client = getClient(seed.chainKey);
+    const targets = [...eidMap.chainKeyToId.entries()].filter(
+      ([chainKey]) => chainKey !== seed.chainKey && !peerByChain.has(chainKey) && !known.has(chainKey)
+    );
+
+    // Every one of these lands on the seed's own node, so they go in batches
+    // rather than all at once: asking one endpoint for forty answers in the
+    // same instant is a reliable way to be rate-limited by it.
+    for (let i = 0; i < targets.length; i += PEER_QUERY_BATCH) {
       await Promise.all(
-        [...eidMap.chainKeyToId.entries()].map(async ([chainKey, eid]) => {
-          if (chainKey === seed.chainKey || peerByChain.has(chainKey) || known.has(chainKey)) return;
+        targets.slice(i, i + PEER_QUERY_BATCH).map(async ([chainKey, eid]) => {
           try {
             const raw = (await client.readContract({
               address: seed.oapp,
@@ -370,8 +379,8 @@ export async function expandLayerZeroMesh(
           }
         })
       );
-    })
-  );
+    }
+  }
 
   const custodians: Custodian[] = [];
   const nativeChains: string[] = [];

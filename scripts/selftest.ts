@@ -16,7 +16,7 @@ import { parseCmcInfoResponse } from "../src/services/cmc";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
-import { getChain } from "../src/config/chains";
+import { getChain, resolveChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
@@ -50,6 +50,35 @@ function check(name: string, condition: boolean, detail?: string): void {
 function visibleLength(html: string): number {
   return html.replace(/<[^>]*>/g, "").replace(/&(?:amp|lt|gt|quot|#\d+);/g, "\u0001").length;
 }
+
+// --- chain configuration -----------------------------------------------------
+// With forty-odd chains this table is no longer something you can eyeball. A
+// duplicated key or a shared env var would not throw; it would quietly make
+// one chain read another chain's node, and every balance from it would be
+// wrong rather than missing.
+
+const chainKeys = CHAINS.map((c) => c.key);
+check("chain keys are unique", new Set(chainKeys).size === chainKeys.length);
+
+const envVars = CHAINS.map((c) => c.rpcEnvVar);
+check("each chain has its own RPC variable", new Set(envVars).size === envVars.length);
+
+const chainIds = CHAINS.map((c) => c.viemChain.id);
+check("no two chains share a chain id", new Set(chainIds).size === chainIds.length);
+
+check("every chain has somewhere to connect", CHAINS.every((c) => c.defaultRpcUrls.length > 0));
+check(
+  "every chain builds a real explorer link",
+  CHAINS.every((c) => /^https:\/\/.+\/address\/0x1$/.test(c.explorerAddressUrl("0x1")))
+);
+// An alias that resolves to a different chain than its own is worse than no
+// alias: the user asks for one network and reads another one's balances.
+check(
+  "every alias resolves to its own chain",
+  CHAINS.every((c) => c.aliases.every((a) => resolveChain(a)?.key === c.key)),
+  CHAINS.flatMap((c) => c.aliases.filter((a) => resolveChain(a)?.key !== c.key)).join(", ")
+);
+check("every chain resolves by its own key", CHAINS.every((c) => resolveChain(c.key)?.key === c.key));
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

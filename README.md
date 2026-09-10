@@ -101,9 +101,16 @@ Fly.io, обычный VPS) порядок один:
 - `/untrack <адрес> [сеть]` — выключить отслеживание.
 - `/list` — список того, что отслеживается в этом чате.
 
-Поддерживаемые сети «из коробки»: Ethereum, Arbitrum, Optimism, Base,
+Поддерживаемые сети «из коробки»: 42 — Ethereum, Arbitrum, Optimism, Base,
 Polygon, BNB Chain, Avalanche, Unichain, Ink, Linea, World Chain, Mode,
-Berachain, Blast, Celo (настраивается в `src/config/chains.ts`).
+Berachain, Blast, Celo, Scroll, Mantle, Sonic, Gnosis, Sei, Taiko, Fraxtal,
+Soneium, Zircuit, Swell, Lisk, BOB, Plume, Superseed, Katana, HyperEVM,
+Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
+Aurora, Ronin, Boba (список в `src/config/chains.ts`).
+
+Сеть добавляется одной записью: таблицы Wormhole, Across и Stargate
+ключуются по chain id, поэтому новая сеть подхватывает их адреса сама, без
+единой новой строки с адресом.
 
 Мосты делятся на два типа, и от этого зависит, как ищется хранилище.
 **Общие хранилища** (Wormhole Token Bridge, Across SpokePool) держат в одном
