@@ -20,7 +20,7 @@ import { getChain, resolveChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
-import { extractEids, lastMetadataChainCount } from "../src/bridges/lzMetadata";
+import { extractEids, lastMetadataChainCount, explainMissing } from "../src/bridges/lzMetadata";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
@@ -181,6 +181,22 @@ check(
 // was seen is kept alongside the count of what matched.
 extractEids({ ethereum: { deployments: [{ eid: 30101 }] }, solana: {}, aptos: {} });
 check("the payload's own size is remembered", lastMetadataChainCount() === 3);
+
+// A chain with no eid needs a reason, not just a name. Absent from the
+// source, listed under a name we do not recognise, and deployed on V1 only
+// are three situations with three different answers, and only one of them is
+// something this code can fix.
+extractEids({
+  ronin: { chainDetails: { nativeChainId: 2020 }, deployments: [{ eid: 173 }] },
+  "boba-mainnet": { deployments: [{ eid: 30158 }] },
+  ethereum: { chainDetails: { nativeChainId: 1 }, deployments: [{ eid: 30101 }] },
+});
+check("a V1-only chain is reported as V1-only", /только V1/.test(explainMissing("ronin", 2020)));
+check(
+  "a chain present with a V2 eid points the finger at our own matching",
+  /сопоставление не сработало/.test(explainMissing("boba", 288))
+);
+check("a chain the source does not list is reported as not deployed", /этой сети нет/.test(explainMissing("katana", 747474)));
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

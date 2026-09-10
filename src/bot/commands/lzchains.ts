@@ -1,7 +1,11 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { getLzEidMap } from "../../services/idMaps";
-import { fetchLzEidsFromMetadata, lastMetadataChainCount } from "../../bridges/lzMetadata";
+import {
+  fetchLzEidsFromMetadata,
+  lastMetadataChainCount,
+  explainMissing,
+} from "../../bridges/lzMetadata";
 import { capToTelegramLimit } from "../render";
 
 function esc(s: string): string {
@@ -29,7 +33,10 @@ export function registerLzChainsCommand(bot: Telegraf) {
     for (const chain of CHAINS) {
       const eid = map.chainKeyToId.get(chain.key);
       if (eid === undefined) {
-        missing.push(chain.label);
+        // Naming the reason, not just the chain: absent from the source,
+        // listed under a name we do not recognise, and deployed on V1 only
+        // are three different situations, and only one is ours to fix.
+        missing.push(`${chain.label} — ${explainMissing(chain.key, chain.viemChain.id)}`);
         continue;
       }
       // The endpoint answers directly where it sits at the usual address;
@@ -47,9 +54,8 @@ export function registerLzChainsCommand(bot: Telegraf) {
     if (missing.length > 0) {
       lines.push(
         "",
-        `❌ Без eid: ${esc(missing.join(", "))}.`,
-        "По этим сетям обход пиров не работает: спросить у контракта, кто его пир там, нечем.",
-        "Если сеть есть в метаданных, но не сопоставилась, дело в сопоставлении; если её там нет — LayerZero туда не развёрнут."
+        "<b>Без eid</b> — обход пиров туда не пойдёт:",
+        ...missing.map((m) => `❌ ${esc(m)}`)
       );
     }
 
