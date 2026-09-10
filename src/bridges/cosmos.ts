@@ -152,3 +152,104 @@ export async function findCosmosBalances(symbol: string): Promise<CosmosBalanceR
 export function cosmosChainCount(): number {
   return COSMOS_CHAINS.length;
 }
+
+
+// ---------------------------------------------------------------------------
+// Hyperlane's native Cosmos module
+// ---------------------------------------------------------------------------
+
+export interface NativeModuleRoute {
+  routeId: string;
+  chainKey: string;
+  /** The hex id the module addresses this route by. */
+  routerId: string;
+  standard: string;
+  decimals: number;
+}
+
+/**
+ * Routes held by Hyperlane's own Cosmos module rather than by a contract.
+ *
+ * These are the ones findCosmosRoutes leaves out: addressed by a hex router
+ * id, with the collateral in an account that is not the id. Rather than
+ * derive that account, the module's REST API is asked - which path answers
+ * is something the chain can state, and stating beats guessing.
+ */
+export function findNativeModuleRoutes(symbol: string): NativeModuleRoute[] {
+  const registry = loadHyperlaneRegistry();
+  const wanted = symbol.toUpperCase();
+  const found: NativeModuleRoute[] = [];
+
+  for (const [routeId, config] of Object.entries(registry)) {
+    const routeSymbol = routeId.split("/")[0]?.toUpperCase();
+    for (const token of (config as any).tokens ?? []) {
+      const chain = getCosmosChain(token.chainName);
+      if (!chain) continue;
+
+      const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
+      if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
+      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+
+      const id = token.addressOrDenom;
+      if (typeof id !== "string" || isBech32(id)) continue;
+
+      found.push({
+        routeId,
+        chainKey: chain.key,
+        routerId: id,
+        standard: token.standard,
+        decimals: Number(token.decimals ?? chain.nativeDecimals ?? 6),
+      });
+    }
+  }
+  return found;
+}
+
+export interface ModuleProbe {
+  path: string;
+  outcome: string;
+  ok: boolean;
+}
+
+/**
+ * Asks the module every way it might answer, and reports each reply.
+ *
+ * The paths are candidates, not knowledge: a wrong one returns a 404, which
+ * costs a request and tells us so. What must not happen is inventing an
+ * account address, reading someone else's balance from it and printing that
+ * as this token's liquidity.
+ */
+export async function probeNativeModule(chainKey: string, routerId: string): Promise<ModuleProbe[]> {
+  const chain = getCosmosChain(chainKey);
+  if (!chain) return [];
+
+  const paths = [
+    `/hyperlane/warp/v1/tokens/${routerId}`,
+    `/hyperlane/warp/v1/token/${routerId}`,
+    `/hyperlane/warp/v1/bridged_supply/${routerId}`,
+    `/hyperlane/warp/v1/tokens`,
+  ];
+
+  const base = chain.restUrls[0]?.replace(/\/$/, "");
+  if (!base) return [];
+
+  const out: ModuleProbe[] = [];
+  for (const path of paths) {
+    try {
+      const response = await fetch(`${base}${path}`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) {
+        out.push({ path, outcome: `HTTP ${response.status}`, ok: false });
+        continue;
+      }
+      const text = (await response.text()).replace(/\s+/g, " ");
+      out.push({ path, outcome: text.slice(0, 220), ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
+      out.push({ path, outcome: `ошибка: ${message.slice(0, 70)}`, ok: false });
+    }
+  }
+  return out;
+}

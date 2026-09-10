@@ -12,6 +12,7 @@ import { registerCcipCommand } from "./commands/ccip";
 import { registerLzMeshCommand } from "./commands/lzmesh";
 import { registerLzChainsCommand } from "./commands/lzchains";
 import { registerSvmCommand } from "./commands/svm";
+import { registerCosmosCommand } from "./commands/cosmos";
 import { registerLzProbeCommand } from "./commands/lzprobe";
 
 export function createBot(): Telegraf {
@@ -29,6 +30,7 @@ export function createBot(): Telegraf {
   registerLzMeshCommand(bot);
   registerLzChainsCommand(bot);
   registerSvmCommand(bot);
+  registerCosmosCommand(bot);
   registerLzProbeCommand(bot);
 
   bot.catch((err, ctx) => {

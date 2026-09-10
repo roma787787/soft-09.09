@@ -27,7 +27,7 @@ import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
-import { findCosmosRoutes } from "../src/bridges/cosmos";
+import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
 import {
   findSolanaHyperlaneRoutes,
   hyperlaneEscrowCandidates,
@@ -351,6 +351,18 @@ check("a Cosmos collateral route is found", cosmosRoutes.length > 0, `${cosmosRo
 check("its address is bech32, not a hex router id", cosmosRoutes.every((r) => /^[a-z]+1/.test(r.address)));
 check("a native route falls back to the chain's own denom", cosmosRoutes.every((r) => r.denom.length > 0));
 check("a ticker with no Cosmos route yields nothing", findCosmosRoutes("QWERTYNOPE").length === 0);
+
+// The native-module routes are the ones left out of the readable set, and
+// the two sets must not overlap: a route counted as unread while its balance
+// is also shown would be the report arguing with itself.
+const nativeRoutes = findNativeModuleRoutes("TIA");
+check("native-module routes are identified separately", nativeRoutes.length > 0, `${nativeRoutes.length}`);
+check("each is addressed by a hex id, not a contract", nativeRoutes.every((r) => !/^[a-z]+1/.test(r.routerId)));
+const readable = new Set(findCosmosRoutes("TIA").map((r) => r.routeId + r.chainKey));
+check(
+  "and none of them is also counted as readable",
+  nativeRoutes.every((r) => !readable.has(r.routeId + r.chainKey))
+);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
