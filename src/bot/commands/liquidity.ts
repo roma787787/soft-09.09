@@ -135,7 +135,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   for (const probe of probes) {
     if (!probe) continue;
     const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
-    if (platform) seeds.push({ chainKey: probe.chainKey, oapp: platform.tokenAddress });
+
+    // Only V2 contracts are useful as seeds: the peer walk asks peers(eid),
+    // which V1 does not implement. A V1 hit still contributes its own row.
+    if (platform && probe.version === "v2") {
+      seeds.push({ chainKey: probe.chainKey, oapp: platform.tokenAddress });
+    }
 
     if (probe.kind === "native") {
       nativeOftChains.add(probe.chainKey);
@@ -147,7 +152,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
         chainKey: probe.chainKey,
         custodyAddress: platform.tokenAddress,
         tokenAddress: probe.wrappedToken,
-        note: "адаптер определён по контракту",
+        note: probe.version === "v1" ? "адаптер LayerZero V1" : "адаптер определён по контракту",
       });
     }
   }

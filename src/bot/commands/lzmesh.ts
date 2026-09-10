@@ -68,7 +68,10 @@ export function registerLzMeshCommand(bot: Telegraf) {
 
     lines.push("", `<b>Опрос контрактов токена</b>: ${probed.length === 0 ? "OFT не найден" : `${probed.length}`}`);
     for (const { platform, probe } of probed.slice(0, 8)) {
-      lines.push(`  ${esc(chainName(platform.chainKey!))} — ${probe!.kind === "adapter" ? "адаптер" : "обычный OFT"}`);
+      lines.push(
+        `  ${esc(chainName(platform.chainKey!))} — ${probe!.kind === "adapter" ? "адаптер" : "обычный OFT"}` +
+          ` (${probe!.version === "v1" ? "V1" : "V2"})`
+      );
     }
 
     if (seeds.length === 0) {

@@ -14,6 +14,20 @@ const OAPP_ABI = [
   { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const;
 
+/**
+ * LayerZero V1 names its endpoint differently and deploys it at a different
+ * address on every chain, so there is no constant to compare against the way
+ * V2 has one. The endpoint is verified by asking it a question only a real
+ * V1 endpoint answers instead.
+ */
+const OAPP_V1_ABI = [
+  { type: "function", name: "lzEndpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+const ENDPOINT_V1_ABI = [
+  { type: "function", name: "getChainId", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
+] as const;
+
 export interface OftProbe {
   chainKey: string;
   /**
@@ -25,6 +39,8 @@ export interface OftProbe {
   kind: "adapter" | "native";
   /** The ERC-20 an adapter locks. */
   wrappedToken?: Address;
+  /** Which generation of the protocol this contract belongs to. */
+  version: "v1" | "v2";
 }
 
 /**
@@ -40,32 +56,73 @@ export async function probeLayerZeroToken(
   chainKey: string,
   tokenAddress: Address
 ): Promise<OftProbe | undefined> {
+  const version = await layerZeroVersionOf(chainKey, tokenAddress);
+  if (!version) return undefined;
+
+  let wrapped: Address | undefined;
   try {
-    const client = getClient(chainKey);
-    const endpoint = (await client.readContract({
+    wrapped = (await getClient(chainKey).readContract({
       address: tokenAddress,
+      abi: OAPP_ABI,
+      functionName: "token",
+    })) as Address;
+  } catch {
+    wrapped = undefined;
+  }
+
+  // OFT.sol returns address(this); OFTAdapter.sol returns what it locks.
+  // V1's ProxyOFT behaves the same way, which is why one check covers both.
+  const isAdapter = !!wrapped && wrapped.toLowerCase() !== tokenAddress.toLowerCase();
+  return isAdapter
+    ? { chainKey, kind: "adapter", wrappedToken: wrapped, version }
+    : { chainKey, kind: "native", version };
+}
+
+/**
+ * Which generation of LayerZero this contract belongs to, if any.
+ *
+ * V2 is easy: one EndpointV2 address, the same on every chain, so the
+ * contract's endpoint() either matches it or the contract is not a V2 OApp.
+ *
+ * V1 has no such constant - its endpoint is a different address on every
+ * chain - so the address that comes back is verified by asking it for its
+ * own V1 chain id. Only a real endpoint answers that, which keeps an
+ * unrelated contract with an lzEndpoint() getter from being read as a
+ * bridge. Until this existed, a V1 adapter's locked balance was invisible:
+ * the report showed nothing and meant "not bridged here", which for the
+ * older half of LayerZero was simply wrong.
+ */
+async function layerZeroVersionOf(
+  chainKey: string,
+  address: Address
+): Promise<"v1" | "v2" | undefined> {
+  const client = getClient(chainKey);
+
+  try {
+    const endpoint = (await client.readContract({
+      address,
       abi: OAPP_ABI,
       functionName: "endpoint",
     })) as Address;
+    if (endpoint && endpoint.toLowerCase() === LZ_ENDPOINT_V2.toLowerCase()) return "v2";
+  } catch {
+    // Not a V2 OApp; V1 is still possible.
+  }
 
-    if (!endpoint || endpoint.toLowerCase() !== LZ_ENDPOINT_V2.toLowerCase()) return undefined;
+  try {
+    const endpoint = (await client.readContract({
+      address,
+      abi: OAPP_V1_ABI,
+      functionName: "lzEndpoint",
+    })) as Address;
+    if (!endpoint || /^0x0+$/i.test(endpoint)) return undefined;
 
-    let wrapped: Address | undefined;
-    try {
-      wrapped = (await client.readContract({
-        address: tokenAddress,
-        abi: OAPP_ABI,
-        functionName: "token",
-      })) as Address;
-    } catch {
-      wrapped = undefined;
-    }
-
-    // OFT.sol returns address(this); OFTAdapter.sol returns what it locks.
-    const isAdapter = !!wrapped && wrapped.toLowerCase() !== tokenAddress.toLowerCase();
-    return isAdapter
-      ? { chainKey, kind: "adapter", wrappedToken: wrapped }
-      : { chainKey, kind: "native" };
+    const chainId = (await client.readContract({
+      address: endpoint,
+      abi: ENDPOINT_V1_ABI,
+      functionName: "getChainId",
+    })) as number;
+    return chainId > 0 ? "v1" : undefined;
   } catch {
     return undefined;
   }
