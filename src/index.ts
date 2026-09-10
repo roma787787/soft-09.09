@@ -1,3 +1,4 @@
+import { requestedThreadpoolSize } from "./config/threadpool"; // must be first: see the module
 import { env } from "./config/env";
 import { CHAINS } from "./config/chains";
 import { createBot } from "./bot";
@@ -7,6 +8,7 @@ import "./services/db"; // ensure schema is created on boot
 async function main() {
   console.log(`[startup] configured chains: ${CHAINS.map((c) => c.key).join(", ")}`);
   console.log(`[startup] db: ${env.dbPath}`);
+  console.log(`[startup] libuv threadpool requested: ${requestedThreadpoolSize} (DNS lookups queue here)`);
 
   const bot = createBot();
   const stopTracker = startTracker(bot);

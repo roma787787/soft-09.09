@@ -73,6 +73,30 @@ interface ChainHealth {
  * once measures what actually matters: whether this chain can be read at
  * all.
  */
+/**
+ * The reason, not the wrapper. Node reports every transport failure as
+ * "fetch failed" and puts the diagnosis one level down in `cause`: the
+ * hostname that no longer resolves, the refused connection, the expired
+ * certificate. Sixteen chains reported "fetch failed" and there was no way
+ * to tell a domain that has been dead for a year from a node that is merely
+ * busy - which are opposite problems with opposite fixes.
+ */
+export function describeError(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const code = (current as NodeJS.ErrnoException).code;
+    const line = (code ? `${current.message} (${code})` : current.message).split("\n")[0].trim();
+    if (line && !parts.includes(line)) parts.push(line);
+    current = (current as { cause?: unknown }).cause;
+  }
+  // The wrapper is worth keeping only when it is all there is.
+  const informative = parts.filter((p) => p !== "fetch failed");
+  return (informative.length > 0 ? informative : parts).join(" ← ") || String(err);
+}
+
 async function probeNode(url: string): Promise<NodeHealth> {
   const started = Date.now();
   const controller = new AbortController();
@@ -93,8 +117,7 @@ async function probeNode(url: string): Promise<NodeHealth> {
   } catch (err) {
     const ms = Date.now() - started;
     if (controller.signal.aborted) return { url, ok: false, ms, error: `нет ответа за ${NODE_DEADLINE_MS / 1000} с` };
-    const message = err instanceof Error ? err.message : String(err);
-    return { url, ok: false, ms, error: message.split("\n")[0].trim() };
+    return { url, ok: false, ms, error: describeError(err) };
   } finally {
     clearTimeout(timer);
   }

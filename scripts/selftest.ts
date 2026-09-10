@@ -13,6 +13,7 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseCmcInfoResponse } from "../src/services/cmc";
+import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
@@ -352,6 +353,38 @@ const unrelated = parseCmcInfoResponse(
   "ZZZ"
 );
 check("a bare qualifier matches no chain", unrelated?.platforms[0]?.chainKey === undefined);
+
+// Node wraps every transport failure as "fetch failed" and puts the
+// diagnosis in `cause`. Sixteen chains reported the wrapper and nothing
+// else, which cannot tell a domain dead for a year from a node that is
+// merely busy - opposite problems with opposite fixes.
+const dnsFailure = new Error("fetch failed");
+(dnsFailure as any).cause = Object.assign(
+  new Error("getaddrinfo ENOTFOUND rpc.example.invalid"),
+  { code: "ENOTFOUND" }
+);
+check(
+  "the cause replaces the wrapper",
+  describeError(dnsFailure) === "getaddrinfo ENOTFOUND rpc.example.invalid (ENOTFOUND)"
+);
+check("a bare wrapper is still reported", describeError(new Error("fetch failed")) === "fetch failed");
+check("a plain error is unchanged", describeError(new Error("HTTP 429")) === "HTTP 429");
+
+// A cause that points back at its own error would otherwise spin forever,
+// and a chain of them should read as a chain.
+const looping = new Error("outer");
+(looping as any).cause = looping;
+check("a self-referential cause terminates", describeError(looping) === "outer");
+
+const nested = new Error("fetch failed");
+(nested as any).cause = Object.assign(new Error("connect ECONNREFUSED"), {
+  code: "ECONNREFUSED",
+  cause: new Error("certificate has expired"),
+});
+check(
+  "nested causes are kept in order",
+  describeError(nested) === "connect ECONNREFUSED (ECONNREFUSED) ← certificate has expired"
+);
 
 check("the EVM deployment is still read as before", withSolana?.platforms.length === 1);
 check("the Solana mint is kept rather than discarded", withSolana?.otherPlatforms.length === 1);
