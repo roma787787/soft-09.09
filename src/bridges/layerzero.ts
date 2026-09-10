@@ -402,6 +402,9 @@ const PEERS_ABI = [
 /** Peer lookups per round against a single node. */
 const PEER_QUERY_BATCH = 8;
 
+/** How many seeds to try before concluding a deployment has no peers. */
+const MAX_SEEDS_TRIED = 5;
+
 /**
  * V1's counterpart to peers(). The stored value is
  * abi.encodePacked(remoteAddress, localAddress), so the remote OApp is the
@@ -476,10 +479,13 @@ export async function expandLayerZeroMesh(
 
   const eidMap = await getLzEidMap();
 
-  // Two seeds, not all of them: the mesh is fully connected, so the first
-  // one that answers already names every chain. The second is there for the
-  // case where the first sits on a chain whose node is refusing calls.
-  const useful = seeds.slice(0, 2);
+  // Seeds are tried until one names a peer, not just the first two. A
+  // registry can list a deprecated deployment alongside the live one - USDT
+  // has both - and the dead one answers every call with nothing. Stopping
+  // at it reports the whole token as unbridged when the working deployment
+  // was next in the list. The cap keeps a token with many dead deployments
+  // from turning one report into forty rounds of RPC calls.
+  const useful = seeds.slice(0, MAX_SEEDS_TRIED);
 
   const peerByChain = new Map<string, Address>();
   let asked = 0;
@@ -512,6 +518,10 @@ export async function expandLayerZeroMesh(
         })
       );
     }
+
+    // One live deployment names every chain it reaches, so once a seed has
+    // answered there is nothing further to learn from the others.
+    if (peerByChain.size > 0) break;
   }
 
   const custodians: Custodian[] = [];
@@ -540,7 +550,7 @@ export async function expandLayerZeroMesh(
         chainKey,
         custodyAddress: peer,
         tokenAddress: probe.wrappedToken,
-        note: "найден по сети пиров LayerZero",
+        note: "по сети пиров",
       });
     })
   );
@@ -616,7 +626,7 @@ async function readV1Peer(
  * that will not answer symbol() is accepted: the peer link is already strong
  * evidence, and dropping the row would hide real liquidity.
  */
-async function symbolLooksRight(chainKey: string, token: Address, symbol: string): Promise<boolean> {
+export async function symbolLooksRight(chainKey: string, token: Address, symbol: string): Promise<boolean> {
   try {
     const actual = (await getClient(chainKey).readContract({
       address: token,

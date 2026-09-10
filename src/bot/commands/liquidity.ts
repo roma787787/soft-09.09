@@ -10,6 +10,7 @@ import {
   probeLayerZeroToken,
   findLayerZeroRegistryDeployments,
   readAdapterUnderlying,
+  symbolLooksRight,
   expandLayerZeroMesh,
   type RegistryDeploymentInfo,
 } from "../../bridges/layerzero";
@@ -47,7 +48,9 @@ export async function resolveRegistryDeployments(
   deployments: RegistryDeploymentInfo[],
   platforms: TokenPlatform[],
   alreadyConfigured: Set<string>,
-  readUnderlying: (chainKey: string, address: Address) => Promise<Address | undefined> = readAdapterUnderlying
+  symbol: string,
+  readUnderlying: (chainKey: string, address: Address) => Promise<Address | undefined> = readAdapterUnderlying,
+  checkSymbol: (chainKey: string, token: Address, symbol: string) => Promise<boolean> = symbolLooksRight
 ): Promise<RegistryResolution> {
   const custodians: Custodian[] = [];
   const nativeOftChains = new Set<string>();
@@ -65,10 +68,22 @@ export async function resolveRegistryDeployments(
 
     // A deployment found under a neighbouring ticker has to prove itself:
     // it is only this token if the contract says so. Falling back to the
-    // listed address here would let any similarly named project's adapter
-    // in, which is the whole risk of widening the search.
+    // listed address would let any similarly named project's adapter in,
+    // which is the whole risk of widening the search.
     if (deployment.viaAlias) {
-      if (!onChain || !listed || onChain.toLowerCase() !== listed.toLowerCase()) {
+      if (!onChain) {
+        mismatchedAdapters++;
+        continue;
+      }
+      // Where CoinMarketCap lists the token, that address is the proof.
+      // Where it does not - and a bridged deployment routinely reaches
+      // chains CMC has never heard of, which is exactly the coverage worth
+      // having - the locked ERC-20 is asked for its own symbol instead.
+      // Requiring CMC there would throw away the chains this was for.
+      const proven = listed
+        ? onChain.toLowerCase() === listed.toLowerCase()
+        : await checkSymbol(deployment.chainKey, onChain, symbol);
+      if (!proven) {
         mismatchedAdapters++;
         continue;
       }
@@ -87,9 +102,7 @@ export async function resolveRegistryDeployments(
       chainKey: deployment.chainKey,
       custodyAddress: deployment.address,
       tokenAddress: underlying,
-      note: deployment.viaAlias
-        ? `из реестра LayerZero, тикер ${deployment.viaAlias} (${deployment.rawType})`
-        : `из реестра LayerZero (${deployment.rawType})`,
+      note: deployment.viaAlias ?? "реестр",
     });
   }
 
@@ -126,7 +139,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // bridged only by LayerZero has no Wormhole or Hyperlane custodian, and
   // giving up here would skip the very registry that covers it.
   const deployments = await findLayerZeroRegistryDeployments(symbol);
-  const registry = await resolveRegistryDeployments(deployments, token.platforms, alreadyConfigured);
+  const registry = await resolveRegistryDeployments(deployments, token.platforms, alreadyConfigured, symbol);
 
   const nativeOftChains = new Set<string>(registry.nativeOftChains);
   const found: Custodian[] = [...registry.custodians];
@@ -167,7 +180,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
         chainKey: probe.chainKey,
         custodyAddress: platform.tokenAddress,
         tokenAddress: probe.wrappedToken,
-        note: probe.version === "v1" ? "адаптер LayerZero V1" : "адаптер определён по контракту",
+        note: probe.version === "v1" ? "V1" : "по контракту",
       });
     }
   }

@@ -371,7 +371,12 @@ export function renderLiquidityReport(input: ReportInput): string {
           : symbol;
         const amount = `${esc(formatAmount(row.amount, row.decimals))} ${esc(unit)}`;
         const link = explorer ? ` <a href="${explorer}">↗</a>` : "";
-        block.push(` - ${esc(BRIDGE_LABELS[protocol])}: <b>${amount}</b>${link}`);
+        // One bridge can hold the same token in several contracts on one
+        // chain - a live deployment beside a deprecated one, say - and three
+        // identical labels in a row leave no way to tell which is which.
+        // The note earns its place only then.
+        const tag = protocolRows.length > 1 && row.note ? ` <i>${esc(row.note)}</i>` : "";
+        block.push(` - ${esc(BRIDGE_LABELS[protocol])}${tag}: <b>${amount}</b>${link}`);
       }
 
       if (rest.length > 0) {

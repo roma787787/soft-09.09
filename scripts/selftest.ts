@@ -787,6 +787,7 @@ async function asyncChecks(): Promise<void> {
     [deployment("ethereum", false)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(),
+    "TKN",
     async () => undefined
   );
   check("a plain OFT yields no custody contract", native.custodians.length === 0);
@@ -796,6 +797,7 @@ async function asyncChecks(): Promise<void> {
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(),
+    "TKN",
     async () => TOKEN
   );
   check("an adapter locking the listed token becomes a custodian", adapter.custodians.length === 1);
@@ -811,6 +813,7 @@ async function asyncChecks(): Promise<void> {
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(),
+    "TKN",
     async () => OTHER_TOKEN
   );
   check("an adapter locking a different token is skipped", foreign.custodians.length === 0);
@@ -822,6 +825,7 @@ async function asyncChecks(): Promise<void> {
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(["ethereum"]),
+    "TKN",
     async () => TOKEN
   );
   check("the manual config wins over the registry", overridden.custodians.length === 0);
@@ -832,14 +836,72 @@ async function asyncChecks(): Promise<void> {
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
     new Set(),
+    "TKN",
     async () => undefined
   );
   check("an unreadable adapter falls back to the listed token", fallback.custodians[0]?.tokenAddress === TOKEN);
+
+  // A deployment found under a neighbouring ticker must prove itself. The
+  // interesting case is a chain CoinMarketCap does not list: that is exactly
+  // where a bridged deployment adds coverage, so requiring CMC there would
+  // discard the chains the wider search was for.
+  const aliasDeployment = { ...deployment("ethereum", true), viaAlias: "TKN0" };
+
+  const aliasListed = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => TOKEN
+  );
+  check("an alias deployment locking the listed token is kept", aliasListed.custodians.length === 1);
+
+  const aliasWrong = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => OTHER_TOKEN
+  );
+  check("an alias deployment locking something else is rejected", aliasWrong.custodians.length === 0);
+
+  const aliasUnlisted = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [],
+    new Set(),
+    "TKN",
+    async () => TOKEN,
+    async () => true
+  );
+  check("on a chain CMC does not list, the token's own symbol is the proof", aliasUnlisted.custodians.length === 1);
+
+  const aliasUnlistedWrongSymbol = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [],
+    new Set(),
+    "TKN",
+    async () => TOKEN,
+    async () => false
+  );
+  check("and a symbol that does not match is rejected", aliasUnlistedWrongSymbol.custodians.length === 0);
+
+  // No fallback to the listed address here: an alias candidate that will not
+  // say what it locks has proved nothing, and guessing is the one thing that
+  // could put another project's balance under this ticker.
+  const aliasUnreadable = await resolveRegistryDeployments(
+    [aliasDeployment],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => undefined
+  );
+  check("an alias deployment that will not identify itself is dropped", aliasUnreadable.custodians.length === 0);
 
   const unknown = await resolveRegistryDeployments(
     [deployment("ethereum", true)],
     [],
     new Set(),
+    "TKN",
     async () => undefined
   );
   check("with nothing to lock, the adapter is dropped rather than guessed", unknown.custodians.length === 0);
@@ -948,6 +1010,32 @@ const reverted = renderLiquidityReport({
 check("a reverting contract is not reported as a connection problem", !reverted.includes("не ответили"));
 check("but it is still accounted for", reverted.includes("отказом вместо баланса"));
 check("and counted with the right noun", reverted.includes("2 контракта ответили"));
+
+// One bridge holding the same token in several contracts on one chain gives
+// identical labels; without the note there is no way to tell a live
+// deployment from a deprecated one sitting next to it.
+const twoAdapters = renderLiquidityReport({
+  symbol: "TKN",
+  name: "Token",
+  balances: [
+    { ...fakeBalance("ethereum", "layerzero", 3_000_000n), note: "TKN0" },
+    { ...fakeBalance("ethereum", "layerzero", 400n), note: "реестр" },
+  ],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 2 },
+});
+check("two adapters on one chain are told apart", twoAdapters.includes("TKN0") && twoAdapters.includes("реестр"));
+
+const oneAdapter = renderLiquidityReport({
+  symbol: "TKN",
+  name: "Token",
+  balances: [{ ...fakeBalance("ethereum", "layerzero", 3_000_000n), note: "TKN0" }],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+});
+check("a lone row is not cluttered with a note it does not need", !oneAdapter.includes("TKN0"));
 
 check("a dust balance is shown, not rounded away to zero", dusty.includes("0,0001"));
 
