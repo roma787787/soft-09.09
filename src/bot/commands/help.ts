@@ -1,7 +1,20 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
+import { SVM_CHAINS } from "../../config/svmChains";
+import { COSMOS_CHAINS } from "../../config/cosmosChains";
+import { OTHER_CHAINS } from "../../config/otherChains";
+import { capToTelegramLimit } from "../render";
 
-const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
+/**
+ * Built per call, not once at import.
+ *
+ * The chain table grows after startup - the bot adds networks it discovers -
+ * so a help text frozen at import time would keep quoting the number the
+ * table had before any of them arrived.
+ */
+function helpText(): string {
+  const total = CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length;
+  return `🌉 <b>Bridge Liquidity Tracker</b>
 
 Показывает, сколько токена лежит в контрактах-хранилищах мостов по всем сетям. Это нужно, чтобы понять, хватит ли ликвидности на вывод, прежде чем заводить туда деньги.
 
@@ -30,7 +43,7 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
 
-Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.
+Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
 
 <b>Откуда берутся адреса хранилищ:</b>
 • Wormhole — фиксированный Token Bridge на каждую сеть, зашит в бот
@@ -38,8 +51,11 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 • LayerZero — единого реестра нет, адаптеры ведутся вручную в конфиге
 
 Пример: <code>/info ARB</code>`;
+}
 
 export function registerHelpCommands(bot: Telegraf) {
-  bot.start(async (ctx: Context) => ctx.reply(HELP_TEXT, { parse_mode: "HTML" }));
-  bot.help(async (ctx: Context) => ctx.reply(HELP_TEXT, { parse_mode: "HTML" }));
+  const send = (ctx: Context) =>
+    ctx.reply(capToTelegramLimit(helpText()), { parse_mode: "HTML" });
+  bot.start(async (ctx: Context) => send(ctx));
+  bot.help(async (ctx: Context) => send(ctx));
 }

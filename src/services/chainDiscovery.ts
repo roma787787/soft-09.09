@@ -67,7 +67,7 @@ export function lastDiscovery(): DiscoveryReport | undefined {
 
 /* ------------------------------------------------------------------ */
 
-interface ChainFacts {
+export interface ChainFacts {
   name: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
   rpcUrls: string[];
@@ -127,6 +127,72 @@ export function factsFor(chainId: number): ChainFacts | undefined {
       viem?.nativeCurrency ?? { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: [...new Set(urls.map((u) => u.replace(/\/+$/, "")))],
     explorerUrl: viem?.blockExplorers?.default?.url ?? hyperlane?.explorerUrl,
+  };
+}
+
+/**
+ * The canonical chain registry - the one chainid.network serves - asked for
+ * the chains neither local registry describes.
+ *
+ * Sixty-five candidates fell at that first hurdle: CoinGecko knew the
+ * network existed, and nothing inside the bot knew what its coin was called
+ * or where to reach it. This is one request per unknown chain id, once a
+ * day, and it is the difference between "we cannot describe it" and having
+ * it in the table.
+ */
+const REGISTRY_URL = "https://raw.githubusercontent.com/ethereum-lists/chains/master/_data/chains";
+
+/** Answers already fetched, misses included: a miss costs a request too. */
+const registryCache = new Map<number, ChainFacts | undefined>();
+
+async function registryFacts(chainId: number): Promise<ChainFacts | undefined> {
+  if (registryCache.has(chainId)) return registryCache.get(chainId);
+
+  let facts: ChainFacts | undefined;
+  try {
+    const response = await fetch(`${REGISTRY_URL}/eip155-${chainId}.json`, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    if (response.ok) {
+      const body = (await response.json()) as Record<string, any>;
+      facts = factsFromRegistryEntry(body, chainId);
+    }
+  } catch {
+    // A registry that will not answer is the same as one that does not carry
+    // the chain: nothing is added, and the next run asks again.
+  }
+  registryCache.set(chainId, facts);
+  return facts;
+}
+
+/** Split out from the fetch so the shape can be checked without a network. */
+export function factsFromRegistryEntry(
+  entry: Record<string, any> | undefined,
+  chainId: number
+): ChainFacts | undefined {
+  if (!entry || Number(entry.chainId) !== chainId) return undefined;
+  // A non-empty faucet list is what a testnet has and a mainnet does not -
+  // the registry keeps both in one directory and does not label them.
+  if (Array.isArray(entry.faucets) && entry.faucets.length > 0) return undefined;
+  if (entry.status === "deprecated") return undefined;
+
+  const rpcUrls = (Array.isArray(entry.rpc) ? entry.rpc : []).filter(
+    (u: unknown): u is string =>
+      typeof u === "string" && u.startsWith("https://") && !/\$\{|API_KEY/i.test(u)
+  );
+  if (rpcUrls.length === 0) return undefined;
+
+  const token = entry.nativeCurrency ?? {};
+  const explorer = entry.explorers?.[0]?.url;
+  return {
+    name: String(entry.name ?? chainId),
+    nativeCurrency: {
+      name: String(token.name ?? "Ether"),
+      symbol: String(token.symbol ?? "ETH"),
+      decimals: Number.isInteger(token.decimals) ? token.decimals : 18,
+    },
+    rpcUrls: [...new Set(rpcUrls.map((u: string) => u.replace(/\/+$/, "")))],
+    explorerUrl: typeof explorer === "string" ? explorer : undefined,
   };
 }
 
@@ -260,7 +326,9 @@ export async function discoverChains(): Promise<DiscoveryReport> {
       const index = next++;
       if (index >= candidates.length) return;
       const platform = candidates[index];
-      const facts = factsFor(platform.chainId!);
+      // The local registries first, because they cost nothing; the canonical
+      // one only for what they do not carry.
+      const facts = factsFor(platform.chainId!) ?? (await registryFacts(platform.chainId!));
       if (!facts) {
         results[index] = {
           label: platform.name,

@@ -22,6 +22,7 @@ export function registerChainsCommand(bot: Telegraf) {
 
     const text = (ctx.message as { text?: string } | undefined)?.text ?? "";
     const rescan = /\s(обнови|refresh|scan)\b/i.test(text);
+    const detailed = /\s(подробно|full|detail)\b/i.test(text);
     const report = rescan || !lastDiscovery() ? await discoverChains() : lastDiscovery()!;
 
     const lines: string[] = [`🌐 <b>Сети</b>: ${CHAINS.length} EVM в таблице`];
@@ -43,17 +44,11 @@ export function registerChainsCommand(bot: Telegraf) {
       ""
     );
 
-    if (report.added.length > 0) {
-      lines.push("<b>Бот добавил сам</b>");
-      for (const chain of report.added) {
-        lines.push(`✅ ${esc(chain.label)} <i>(id ${chain.chainId})</i>\n   <code>${esc(chain.rpcUrl)}</code>`);
-      }
-      lines.push("");
-    }
-
+    // Compact, and the refusals before the additions. A line and a URL per
+    // added chain filled the message on its own - sixty-one of them - and
+    // what fell off the end was the part that says why the others are
+    // missing, which is the only part anyone can act on.
     if (report.rejected.length > 0) {
-      // Grouped by reason: forty chains each explaining itself on its own
-      // line fills the message and pushes out what was actually added.
       const byReason = new Map<string, string[]>();
       for (const chain of report.rejected) {
         const group = byReason.get(chain.reason);
@@ -63,6 +58,19 @@ export function registerChainsCommand(bot: Telegraf) {
       lines.push("<b>Не подошли</b>");
       for (const [reason, labels] of [...byReason].sort((a, b) => b[1].length - a[1].length)) {
         lines.push(`❌ ${esc(reason)} — ${labels.length}\n   ${esc(labels.join(", "))}`);
+      }
+      lines.push("");
+    }
+
+    if (report.added.length > 0) {
+      lines.push("<b>Бот добавил сам</b>");
+      if (detailed) {
+        for (const chain of report.added) {
+          lines.push(`✅ ${esc(chain.label)} <i>(id ${chain.chainId})</i>\n   <code>${esc(chain.rpcUrl)}</code>`);
+        }
+      } else {
+        lines.push(`✅ ${esc(report.added.map((c) => c.label).join(", "))}`);
+        lines.push("<i>С адресами узлов: /chains подробно</i>");
       }
       lines.push("");
     }

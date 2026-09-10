@@ -15,7 +15,7 @@ function esc(s: string): string {
  * Avalanche on a private endpoint went from 326 ms to 71 seconds.
  */
 /** Chains in flight at once. Each of them probes several nodes. */
-const HEALTH_CHECK_CONCURRENCY = 12;
+const HEALTH_CHECK_CONCURRENCY = 20;
 
 /**
  * How long one node gets to produce a block number. A node slower than this
@@ -37,7 +37,7 @@ const MAX_NODES_PROBED = MAX_ENDPOINTS_PER_CHAIN;
  * minutes, and a report that never arrives is indistinguishable from a bot
  * that is down.
  */
-const TOTAL_BUDGET_MS = 60_000;
+const TOTAL_BUDGET_MS = 75_000;
 
 interface NodeHealth {
   url: string;

@@ -13,7 +13,7 @@ import { formatInfoCard } from "../src/bot/format";
 import type { DetectionResult } from "../src/protocols/types";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import { parseAssetPlatforms, parseCoinResponse, pickCoin } from "../src/services/coingecko";
-import { factsFor, keyForSlug } from "../src/services/chainDiscovery";
+import { factsFor, factsFromRegistryEntry, keyForSlug } from "../src/services/chainDiscovery";
 import { describeError } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
@@ -1638,6 +1638,40 @@ check(
 // The alias guard: Ethereum was there first and must stay reachable.
 check("an existing alias is not taken over", resolveChain("ethereum")?.key === "ethereum");
 check("the chain's own alias does resolve", resolveChain("selftestchain")?.key === "selftestchain");
+
+// The canonical registry is asked only for the chains the local ones cannot
+// describe, and its answers need the same filtering: it keeps testnets in
+// the same directory as mainnets and does not label them.
+const moonbeamEntry = {
+  name: "Moonbeam",
+  chainId: 1284,
+  nativeCurrency: { name: "Glimmer", symbol: "GLMR", decimals: 18 },
+  faucets: [],
+  rpc: ["https://rpc.api.moonbeam.network", "wss://wss.api.moonbeam.network"],
+  explorers: [{ name: "moonscan", url: "https://moonbeam.moonscan.io" }],
+};
+const moonbeam = factsFromRegistryEntry(moonbeamEntry, 1284);
+check("a registry entry becomes usable facts", moonbeam?.nativeCurrency.symbol === "GLMR");
+check("with only the https endpoints", moonbeam?.rpcUrls.length === 1);
+check("and its explorer", moonbeam?.explorerUrl === "https://moonbeam.moonscan.io");
+
+check(
+  "a faucet gives a testnet away",
+  factsFromRegistryEntry({ ...moonbeamEntry, faucets: ["https://faucet.example"] }, 1284) === undefined
+);
+check(
+  "a deprecated chain is not added",
+  factsFromRegistryEntry({ ...moonbeamEntry, status: "deprecated" }, 1284) === undefined
+);
+check(
+  "an entry for another chain id is refused",
+  factsFromRegistryEntry(moonbeamEntry, 1285) === undefined
+);
+check(
+  "an entry with no reachable endpoint is not facts",
+  factsFromRegistryEntry({ ...moonbeamEntry, rpc: ["https://rpc.example/${API_KEY}"] }, 1284) === undefined
+);
+check("nothing at all is not facts", factsFromRegistryEntry(undefined, 1284) === undefined);
 
 // -----------------------------------------------------------------------------
 
