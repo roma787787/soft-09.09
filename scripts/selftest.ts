@@ -15,6 +15,7 @@ import { bytes32ToAddress, isEvmAddressBytes32 } from "../src/protocols/util";
 import {
   parseAssetPlatforms,
   parseCoinResponse,
+  explainBody,
   parseKeyResponse,
   pickCoin,
   resolveEvmPlatform,
@@ -384,6 +385,19 @@ const sparse = parseKeyResponse({ plan: "Pro" });
 check("a missing number stays missing", sparse.perMinute === undefined && sparse.monthlyCredit === undefined);
 check("a nonsense body is not a crash", parseKeyResponse("тьфу").plan === undefined);
 check("and neither is nothing at all", parseKeyResponse(undefined).plan === undefined);
+
+// CoinGecko explains every rejection in the body, and reading it is the
+// difference between a diagnosis and a guess: a Demo key was reported as
+// rejected when it was the endpoint, not the key, that the plan lacked.
+check(
+  "the service's own reason is read",
+  explainBody({ status: { error_code: 10011, error_message: "This endpoint is available on other plans" } }) ===
+    "This endpoint is available on other plans (код 10011)"
+);
+check("a code with no text still says something", explainBody({ status: { error_code: 10002 } }) === "код 10002");
+check("a plain error field is read too", explainBody({ error: "invalid api key" }) === "invalid api key");
+check("and a body with nothing in it says nothing", explainBody({}) === undefined);
+check("nor does a body that is not an object", explainBody("тьфу") === undefined);
 
 // Node wraps every transport failure as "fetch failed" and puts the
 // diagnosis in `cause`. Sixteen chains reported the wrapper and nothing

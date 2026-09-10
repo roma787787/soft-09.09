@@ -221,6 +221,25 @@ function apiHeaders(): Record<string, string> {
   return headers;
 }
 
+/**
+ * CoinGecko's own account of what went wrong.
+ *
+ * It puts one in the body of every rejection - "This endpoint is available
+ * on other plans", "invalid api key" - and reading it is the difference
+ * between a diagnosis and a guess. Learned the expensive way: a Demo key
+ * was reported as rejected when it was the endpoint, not the key, that the
+ * plan did not include.
+ */
+export function explainBody(body: unknown): string | undefined {
+  const status = (body as { status?: { error_message?: unknown; error_code?: unknown } })?.status;
+  const message = typeof status?.error_message === "string" ? status.error_message : undefined;
+  const code = typeof status?.error_code === "number" ? status.error_code : undefined;
+  const plain = typeof (body as { error?: unknown })?.error === "string" ? (body as { error: string }).error : undefined;
+  const text = message ?? plain;
+  if (!text) return code !== undefined ? `код ${code}` : undefined;
+  return code !== undefined ? `${text} (код ${code})` : text;
+}
+
 async function get(path: string, params: Record<string, string> = {}): Promise<unknown> {
   const url = apiUrl(path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -232,16 +251,23 @@ async function get(path: string, params: Record<string, string> = {}): Promise<u
     throw new TokenSourceRequestError(err instanceof Error ? err.message : String(err));
   }
 
+  // The body is read before the status is judged: CoinGecko explains itself
+  // in there, and the HTTP code alone cannot tell a bad key from an endpoint
+  // the plan does not carry - they are both 401.
+  const body = await response.json().catch(() => undefined);
+  const said = explainBody(body);
+  const suffix = said ? `\n\nОтвет CoinGecko: ${said}` : "";
+
   if (response.status === 429) {
     // The free tier is shared by IP, and this bot runs on a hosting provider
     // whose addresses are shared with everyone else's bots. Naming the fix
     // matters more than naming the status.
     throw new TokenSourceRequestError(
-      env.coingeckoApiKey
+      (env.coingeckoApiKey
         ? "CoinGecko: превышен лимит запросов, попробуйте через минуту."
         : "CoinGecko: превышен лимит запросов. Бесплатный лимит общий на IP, а хостинг делит адрес " +
           "с чужими ботами. Лечится бесплатным ключом: coingecko.com → API → Demo, потом переменная " +
-          "COINGECKO_API_KEY."
+          "COINGECKO_API_KEY.") + suffix
     );
   }
   if (response.status === 401 || response.status === 403) {
@@ -250,21 +276,17 @@ async function get(path: string, params: Record<string, string> = {}): Promise<u
     // blocked datacentre range - and sending the reader to check a variable
     // they never set is a wasted evening.
     throw new TokenSourceRequestError(
-      env.coingeckoApiKey
-        ? `CoinGecko: ключ не принят (HTTP ${response.status}). Проверьте COINGECKO_API_KEY, ` +
-          `и что COINGECKO_API_BASE соответствует тарифу: api.coingecko.com для Demo, ` +
-          `pro-api.coingecko.com для Pro — заголовок выбирается по адресу, и от неверной пары ` +
-          `ключ просто игнорируется.`
+      (env.coingeckoApiKey
+        ? `CoinGecko отклонил запрос (HTTP ${response.status}).`
         : `CoinGecko: доступ закрыт (HTTP ${response.status}). Ключ не задан, так что дело не в нём — ` +
           `запрос режет что-то по дороге. Проверьте, что хостинг выпускает трафик на ` +
-          `${env.coingeckoApiBase}.`
+          `${env.coingeckoApiBase}.`) + suffix
     );
   }
   if (!response.ok) {
-    throw new TokenSourceRequestError(`CoinGecko: запрос не прошёл, HTTP ${response.status}.`);
+    throw new TokenSourceRequestError(`CoinGecko: запрос не прошёл, HTTP ${response.status}.${suffix}`);
   }
 
-  const body = await response.json().catch(() => undefined);
   if (body === undefined) throw new TokenSourceRequestError("CoinGecko вернул неразборчивый ответ");
   return body;
 }
@@ -468,6 +490,11 @@ export interface KeyStatus {
   monthlyCredit?: number;
   monthlyUsed?: number;
   monthlyLeft?: number;
+  /**
+   * The key works, but this plan does not expose usage figures. A different
+   * answer from "the key was refused", and the two arrive as the same 401.
+   */
+  quotaUnavailable?: boolean;
   error?: string;
 }
 
@@ -516,16 +543,32 @@ export async function checkKey(): Promise<KeyStatus> {
 
   if (!status.configured) return status;
 
+  // The usage endpoint first, because when it answers it answers everything:
+  // the key was accepted and here is what is left of the quota.
   try {
     Object.assign(status, parseKeyResponse(await get("/api/v3/key")));
     status.accepted = true;
+    return status;
   } catch (err) {
-    // Reachable but the key endpoint refused: the key is the problem, and
-    // that is a different answer from "CoinGecko is unreachable".
-    status.accepted = false;
     status.error = err instanceof Error ? err.message : String(err);
   }
-  return status;
+
+  // But its silence proves nothing about the key. /key is a plan feature,
+  // and a plan that does not include it answers 401 - the same 401 as a key
+  // that is wrong. So the key gets tested on the work the bot actually does:
+  // if a real request carrying it succeeds, the key is good and only the
+  // usage figures are out of reach.
+  try {
+    await get("/api/v3/search", { query: "bitcoin" });
+    status.accepted = true;
+    status.quotaUnavailable = true;
+    return status;
+  } catch (err) {
+    // Both refused it. Now the key is genuinely the problem.
+    status.accepted = false;
+    status.error = err instanceof Error ? err.message : String(err);
+    return status;
+  }
 }
 
 /**

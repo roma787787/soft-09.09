@@ -64,6 +64,7 @@ export function registerGeckoCommand(bot: Telegraf) {
       lines.push(
         "",
         "❌ <b>Ключ не принят.</b>",
+        "Отвергнут и на служебном запросе, и на рабочем — значит, дело именно в нём.",
         `<code>${esc(status.error ?? "без объяснения")}</code>`,
         "",
         "Чаще всего это несовпадение тарифа и адреса: ключ Demo работает только с " +
@@ -75,6 +76,15 @@ export function registerGeckoCommand(bot: Telegraf) {
     }
 
     lines.push("✅ <b>Ключ принят.</b>");
+    if (status.quotaUnavailable) {
+      // Proved by a real request, not by the usage endpoint - which this
+      // plan does not carry, and whose 401 is indistinguishable from the
+      // 401 of a key that is wrong.
+      lines.push(
+        "Проверено рабочим запросом с этим ключом.",
+        "<i>Счётчик квоты этот тариф не отдаёт — на работу бота это не влияет.</i>"
+      );
+    }
     if (status.plan) lines.push(`Тариф: ${esc(status.plan)}`);
     if (status.perMinute !== undefined) lines.push(`Лимит: ${status.perMinute} запросов в минуту`);
     if (status.monthlyCredit !== undefined) {
