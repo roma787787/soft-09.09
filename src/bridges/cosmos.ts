@@ -1,4 +1,5 @@
 import { COSMOS_CHAINS, getCosmosChain } from "../config/cosmosChains";
+import { endpointsWithOverride } from "../config/env";
 import { loadHyperlaneRegistry } from "./hyperlane";
 
 /**
@@ -102,7 +103,7 @@ async function readBankBalance(chainKey: string, address: string, denom: string)
   const chain = getCosmosChain(chainKey);
   if (!chain) return undefined;
 
-  for (const base of chain.restUrls) {
+  for (const base of endpointsWithOverride(chain.rpcEnvVar, chain.restUrls)) {
     try {
       const url = `${base.replace(/\/$/, "")}/cosmos/bank/v1beta1/balances/${encodeURIComponent(
         address
@@ -243,7 +244,7 @@ export async function probeNativeModule(chainKey: string, routerId: string): Pro
   // Every endpoint the registry lists, not just the first: a public node
   // that serves only the standard modules answers 501 to everything else,
   // and another host on the same chain may not.
-  for (const rawBase of chain.restUrls) {
+  for (const rawBase of endpointsWithOverride(chain.rpcEnvVar, chain.restUrls)) {
     const base = rawBase.replace(/\/$/, "");
     for (const path of paths) {
       try {
@@ -304,7 +305,7 @@ export async function findHyperlaneModuleAccount(chainKey: string): Promise<Modu
   const chain = getCosmosChain(chainKey);
   if (!chain) return undefined;
 
-  for (const rawBase of chain.restUrls) {
+  for (const rawBase of endpointsWithOverride(chain.rpcEnvVar, chain.restUrls)) {
     try {
       const response = await fetch(`${rawBase.replace(/\/$/, "")}/cosmos/auth/v1beta1/module_accounts`, {
         headers: { Accept: "application/json" },

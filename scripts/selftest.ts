@@ -25,6 +25,7 @@ import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
+import { endpointsWithOverride } from "../src/config/env";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -420,6 +421,26 @@ check(
   "a balance too large for a float is exact",
   decimalToBaseUnits("123456789012345.678901", 18) === 123456789012345678901000000000000n
 );
+
+// Every non-EVM chain declares an env var for its endpoint, and for a while
+// none of the readers looked at it - the variables were advertised in the
+// chain tables and ignored everywhere else, so setting one did nothing.
+// Public endpoints on these chains go stale, get discontinued or fall behind
+// the ledger, which is exactly when someone reaches for their own.
+process.env.__TEST_RPC_URL = "https://mine.example";
+check(
+  "a configured endpoint is tried first",
+  endpointsWithOverride("__TEST_RPC_URL", ["https://public.example"])[0] === "https://mine.example"
+);
+check(
+  "and the public ones stay behind it",
+  endpointsWithOverride("__TEST_RPC_URL", ["https://public.example"]).length === 2
+);
+check(
+  "without one, nothing changes",
+  endpointsWithOverride("__UNSET_RPC_URL", ["https://public.example"]).join() === "https://public.example"
+);
+delete process.env.__TEST_RPC_URL;
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

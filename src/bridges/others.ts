@@ -1,5 +1,6 @@
 import { keccak256, stringToBytes } from "viem";
 import { getOtherChain, OTHER_CHAINS } from "../config/otherChains";
+import { endpointsWithOverride } from "../config/env";
 import { loadHyperlaneRegistry } from "./hyperlane";
 
 /**
@@ -66,7 +67,7 @@ async function rpc(chainKey: string, body: unknown): Promise<any | undefined> {
   const chain = getOtherChain(chainKey);
   if (!chain) return undefined;
 
-  for (const url of chain.rpcUrls) {
+  for (const url of endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls)) {
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -125,7 +126,7 @@ async function readRadixBalance(route: OtherRoute): Promise<bigint | undefined> 
   const chain = getOtherChain(route.chainKey);
   if (!chain || !route.collateral) return undefined;
 
-  for (const base of chain.rpcUrls) {
+  for (const base of endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls)) {
     try {
       const response = await fetch(`${base.replace(/\/$/, "")}/state/entity/details`, {
         method: "POST",
@@ -267,7 +268,7 @@ export async function probeOtherRoute(route: OtherRoute): Promise<OtherProbe[]> 
   // Every endpoint, not just the first. Two of these chains had a dead one
   // listed ahead of a working one, and probing only the first would have
   // reported the chain as broken while the reader was reaching it fine.
-  const hosts = chain.rpcUrls;
+  const hosts = endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls);
   const hostName = (url: string) => {
     try {
       return new URL(url).host;

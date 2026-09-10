@@ -1,5 +1,6 @@
 import { Connection } from "@solana/web3.js";
 import { getSvmChain } from "../config/svmChains";
+import { endpointsWithOverride } from "../config/env";
 
 /**
  * One cached connection per non-EVM chain, mirroring how rpcClient caches
@@ -15,8 +16,7 @@ export function getSvmClients(chainKey: string): Connection[] {
   const chain = getSvmChain(chainKey);
   if (!chain) throw new Error(`Неизвестная не-EVM сеть "${chainKey}"`);
 
-  const configured = process.env[chain.rpcEnvVar]?.trim();
-  const urls = configured ? [configured, ...chain.defaultRpcUrls] : [...chain.defaultRpcUrls];
+  const urls = endpointsWithOverride(chain.rpcEnvVar, chain.defaultRpcUrls);
   const built = urls.map((url) => new Connection(url, "confirmed"));
   clients.set(chainKey, built);
   return built;

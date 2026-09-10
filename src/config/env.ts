@@ -73,3 +73,18 @@ export function hasCustomRpc(chainKey: string): boolean {
   const chain = CHAINS.find((c) => c.key === chainKey);
   return !!chain && !!read(chain.rpcEnvVar);
 }
+
+
+/**
+ * A configured endpoint ahead of the built-in ones.
+ *
+ * Every non-EVM chain declares an env var for its endpoint, and for a while
+ * none of them read it: the variables were advertised in the chain tables
+ * and ignored everywhere else, so setting one did nothing. Public endpoints
+ * on these chains go stale, get discontinued, or fall behind the ledger -
+ * which is exactly when someone needs to point the bot at their own.
+ */
+export function endpointsWithOverride(envVar: string, defaults: string[]): string[] {
+  const configured = read(envVar);
+  return configured ? [configured, ...defaults] : [...defaults];
+}
