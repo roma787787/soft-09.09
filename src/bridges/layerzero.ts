@@ -377,6 +377,14 @@ export interface MeshResult {
   nativeChains: string[];
   /** Chains the walk reached, for the report's own accounting. */
   reached: string[];
+  /**
+   * Where the walk got to, step by step. Four live calls in a row fail in
+   * four different ways, and "reached 0 new chains" is the same sentence
+   * whether no eid was known, no peer came back, or every peer turned out
+   * not to be readable - three different problems with three different
+   * fixes.
+   */
+  steps: { eids: number; asked: number; peers: number; probed: number };
 }
 
 /**
@@ -400,7 +408,9 @@ export async function expandLayerZeroMesh(
   symbol: string,
   known: Set<string> = new Set()
 ): Promise<MeshResult> {
-  if (seeds.length === 0) return { custodians: [], nativeChains: [], reached: [] };
+  if (seeds.length === 0) {
+    return { custodians: [], nativeChains: [], reached: [], steps: { eids: 0, asked: 0, peers: 0, probed: 0 } };
+  }
 
   const eidMap = await getLzEidMap();
 
@@ -410,6 +420,7 @@ export async function expandLayerZeroMesh(
   const useful = seeds.slice(0, 2);
 
   const peerByChain = new Map<string, Address>();
+  let asked = 0;
   for (const seed of useful) {
     const client = getClient(seed.chainKey);
     const targets = [...eidMap.chainKeyToId.entries()].filter(
@@ -419,6 +430,7 @@ export async function expandLayerZeroMesh(
     // Every one of these lands on the seed's own node, so they go in batches
     // rather than all at once: asking one endpoint for forty answers in the
     // same instant is a reliable way to be rate-limited by it.
+    asked += targets.length;
     for (let i = 0; i < targets.length; i += PEER_QUERY_BATCH) {
       await Promise.all(
         targets.slice(i, i + PEER_QUERY_BATCH).map(async ([chainKey, eid]) => {
@@ -470,7 +482,12 @@ export async function expandLayerZeroMesh(
     })
   );
 
-  return { custodians, nativeChains, reached };
+  return {
+    custodians,
+    nativeChains,
+    reached,
+    steps: { eids: eidMap.chainKeyToId.size, asked, peers: peerByChain.size, probed: reached.length },
+  };
 }
 
 /**

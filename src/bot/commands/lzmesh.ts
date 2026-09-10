@@ -83,7 +83,15 @@ export function registerLzMeshCommand(bot: Telegraf) {
     const covered = new Set([...deployments.map((d) => d.chainKey), ...probed.map((r) => r.platform.chainKey!)]);
     const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
 
-    lines.push("", `<b>Сеть пиров</b>: дошли до ${mesh.reached.length} новых сетей`);
+    const { eids, asked, peers, probed: recognised } = mesh.steps;
+    lines.push(
+      "",
+      "<b>Сеть пиров</b>",
+      `  сетей с известным eid: ${eids}`,
+      `  спрошено у контракта: ${asked}`,
+      `  пиров вернулось: ${peers}`,
+      `  из них опознано как OFT: ${recognised}`
+    );
     for (const c of mesh.custodians.slice(0, 10)) {
       lines.push(`  ${esc(chainName(c.chainKey))} — адаптер <code>${esc(c.custodyAddress)}</code>`);
     }
@@ -91,7 +99,16 @@ export function registerLzMeshCommand(bot: Telegraf) {
       lines.push(`  ${esc(chainName(chainKey))} — чеканит, хранилища нет`);
     }
     if (mesh.reached.length === 0) {
-      lines.push("  ничего нового: все пиры уже были найдены раньше");
+      // Each of these is a different failure with a different fix, and
+      // saying "found nothing" for all three hides which one happened.
+      lines.push(
+        "",
+        eids === 0
+          ? "Ни у одной сети не удалось выяснить eid — обход не мог начаться."
+          : peers === 0
+            ? "Контракт не назвал ни одного пира: либо это не V2 OApp, либо peers() у него пуст."
+            : "Пиры есть, но ни один не опознался как OFT — вероятно, ноды тех сетей не ответили."
+      );
     }
 
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
