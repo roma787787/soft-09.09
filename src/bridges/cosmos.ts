@@ -232,15 +232,11 @@ export async function probeNativeModule(chainKey: string, routerId: string): Pro
     // a different fix from finding the right path, and the two are
     // indistinguishable without asking.
     `/cosmos/base/tendermint/v1beta1/node_info`,
-    // The module's own queries. Three independent hosts answered 501 to all
-    // of these, which is what "the gateway does not serve this module" looks
-    // like, rather than "wrong path".
+    // The module's own queries, kept so a chain that starts serving them is
+    // noticed. Three independent Celestia hosts answered 501 to all of
+    // these, which is a gateway not serving the module rather than a wrong
+    // path - and no further guessing at paths would have helped.
     `/hyperlane/warp/v1/tokens`,
-    `/hyperlane/warp/v1/tokens/${routerId}`,
-    // The way round it: module accounts are listed by the standard auth
-    // module, which these same hosts do serve. The chain names the account
-    // itself, so nothing has to be derived and nothing can be derived wrong.
-    `/cosmos/auth/v1beta1/module_accounts`,
   ];
 
   const out: ModuleProbe[] = [];
@@ -298,7 +294,13 @@ function shorten(path: string, routerId: string): string {
  * on an account that exists and belongs to something else, whose balance
  * would then be printed under this token's name.
  */
-async function findHyperlaneModuleAccount(chainKey: string): Promise<string | undefined> {
+export interface ModuleAccount {
+  name: string;
+  address: string;
+  host: string;
+}
+
+export async function findHyperlaneModuleAccount(chainKey: string): Promise<ModuleAccount | undefined> {
   const chain = getCosmosChain(chainKey);
   if (!chain) return undefined;
 
@@ -316,7 +318,9 @@ async function findHyperlaneModuleAccount(chainKey: string): Promise<string | un
         const name: unknown = account?.name ?? account?.base_account?.name;
         const address: unknown = account?.base_account?.address ?? account?.address;
         if (typeof name === "string" && /hyperlane|warp/i.test(name) && typeof address === "string") {
-          return address;
+          // The name comes back with the address, so the report can say
+          // whose balance it is showing rather than only that it found one.
+          return { name, address, host: new URL(rawBase).host };
         }
       }
     } catch {
@@ -353,15 +357,15 @@ export async function findNativeModuleBalances(symbol: string): Promise<CosmosBa
       const account = await findHyperlaneModuleAccount(entry.chainKey);
       if (!account) return undefined;
 
-      const amount = await readBankBalance(entry.chainKey, account, entry.denom);
+      const amount = await readBankBalance(entry.chainKey, account.address, entry.denom);
       if (amount === undefined) return undefined;
 
       return {
         protocol: "hyperlane" as const,
         chainKey: entry.chainKey,
-        custodyAddress: account,
+        custodyAddress: account.address,
         tokenAddress: entry.denom,
-        note: "модуль Hyperlane, общий залог сети",
+        note: `модуль ${account.name}, общий залог сети`,
         amount,
         decimals: entry.decimals,
       };

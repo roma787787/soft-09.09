@@ -1,6 +1,11 @@
 import type { Telegraf, Context } from "telegraf";
 import { COSMOS_CHAINS, getCosmosChain } from "../../config/cosmosChains";
-import { findCosmosRoutes, findNativeModuleRoutes, probeNativeModule } from "../../bridges/cosmos";
+import {
+  findCosmosRoutes,
+  findNativeModuleRoutes,
+  probeNativeModule,
+  findHyperlaneModuleAccount,
+} from "../../bridges/cosmos";
 import { capToTelegramLimit } from "../render";
 
 function esc(s: string): string {
@@ -54,9 +59,20 @@ export function registerCosmosCommand(bot: Telegraf) {
         `<i>${esc(route.routeId)}</i> — ${esc(route.chainKey)}`,
         `  id: <code>${esc(route.routerId)}</code>`
       );
+      // The account the balance is actually read from, named. A number
+      // without the name of whose account it came from is not something
+      // anyone can check.
+      const account = await findHyperlaneModuleAccount(route.chainKey);
+      lines.push(
+        account
+          ? `  ✅ аккаунт модуля «${esc(account.name)}»: <code>${esc(account.address)}</code>`
+          : "  ❌ аккаунт модуля Hyperlane не найден среди модульных аккаунтов сети"
+      );
+      if (route.denom) lines.push(`  деном: <code>${esc(route.denom)}</code>`);
+
       const attempts = await probeNativeModule(route.chainKey, route.routerId);
       for (const a of attempts) {
-        lines.push(`  ${a.ok ? "✅" : "❌"} <code>${esc(a.path)}</code>: ${esc(a.outcome)}`);
+        lines.push(`  ${a.ok ? "✅" : "❌"} <code>${esc(a.path)}</code>: ${esc(a.outcome.slice(0, 90))}`);
       }
     }
 
