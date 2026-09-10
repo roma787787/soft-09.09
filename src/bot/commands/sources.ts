@@ -5,6 +5,7 @@ import { hyperlaneRouteCount } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
 import { vaultCoverage } from "../../bridges/vaults";
 import { ccipChainCount } from "../../bridges/ccip";
+import { stargateCoverage } from "../../bridges/stargate";
 import { BRIDGE_SHORT_LABELS } from "../../bridges/types";
 import { plural } from "../render";
 
@@ -34,10 +35,15 @@ export function registerSourcesCommand(bot: Telegraf) {
       ""
     );
 
+    const stargate = stargateCoverage();
     const lzSize = layerZeroRegistrySize();
     lines.push(
       `<b>LayerZero</b> — реестр OFT: ${lzSize === undefined ? "загрузится при первом /info" : `${lzSize} ${plural(lzSize, "тикер", "тикера", "тикеров")}`}.`,
       `Ручной конфиг: ${layerZeroConfigSize()} ${plural(layerZeroConfigSize(), "тикер", "тикера", "тикеров")} (переопределяет реестр).`,
+      "Плюс обход сети пиров: один найденный OFT разворачивается в остальные сети сам.",
+      "",
+      `<b>Stargate</b> — ${stargate.pools} ${plural(stargate.pools, "пул", "пула", "пулов")} по активам: ${stargate.assets.join(", ")}.`,
+      "Это тоже LayerZero, но реестра по тикерам у него нет — адреса берутся из деплоев Stargate.",
       ""
     );
 

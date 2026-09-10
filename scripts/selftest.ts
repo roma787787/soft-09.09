@@ -26,6 +26,8 @@ import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
 import { vaultAddressesByChain } from "../src/bridges/vaults";
+import { stargateCoverage } from "../src/bridges/stargate";
+import { STARGATE_POOLS_BY_SYMBOL } from "../src/protocols/addresses/stargate.generated";
 
 let failures = 0;
 
@@ -100,6 +102,27 @@ check(
 check(
   "and does not invent a chain we have no RPC for",
   Object.keys(acrossByChain).every((key) => getChain(key) !== undefined)
+);
+
+// --- Stargate pools ----------------------------------------------------------
+// The largest balances this bot reports, and the ones no ticker registry
+// could find. The table is generated from Stargate's deployments, so what is
+// worth testing is that it survives the trip: real addresses, mainnet only,
+// and the assets people actually bridge.
+
+const stargate = stargateCoverage();
+check("Stargate covers the assets that matter", ["USDC", "USDT", "ETH"].every((a) => stargate.assets.includes(a)));
+check("and resolves onto chains we support", stargate.pools >= 10, `${stargate.pools} pools`);
+
+const allStargate = Object.values(STARGATE_POOLS_BY_SYMBOL).flatMap((byChain) => Object.values(byChain));
+check("every Stargate address survives validation", allStargate.every((a) => validateAddress(a).length === 0));
+// Stargate deploys to testnets too, and a testnet pool read by chain id
+// would report play money as real liquidity.
+check(
+  "no testnet pool made it into the table",
+  Object.values(STARGATE_POOLS_BY_SYMBOL).every((byChain) =>
+    Object.keys(byChain).every((id) => ![11155111, 43113, 5003, 421614, 84532].includes(Number(id)))
+  )
 );
 
 // --- tracker block range arithmetic -----------------------------------------

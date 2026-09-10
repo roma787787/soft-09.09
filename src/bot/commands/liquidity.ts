@@ -4,6 +4,7 @@ import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../servi
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
+import { findStargateCustodians } from "../../bridges/stargate";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -167,15 +168,18 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
   // everything that bridge carries - so they are asked regardless of whether
   // a registry happens to list this ticker.
   const tokenByChain = tokenByChainFrom(token.platforms);
-  const [vaults, ccip] = await Promise.all([
+  const [vaults, ccip, stargate] = await Promise.all([
     findVaultCustodians(tokenByChain),
     // CCIP keeps a pool per token, but the pool is found by asking the
     // contracts rather than by looking the ticker up in a list, so it needs
     // no registry of its own.
     findCcipCustodians(tokenByChain),
+    // Stargate is LayerZero's own liquidity layer and holds the largest
+    // balances here, but no registry maps a ticker to its pools.
+    findStargateCustodians(symbol),
   ]);
 
-  const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip]);
+  const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
 
   if (all.length === 0) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
