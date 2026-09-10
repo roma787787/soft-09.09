@@ -28,13 +28,27 @@ const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; path?: string
     cmc: ["Starknet"],
     path: "contract",
     rpcUrls: [
+      // Four endpoints failed four different ways: Blast discontinued,
+      // Nethermind unreachable, dRPC serves Starknet without starknet_call,
+      // Lava discontinued. These are further candidates - a wrong one costs
+      // one request that /other names, so the list is cheap to extend and
+      // the reader tries them in order.
+      "https://api.cartridge.gg/x/starknet/mainnet",
+      "https://starknet.blockpi.network/v1/rpc/public",
       "https://starknet-mainnet.public.blastapi.io/rpc/v0_8",
       "https://free-rpc.nethermind.io/mainnet-juno/",
-      "https://starknet.drpc.org",
     ],
   },
   paradex: { aliases: ["paradex"], path: "contract" },
-  radix: { aliases: ["xrd"], cmc: ["Radix"], path: "address", rpcUrls: ["https://mainnet.radixdlt.com"] },
+  radix: {
+    aliases: ["xrd"],
+    cmc: ["Radix"],
+    path: "address",
+    // The official gateway answered 500 saying its database is nine days
+    // behind the ledger - it is working and refusing to serve stale data,
+    // which is the honest failure. It stays first in case it catches up.
+    rpcUrls: ["https://mainnet.radixdlt.com", "https://gateway.radix.live"],
+  },
   aleo: { aliases: ["aleo"], cmc: ["Aleo"], path: "address" },
 };
 
