@@ -2,7 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
-import { CHAINS, getChain } from "../../config/chains";
+import { CHAINS, getChain, resolveChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
 
@@ -70,9 +70,17 @@ export function registerInfoCommand(bot: Telegraf) {
     // /info takes a ticker (liquidity across bridges). An address argument
     // keeps working and runs the contract identification instead, since
     // that is a different question about a different kind of input.
-    const firstArg = text.trim().split(/\s+/)[1];
+    const parts = text.trim().split(/\s+/);
+    const firstArg = parts[1];
     if (firstArg && !isAddress(firstArg, { strict: false })) {
-      await replyWithLiquidity(ctx, firstArg);
+      // A second word narrows the report to one chain: "/info USDC base"
+      // answers the question actually being asked before a transfer.
+      const chain = parts[2] ? resolveChain(parts[2]) : undefined;
+      if (parts[2] && !chain) {
+        await ctx.reply(`Сеть <b>${esc(parts[2])}</b> не подключена. Список: <code>/diag</code>`, REPLY_OPTS);
+        return;
+      }
+      await replyWithLiquidity(ctx, firstArg, chain?.key);
       return;
     }
 

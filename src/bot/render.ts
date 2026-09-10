@@ -109,6 +109,8 @@ export interface ReportInput {
   syntheticHyperlaneChains?: string[];
   /** Registry adapters skipped because they lock a different contract. */
   mismatchedAdapters?: number;
+  /** Contracts that reverted rather than answering with a balance. */
+  notReadableByChain?: Record<string, number>;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinMarketCap listed that this bot supports. */
@@ -290,6 +292,16 @@ export function renderLiquidityReport(input: ReportInput): string {
     .sort((a, b) => (b.top > a.top ? 1 : b.top < a.top ? -1 : 0));
 
   const notes: string[] = [];
+  const notReadable = Object.values(input.notReadableByChain ?? {}).reduce((a, b) => a + b, 0);
+  if (notReadable > 0) {
+    // Named, but not as a warning: these are contracts that answered, just
+    // not with a balance. Counting them among the connection failures made
+    // the report blame a chain's node for a contract's own shape.
+    notes.push(
+      `${notReadable} ${plural(notReadable, "контракт ответил", "контракта ответили", "контрактов ответили")} отказом вместо баланса — ` +
+        "это не сбой связи, а контракт, который не отдаёт баланс этого токена."
+    );
+  }
   if (balances.some((b) => b.readsNativeCoin)) {
     notes.push(
       "Строки с нативной монетой — это пул, который держит саму монету сети, а не её обёрнутую версию: выйдет из него именно монета."

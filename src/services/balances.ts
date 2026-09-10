@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 import { getClient } from "./rpcClient";
 import type { Custodian } from "../bridges/types";
+import { isTransportError } from "../protocols/util";
 
 const ERC20_ABI = [
   {
@@ -38,15 +39,27 @@ async function readDecimals(chainKey: string, token: Address): Promise<number> {
 export interface BalanceReport {
   balances: CustodianBalance[];
   /**
-   * How many reads failed per chain. A count, not a flag: one contract
-   * timing out on a chain whose other twenty answered is a very different
-   * fact from the whole chain being unreachable, and reporting both as
-   * "could not check this chain" tells the user their data is missing when
-   * most of it is right there in the report.
+   * How many reads failed per chain because the node would not answer. A
+   * count, not a flag: one contract timing out on a chain whose other twenty
+   * answered is a very different fact from the whole chain being
+   * unreachable, and reporting both as "could not check this chain" tells
+   * the user their data is missing when most of it is right there.
+   *
+   * A contract that reverts is not counted here at all. That is not a
+   * failure to reach the chain, it is a contract with nothing to say, and
+   * warning about the chain's connection because of it points at the wrong
+   * thing entirely.
    */
   failuresByChain: Record<string, number>;
   /** How many reads were attempted per chain. */
   attemptsByChain: Record<string, number>;
+  /**
+   * Contracts that answered with a revert rather than a balance - a warp
+   * route whose collateral is not a plain ERC-20, a proxy that is not a
+   * token. Kept separate from failures so the report can stop blaming the
+   * chain's connection for them.
+   */
+  notReadableByChain: Record<string, number>;
 }
 
 /**
@@ -70,6 +83,7 @@ const MAX_CONCURRENT_PER_CHAIN = 4;
 
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
   const failuresByChain: Record<string, number> = {};
+  const notReadable: Record<string, number> = {};
   const attemptsByChain: Record<string, number> = {};
   for (const c of custodians) {
     attemptsByChain[c.chainKey] = (attemptsByChain[c.chainKey] ?? 0) + 1;
@@ -95,6 +109,15 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
         ]);
         return { ...c, amount, decimals };
       } catch (err) {
+        // A revert is an answer: this contract does not hold the token in a
+        // way we can read. Retrying it wastes a round trip and it will
+        // revert again, so it is dropped without accusing the chain of
+        // being unreachable.
+        if (!isTransportError(err)) {
+          notReadable[c.chainKey] = (notReadable[c.chainKey] ?? 0) + 1;
+          return undefined;
+        }
+
         // One retry: a public node under load refuses a request that
         // succeeds moments later, and a dropped row reads as "no liquidity
         // here", which is the opposite of what it means.
@@ -127,6 +150,7 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
   return {
     balances: results.filter((b): b is CustodianBalance => b !== undefined),
     failuresByChain,
+    notReadableByChain: notReadable,
     attemptsByChain,
   };
 }

@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from "telegraf";
-import { getChain } from "../../config/chains";
+import { getChain, resolveChain } from "../../config/chains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
@@ -90,7 +90,7 @@ function countByProtocol(custodians: Custodian[]): Partial<Record<BridgeProtocol
   return counts;
 }
 
-export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
+export async function buildLiquidityReport(rawSymbol: string, chainFilter?: string): Promise<string> {
   // Trimmed to a plausible ticker length: the "not found" reply quotes what
   // was asked for, and a 4000-character argument would push that reply past
   // Telegram's own limit, turning a clear answer into a send failure.
@@ -198,7 +198,22 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     return lines.join("\n");
   }
 
-  const { balances, failuresByChain, attemptsByChain } = await readCustodianBalances(all);
+  // Narrowing to one chain is not a display option, it is the whole
+  // question when you are about to bridge somewhere specific - and it is
+  // also what keeps a widely bridged token from overflowing the message and
+  // dropping the very chain that was being asked about.
+  const scoped = chainFilter ? all.filter((c) => c.chainKey === chainFilter) : all;
+  if (chainFilter && scoped.length === 0) {
+    const label = getChain(chainFilter)?.label ?? chainFilter;
+    return (
+      `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
+      `В сети ${esc(label)} контрактов-хранилищ по этому токену не найдено.\n\n` +
+      `Без указания сети: <code>/info ${esc(token.symbol)}</code>`
+    );
+  }
+
+  const { balances, failuresByChain, attemptsByChain, notReadableByChain } =
+    await readCustodianBalances(scoped);
 
   const supportedChains = [
     ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
@@ -211,37 +226,42 @@ export async function buildLiquidityReport(rawSymbol: string): Promise<string> {
     symbol: token.symbol,
     name: token.name,
     balances,
-    checkedCount: all.length,
+    checkedCount: scoped.length,
     failuresByChain,
     attemptsByChain,
+    notReadableByChain,
     nativeOftChains: [...nativeOftChains],
     mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
     scope: {
       supportedChains,
       unsupportedPlatforms,
-      byProtocol: countByProtocol(all),
+      byProtocol: countByProtocol(scoped),
     },
   });
 }
 
 export function registerLiquidityCommand(bot: Telegraf) {
   bot.command("liquidity", async (ctx: Context) => {
-    const text = (ctx.message as any)?.text ?? "";
-    const arg = text.trim().split(/\s+/)[1];
+    const parts = ((ctx.message as any)?.text ?? "").trim().split(/\s+/);
+    const arg = parts[1];
     if (!arg) {
       await ctx.reply("Укажите тикер. Пример: <code>/liquidity ARB</code>", { parse_mode: "HTML" });
       return;
     }
-    await replyWithLiquidity(ctx, arg);
+    await replyWithLiquidity(ctx, arg, resolveChain(parts[2] ?? "")?.key);
   });
 }
 
 /** Shared by /liquidity and by /info when its argument is a ticker. */
-export async function replyWithLiquidity(ctx: Context, symbol: string): Promise<void> {
+export async function replyWithLiquidity(
+  ctx: Context,
+  symbol: string,
+  chainKey?: string
+): Promise<void> {
   await ctx.sendChatAction("typing");
   try {
-    await ctx.reply(await buildLiquidityReport(symbol), REPLY_OPTS);
+    await ctx.reply(await buildLiquidityReport(symbol, chainKey), REPLY_OPTS);
   } catch (err) {
     if (err instanceof CmcNotConfiguredError) {
       await ctx.reply(

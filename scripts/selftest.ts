@@ -888,6 +888,22 @@ const dusty = renderLiquidityReport({
   failuresByChain: {},
   attemptsByChain: { ethereum: 1 },
 });
+// A contract that reverts is not a chain that failed. Counting the two the
+// same made the report warn about Polygon's connection because two warp
+// routes there are not plain ERC-20 holders.
+const reverted = renderLiquidityReport({
+  symbol: "REV",
+  name: "Revert Token",
+  balances: [fakeBalance("ethereum", "wormhole", 500n)],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 3 },
+  notReadableByChain: { ethereum: 2 },
+});
+check("a reverting contract is not reported as a connection problem", !reverted.includes("не ответили"));
+check("but it is still accounted for", reverted.includes("отказом вместо баланса"));
+check("and counted with the right noun", reverted.includes("2 контракта ответили"));
+
 check("a dust balance is shown, not rounded away to zero", dusty.includes("0,0001"));
 
 // A native pool holds the chain's coin, so a WETH report shows those rows in

@@ -10,9 +10,12 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 • <b>Hyperlane</b> — Warp Route TokenRouter / MailboxClient
 • <b>Transporter</b> — Chainlink CCIP Router и Circle CCTP (TokenMessenger/MessageTransmitter), которые Transporter использует под капотом
 • <b>Portal</b> — Wormhole Token Bridge (сам мост и токены, которые он выпустил)
+• <b>Stargate</b> — пулы Stargate, включая нативные
+• <b>Across</b> — SpokePool, одно хранилище на сеть
 
 <b>Команды:</b>
 <code>/info &lt;тикер&gt;</code> — сколько токена лежит в хранилищах мостов по всем сетям. Пример: <code>/info ARB</code>
+<code>/info &lt;тикер&gt; &lt;сеть&gt;</code> — то же, но только по одной сети. Пример: <code>/info USDC base</code>
 <code>/info &lt;адрес&gt; [сеть]</code> — определить, что за контракт по адресу: протокол, пиры, endpoint/mailbox, владелец.
 <code>/track &lt;адрес&gt; [сеть]</code> — включить оповещения о новых событиях этого контракта в этот чат.
 <code>/untrack &lt;адрес&gt; [сеть]</code> — выключить оповещения.
