@@ -120,6 +120,9 @@ export function registerLzMeshCommand(bot: Telegraf) {
     for (const chainKey of mesh.nativeChains.slice(0, 10)) {
       lines.push(`  ${esc(chainName(chainKey))} — чеканит, хранилища нет`);
     }
+    for (const chainKey of mesh.unrecognised.slice(0, 6)) {
+      lines.push(`  ${esc(chainName(chainKey))} — пир есть, но прочитать его не удалось`);
+    }
     if (mesh.reached.length === 0) {
       // Each of these is a different failure with a different fix, and
       // saying "found nothing" for all three hides which one happened.

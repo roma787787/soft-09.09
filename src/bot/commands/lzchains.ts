@@ -1,7 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { getLzEidMap } from "../../services/idMaps";
-import { fetchLzEidsFromMetadata } from "../../bridges/lzMetadata";
+import { fetchLzEidsFromMetadata, lastMetadataChainCount } from "../../bridges/lzMetadata";
 import { capToTelegramLimit } from "../render";
 
 function esc(s: string): string {
@@ -40,7 +40,7 @@ export function registerLzChainsCommand(bot: Telegraf) {
 
     const lines = [
       `<b>Сети LayerZero: ${known.length} из ${CHAINS.length}</b>`,
-      `Из метаданных получено: ${metadata.size}`,
+      `В метаданных сетей: ${lastMetadataChainCount()}, из них сопоставлено с нашими: ${metadata.size}`,
       "",
       ...known.map((k) => `✅ ${esc(k).replace(/&lt;i&gt;/g, "<i>").replace(/&lt;\/i&gt;/g, "</i>")}`),
     ];
@@ -48,7 +48,8 @@ export function registerLzChainsCommand(bot: Telegraf) {
       lines.push(
         "",
         `❌ Без eid: ${esc(missing.join(", "))}.`,
-        "По этим сетям обход пиров не работает: спросить у контракта, кто его пир там, нечем."
+        "По этим сетям обход пиров не работает: спросить у контракта, кто его пир там, нечем.",
+        "Если сеть есть в метаданных, но не сопоставилась, дело в сопоставлении; если её там нет — LayerZero туда не развёрнут."
       );
     }
 

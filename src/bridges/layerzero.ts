@@ -24,6 +24,10 @@ const OAPP_V1_ABI = [
   { type: "function", name: "lzEndpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const;
 
+const EID_ABI = [
+  { type: "function", name: "eid", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
+] as const;
+
 const ENDPOINT_V1_ABI = [
   { type: "function", name: "getChainId", stateMutability: "view", inputs: [], outputs: [{ type: "uint16" }] },
 ] as const;
@@ -105,6 +109,22 @@ export async function layerZeroVersionOf(
       functionName: "endpoint",
     })) as Address;
     if (endpoint && endpoint.toLowerCase() === LZ_ENDPOINT_V2.toLowerCase()) return "v2";
+
+    // The usual address is not the only one. Deterministic deployment puts
+    // EndpointV2 in the same place on most chains but not on zk-rollups,
+    // which compile contracts differently - the endpoint is there, just
+    // elsewhere. Rejecting those made real OFTs on zkSync Era and Cronos
+    // zkEVM look like unrelated contracts. So an unfamiliar address is
+    // asked to identify itself: only an endpoint answers eid(), and only a
+    // V2 one answers in V2's numeric range.
+    if (endpoint && !/^0x0+$/i.test(endpoint)) {
+      const eid = (await client.readContract({
+        address: endpoint,
+        abi: EID_ABI,
+        functionName: "eid",
+      })) as number;
+      if (Number.isFinite(eid) && eid > 30000 && eid < 31000) return "v2";
+    }
   } catch {
     // Not a V2 OApp; V1 is still possible.
   }
@@ -442,6 +462,8 @@ export interface MeshResult {
   nativeChains: string[];
   /** Chains the walk reached, for the report's own accounting. */
   reached: string[];
+  /** Peers that answered but could not be read as an OFT. */
+  unrecognised: string[];
   /**
    * Where the walk got to, step by step. Four live calls in a row fail in
    * four different ways, and "reached 0 new chains" is the same sentence
@@ -474,7 +496,13 @@ export async function expandLayerZeroMesh(
   known: Set<string> = new Set()
 ): Promise<MeshResult> {
   if (seeds.length === 0) {
-    return { custodians: [], nativeChains: [], reached: [], steps: { eids: 0, asked: 0, peers: 0, probed: 0 } };
+    return {
+      custodians: [],
+      nativeChains: [],
+      reached: [],
+      unrecognised: [],
+      steps: { eids: 0, asked: 0, peers: 0, probed: 0 },
+    };
   }
 
   const eidMap = await getLzEidMap();
@@ -527,11 +555,18 @@ export async function expandLayerZeroMesh(
   const custodians: Custodian[] = [];
   const nativeChains: string[] = [];
   const reached: string[] = [];
+  const unrecognised: string[] = [];
 
   await Promise.all(
     [...peerByChain.entries()].map(async ([chainKey, peer]) => {
       const probe = await probeLayerZeroToken(chainKey, peer);
-      if (!probe) return;
+      if (!probe) {
+        // A peer that will not identify itself is worth naming: the contract
+        // on the other side says it is there, so something stopped us
+        // reading it, and silence here reads as no deployment at all.
+        unrecognised.push(chainKey);
+        return;
+      }
       reached.push(chainKey);
 
       if (probe.kind === "native" || !probe.wrappedToken) {
@@ -559,6 +594,7 @@ export async function expandLayerZeroMesh(
     custodians,
     nativeChains,
     reached,
+    unrecognised,
     steps: {
       eids: eidMap.chainKeyToId.size,
       asked,

@@ -19,6 +19,19 @@ const METADATA_URL = process.env.LAYERZERO_METADATA_URL || "https://metadata.lay
 
 const TTL_MS = 6 * 60 * 60 * 1000;
 
+/** How many chains the payload held, matched or not. */
+let lastSeen = 0;
+
+/**
+ * Total chains in the last metadata response. Without it, "38 chains" cannot
+ * be read: it does not say whether the other four were absent from the
+ * source or present under a name we failed to match, which are different
+ * problems.
+ */
+export function lastMetadataChainCount(): number {
+  return lastSeen;
+}
+
 let cache: { at: number; data: Map<string, number> } | undefined;
 let inFlight: Promise<Map<string, number>> | undefined;
 
@@ -58,6 +71,7 @@ export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
 export function extractEids(payload: unknown): Map<string, number> {
   const found = new Map<string, number>();
   if (!payload || typeof payload !== "object") return found;
+  lastSeen = Object.keys(payload as Record<string, unknown>).length;
 
   const byNativeId = new Map<number, string>();
   for (const chain of CHAINS) byNativeId.set(chain.viemChain.id, chain.key);

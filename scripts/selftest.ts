@@ -20,7 +20,7 @@ import { getChain, resolveChain, CHAINS } from "../src/config/chains";
 import { renderLiquidityReport } from "../src/bot/render";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
-import { extractEids } from "../src/bridges/lzMetadata";
+import { extractEids, lastMetadataChainCount } from "../src/bridges/lzMetadata";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
@@ -175,6 +175,12 @@ check(
   "an entry with no usable eid is skipped, not guessed at",
   extractEids({ ethereum: { chainDetails: { nativeChainId: 1 }, deployments: [] } }).size === 0
 );
+
+// A chain absent from the payload and a chain present under a name we do not
+// match are different problems with different fixes, so the count of what
+// was seen is kept alongside the count of what matched.
+extractEids({ ethereum: { deployments: [{ eid: 30101 }] }, solana: {}, aptos: {} });
+check("the payload's own size is remembered", lastMetadataChainCount() === 3);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
