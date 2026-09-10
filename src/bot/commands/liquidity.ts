@@ -2,6 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { getChain, resolveChain, resolveAnyChain, chainMeta } from "../../config/chains";
 import { getSvmChain } from "../../config/svmChains";
 import { getCosmosChain } from "../../config/cosmosChains";
+import { getOtherChain } from "../../config/otherChains";
 import { lookupToken, CmcNotConfiguredError, CmcRequestError } from "../../services/cmc";
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
@@ -9,6 +10,7 @@ import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians } from "../../bridges/stargate";
 import { findSvmBalances } from "../../bridges/svm";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
+import { findOtherBalances } from "../../bridges/others";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -253,13 +255,14 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // for the same reason the LayerZero registry is - a token bridged only to
   // Solana would otherwise be reported as not bridged at all.
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
-  const [svmAll, cosmosAll] = await Promise.all([
+  const [svmAll, cosmosAll, otherAll] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : [],
     !chainFilter || !!getCosmosChain(chainFilter)
       ? Promise.all([findCosmosBalances(symbol), findNativeModuleBalances(symbol)]).then((r) => r.flat())
       : [],
+    !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : [],
   ]);
-  const nonEvmAll = [...svmAll, ...cosmosAll];
+  const nonEvmAll = [...svmAll, ...cosmosAll, ...otherAll];
   const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
   const solanaHasSomething = solanaRows.length > 0;
 

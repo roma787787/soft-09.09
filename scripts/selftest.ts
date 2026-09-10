@@ -28,6 +28,8 @@ import { validateAddress } from "../src/protocols/addresses/validate";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
+import { OTHER_CHAINS } from "../src/config/otherChains";
+import { findOtherRoutes, decimalToBaseUnits } from "../src/bridges/others";
 import {
   findSolanaHyperlaneRoutes,
   hyperlaneEscrowCandidates,
@@ -389,6 +391,35 @@ check("the escrow is preferred over a sub-account", pickModuleAccount(["hyperlan
 check("order in the response does not decide it", pickModuleAccount(["hyperlane", "hyperlane_fee"]) === "hyperlane");
 check("warp is the next best name", pickModuleAccount(["warp_collector", "warp"]) === "warp");
 check("otherwise the shortest name wins", pickModuleAccount(["hyperlane_x_y", "hyperlane_x"]) === "hyperlane_x");
+
+// --- Starknet, Radix, Aleo ---------------------------------------------------
+// Three chains, three unrelated ways of asking for a balance, eleven routes
+// between them. Every address comes from the registry, so the only failure
+// available is being told nothing - which produces no row.
+
+const otherKeys = OTHER_CHAINS.map((c) => c.key);
+check("the last non-EVM chains are present", otherKeys.length >= 3, otherKeys.join(", "));
+check("Starknet resolves", resolveAnyChain("starknet")?.key === "starknet");
+check("Radix resolves", resolveAnyChain("radix")?.key === "radix");
+check("every one has an endpoint", OTHER_CHAINS.every((c) => c.rpcUrls.length > 0));
+
+const starknetRoutes = findOtherRoutes("USDC").filter((r) => r.protocol === "starknet");
+check("a Starknet collateral route is found", starknetRoutes.length > 0, `${starknetRoutes.length}`);
+check("and it names the token it locks", starknetRoutes.every((r) => !!r.collateral));
+
+// Radix reports a decimal string rather than base units, so this is the
+// conversion every one of its balances passes through. Done on strings:
+// parsing "1234567.89" as a float loses precision before it is ever scaled.
+check("a whole number converts", decimalToBaseUnits("12", 6) === 12_000_000n);
+check("a fraction converts", decimalToBaseUnits("12.34", 6) === 12_340_000n);
+check("a fraction longer than the scale is cut, not rounded up", decimalToBaseUnits("1.9999999", 6) === 1_999_999n);
+check("no fractional part at all still works", decimalToBaseUnits("7", 18) === 7n * 10n ** 18n);
+check("zero stays zero", decimalToBaseUnits("0", 6) === 0n);
+// A balance beyond 2^53 is where a float-based conversion would start lying.
+check(
+  "a balance too large for a float is exact",
+  decimalToBaseUnits("123456789012345.678901", 18) === 123456789012345678901000000000000n
+);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

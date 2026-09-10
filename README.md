@@ -49,6 +49,7 @@ npm run sync:across       # обновить адреса Across из публи
 npm run sync:stargate     # то же для пулов Stargate
 npm run sync:svm          # список сетей на VM Solana из реестра Hyperlane
 npm run sync:cosmos       # то же для сетей Cosmos
+npm run sync:other        # Starknet, Radix, Aleo
 ```
 
 `check:addresses` стоит запускать после любой правки справочника адресов:
@@ -117,6 +118,12 @@ Berachain, Blast, Celo, Scroll, Mantle, Sonic, Gnosis, Sei, Taiko, Fraxtal,
 Soneium, Zircuit, Swell, Lisk, BOB, Plume, Superseed, Katana, HyperEVM,
 Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
 Aurora, Ronin, Boba (список в `src/config/chains.ts`).
+
+Плюс **Starknet, Paradex, Radix и Aleo** — по одному способу чтения на
+каждое семейство: `starknet_call` с селектором, вычисляемым из имени
+функции; Gateway API у Radix; маппинг `credits.aleo` у Aleo. И **Tron**,
+который формально не EVM, но говорит на Ethereum JSON-RPC и хранит адреса в
+hex — поэтому читается обычным путём, без отдельного слоя.
 
 Плюс сети **Cosmos** — Celestia, Injective, Neutron, Osmosis, Stride, Terra
 Classic, Cosmos Hub, Noble, Dymension, KYVE, MilkyWay. Там ничего выводить не нужно: маршрут это контракт с обычным адресом, а

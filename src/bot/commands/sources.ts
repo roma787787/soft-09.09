@@ -2,6 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { SVM_CHAINS } from "../../config/svmChains";
 import { COSMOS_CHAINS } from "../../config/cosmosChains";
+import { OTHER_CHAINS } from "../../config/otherChains";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
@@ -22,10 +23,11 @@ export function registerSourcesCommand(bot: Telegraf) {
     const lines: string[] = ["<b>Что бот знает о мостах</b>", ""];
 
     lines.push(
-      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length}</b>`,
-      `  ${CHAINS.length} EVM`,
+      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length}</b>`,
+      `  ${CHAINS.length} EVM (включая Tron — у него EVM-совместимый RPC)`,
       `  ${SVM_CHAINS.length} на VM Solana: ${SVM_CHAINS.map((c) => c.label).join(", ")}`,
-      `  ${COSMOS_CHAINS.length} Cosmos: ${COSMOS_CHAINS.map((c) => c.label).join(", ")}`
+      `  ${COSMOS_CHAINS.length} Cosmos: ${COSMOS_CHAINS.map((c) => c.label).join(", ")}`,
+      `  ${OTHER_CHAINS.length} прочих: ${OTHER_CHAINS.map((c) => c.label).join(", ")}`
     );
     lines.push("");
 

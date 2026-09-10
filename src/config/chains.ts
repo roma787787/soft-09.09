@@ -35,6 +35,7 @@ import {
   superseed,
   swellchain,
   taiko,
+  tron,
   unichain,
   worldchain,
   xLayer,
@@ -45,6 +46,7 @@ import {
 import type { Chain } from "viem";
 import { SVM_CHAINS, resolveSvmChain } from "./svmChains";
 import { COSMOS_CHAINS, resolveCosmosChain } from "./cosmosChains";
+import { OTHER_CHAINS, resolveOtherChain } from "./otherChains";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -565,6 +567,21 @@ export const CHAINS: ChainDef[] = [
     aliases: ["boba"],
     cmcPlatformNames: ["Boba Network"],
   },
+  {
+    key: "tron",
+    label: "Tron",
+    viemChain: tron,
+    rpcEnvVar: "TRON_RPC_URL",
+    // Tron is not EVM, but its node speaks Ethereum JSON-RPC and Hyperlane's
+    // registry already gives its addresses in hex - so eth_call reaches it
+    // and none of the non-EVM machinery is needed. Five warp routes for one
+    // table entry.
+    defaultRpcUrls: ["https://api.trongrid.io/jsonrpc"],
+    explorerTxUrl: (h) => `https://tronscan.org/#/transaction/${h}`,
+    explorerAddressUrl: (a) => `https://tronscan.org/#/address/${a}`,
+    aliases: ["tron", "trx"],
+    cmcPlatformNames: ["Tron", "Tron20", "TRC20"],
+  },
 ];
 
 export type ChainKey = (typeof CHAINS)[number]["key"];
@@ -606,6 +623,9 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
   const cosmos = COSMOS_CHAINS.find((c) => c.key === chainKey);
   if (cosmos) return { label: cosmos.label, explorerAddressUrl: cosmos.explorerAddressUrl };
 
+  const other = OTHER_CHAINS.find((c) => c.key === chainKey);
+  if (other) return { label: other.label, explorerAddressUrl: other.explorerAddressUrl };
+
   return undefined;
 }
 
@@ -627,6 +647,9 @@ export function resolveAnyChain(name: string): { key: string; label: string } | 
 
   const cosmos = resolveCosmosChain(name);
   if (cosmos) return { key: cosmos.key, label: cosmos.label };
+
+  const other = resolveOtherChain(name);
+  if (other) return { key: other.key, label: other.label };
 
   return undefined;
 }
