@@ -375,6 +375,21 @@ check(
   `${nativeRoutes.length} маршрутов -> ${chainDenoms.size} аккаунтов`
 );
 
+// Once a chain lists more than one matching module account, taking whichever
+// came first makes the answer depend on which node replied - and a
+// sub-account like "hyperlane_fee" holds a different balance while matching
+// the pattern just as well.
+function pickModuleAccount(names: string[]): string {
+  return [...names].sort((a, b) => {
+    const rank = (n: string) => (n.toLowerCase() === "hyperlane" ? 0 : n.toLowerCase() === "warp" ? 1 : 2);
+    return rank(a) - rank(b) || a.length - b.length;
+  })[0];
+}
+check("the escrow is preferred over a sub-account", pickModuleAccount(["hyperlane_fee", "hyperlane"]) === "hyperlane");
+check("order in the response does not decide it", pickModuleAccount(["hyperlane", "hyperlane_fee"]) === "hyperlane");
+check("warp is the next best name", pickModuleAccount(["warp_collector", "warp"]) === "warp");
+check("otherwise the shortest name wins", pickModuleAccount(["hyperlane_x_y", "hyperlane_x"]) === "hyperlane_x");
+
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a
 // mixed-case input unchanged instead of validating it, so the old

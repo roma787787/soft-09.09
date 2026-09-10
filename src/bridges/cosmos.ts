@@ -314,15 +314,30 @@ export async function findHyperlaneModuleAccount(chainKey: string): Promise<Modu
 
       const body = (await response.json()) as any;
       const accounts = Array.isArray(body?.accounts) ? body.accounts : [];
+
+      const matches: ModuleAccount[] = [];
       for (const account of accounts) {
         const name: unknown = account?.name ?? account?.base_account?.name;
         const address: unknown = account?.base_account?.address ?? account?.address;
         if (typeof name === "string" && /hyperlane|warp/i.test(name) && typeof address === "string") {
           // The name comes back with the address, so the report can say
           // whose balance it is showing rather than only that it found one.
-          return { name, address, host: new URL(rawBase).host };
+          matches.push({ name, address, host: new URL(rawBase).host });
         }
       }
+      if (matches.length === 0) continue;
+
+      // Order matters once there is more than one. Taking whichever the node
+      // happened to list first would make the answer depend on the node, and
+      // a sub-account like "hyperlane_fee" holds a different balance than
+      // the escrow while matching just as well. Celestia names its escrow
+      // exactly "hyperlane"; the shortest name is the fallback, since a
+      // sub-account's name is the module's name with something appended.
+      matches.sort((a, b) => {
+        const rank = (n: string) => (n.toLowerCase() === "hyperlane" ? 0 : n.toLowerCase() === "warp" ? 1 : 2);
+        return rank(a.name) - rank(b.name) || a.name.length - b.name.length;
+      });
+      return matches[0];
     } catch {
       // Next host.
     }
