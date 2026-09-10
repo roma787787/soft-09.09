@@ -25,7 +25,8 @@ import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
-import { endpointsWithOverride } from "../src/config/env";
+import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
+import { EXTRA_RPC_URLS } from "../src/config/rpcs.generated";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -80,6 +81,19 @@ const chainIds = CHAINS.map((c) => c.viemChain.id);
 check("no two chains share a chain id", new Set(chainIds).size === chainIds.length);
 
 check("every chain has somewhere to connect", CHAINS.every((c) => c.defaultRpcUrls.length > 0));
+// viem carries one endpoint per chain, and at a hundred and fifty chains a
+// single refusal took the whole chain out of the report. Most now have
+// alternates behind that one.
+const withFallbacks = CHAINS.filter((c) => rpcUrlsFor(c.key).length > 1).length;
+check("most chains have more than one endpoint to try", withFallbacks > CHAINS.length / 2, `${withFallbacks}/${CHAINS.length}`);
+check(
+  "no chain lost the endpoint viem gave it",
+  CHAINS.every((c) => rpcUrlsFor(c.key).includes(c.defaultRpcUrls[0]))
+);
+check(
+  "no fallback needs an API key it does not have",
+  Object.values(EXTRA_RPC_URLS).every((urls) => urls.every((u) => !/\$\{|API_KEY/i.test(u)))
+);
 // A chain may ask for fewer parallel reads, but never for none: a limit of
 // zero would loop forever without reading anything.
 check(

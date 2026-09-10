@@ -1,12 +1,15 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { getClient } from "../../services/rpcClient";
-import { hasCustomRpc } from "../../config/env";
+import { hasCustomRpc, rpcUrlsFor } from "../../config/env";
 import { plural, capToTelegramLimit } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+/** Chains probed at once. Enough to stay quick, few enough to be honest. */
+const HEALTH_CHECK_BATCH = 12;
 
 interface ChainHealth {
   chainKey: string;
@@ -46,7 +49,17 @@ export function registerDiagCommand(bot: Telegraf) {
   bot.command("diag", async (ctx: Context) => {
     await ctx.sendChatAction("typing");
 
-    const health = await Promise.all(CHAINS.map((c) => checkChain(c.key, c.label)));
+    // In batches, not all at once. Firing a hundred and fifty requests
+    // together does not measure a hundred and fifty nodes: they queue inside
+    // Node, so the timings report how long each waited its turn - Avalanche
+    // on a private endpoint went from 326 ms to 71 seconds - and the ones at
+    // the back of the queue time out and are reported as down when they were
+    // never asked.
+    const health: ChainHealth[] = [];
+    for (let i = 0; i < CHAINS.length; i += HEALTH_CHECK_BATCH) {
+      const batch = CHAINS.slice(i, i + HEALTH_CHECK_BATCH);
+      health.push(...(await Promise.all(batch.map((c) => checkChain(c.key, c.label)))));
+    }
 
     const failed = health.filter((h) => !h.ok);
     const ok = health.filter((h) => h.ok);
@@ -103,7 +116,10 @@ export function registerDiagCommand(bot: Telegraf) {
         `Лечится своим RPC — пропиши его в ${vars}.`;
     }
 
-    const thin = CHAINS.filter((c) => c.defaultRpcUrls.length === 1 && !hasCustomRpc(c.key)).length;
+    // Counted through rpcUrlsFor, not the chain table: the generated
+    // fallbacks are a separate source, and counting only what viem carries
+    // would report chains as fragile that have four alternates behind them.
+    const thin = CHAINS.filter((c) => rpcUrlsFor(c.key).length === 1 && !hasCustomRpc(c.key)).length;
     if (thin > 0) {
       // A chain with one endpoint is not broken, it is one refusal away from
       // being broken - and a chain that drops out of a report reads as "no

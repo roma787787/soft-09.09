@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { CHAINS } from "./chains";
+import { EXTRA_RPC_URLS } from "./rpcs.generated";
 
 /**
  * Reads an env var, trimming surrounding whitespace. Values are frequently
@@ -64,8 +65,15 @@ export const env = {
 export function rpcUrlsFor(chainKey: string): string[] {
   const chain = CHAINS.find((c) => c.key === chainKey);
   if (!chain) throw new Error(`Unknown chain "${chainKey}"`);
+
+  // viem carries one endpoint per chain, which held while there were forty
+  // of them and stopped holding at a hundred and fifty: a single refusal
+  // takes a whole chain out of the report, and a missing chain reads as "no
+  // liquidity here". The generated list adds public alternates behind it.
+  const extras = EXTRA_RPC_URLS[chainKey] ?? [];
   const configured = read(chain.rpcEnvVar);
-  return configured ? [configured, ...chain.defaultRpcUrls] : [...chain.defaultRpcUrls];
+  const urls = [...chain.defaultRpcUrls, ...extras];
+  return configured ? [configured, ...urls] : urls;
 }
 
 /** True when the operator supplied their own endpoint for this chain. */
