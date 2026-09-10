@@ -119,9 +119,16 @@ Monad, Plasma, X Layer, Metal, 0G, zkSync Era, Cronos zkEVM, Moonbeam,
 Aurora, Ronin, Boba (список в `src/config/chains.ts`).
 
 Плюс сети **Cosmos** — Celestia, Injective, Neutron, Osmosis, Stride, Terra
-Classic, Cosmos Hub, Noble, Dymension, KYVE, MilkyWay. Там ничего выводить
-не нужно: маршрут это контракт с обычным адресом, а залог — обычный
-банковский баланс, один GET по REST.
+Classic, Cosmos Hub, Noble, Dymension, KYVE, MilkyWay. Там ничего выводить не нужно: маршрут это контракт с обычным адресом, а
+залог — обычный банковский баланс, один GET по REST.
+
+У маршрутов собственного модуля Hyperlane (Celestia, KYVE, MilkyWay) адреса
+нет вовсе — только hex-идентификатор. Их залог лежит в модульном аккаунте,
+и его адрес тоже не выводится: Cosmos перечисляет модульные аккаунты
+стандартным эндпоинтом `auth`, то есть сеть называет адрес сама. Модуль
+держит залог всех маршрутов сети в одном аккаунте, поэтому строка одна на
+сеть и деном, а не на маршрут — показать один и тот же баланс по разу на
+маршрут значило бы умножить его.
 
 Плюс сети на **VM Solana** — Solana, Eclipse, SOON, Sonic SVM, svmBNB,
 Solaxy, Nara. Они не EVM, поэтому живут в отдельной таблице и читаются

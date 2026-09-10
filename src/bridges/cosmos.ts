@@ -165,6 +165,8 @@ export interface NativeModuleRoute {
   routerId: string;
   standard: string;
   decimals: number;
+  /** The denom the module escrows for this route. */
+  denom?: string;
 }
 
 /**
@@ -199,6 +201,7 @@ export function findNativeModuleRoutes(symbol: string): NativeModuleRoute[] {
         routerId: id,
         standard: token.standard,
         decimals: Number(token.decimals ?? chain.nativeDecimals ?? 6),
+        denom: token.collateralAddressOrDenom ?? chain.nativeDenom,
       });
     }
   }
@@ -229,12 +232,15 @@ export async function probeNativeModule(chainKey: string, routerId: string): Pro
     // a different fix from finding the right path, and the two are
     // indistinguishable without asking.
     `/cosmos/base/tendermint/v1beta1/node_info`,
+    // The module's own queries. Three independent hosts answered 501 to all
+    // of these, which is what "the gateway does not serve this module" looks
+    // like, rather than "wrong path".
     `/hyperlane/warp/v1/tokens`,
     `/hyperlane/warp/v1/tokens/${routerId}`,
-    `/hyperlane/warp/v1/bridged_supply/${routerId}`,
-    // Some builds register the module under a different gateway prefix.
-    `/hyperlane/core/warp/v1/tokens`,
-    `/cosmos/hyperlane/warp/v1/tokens`,
+    // The way round it: module accounts are listed by the standard auth
+    // module, which these same hosts do serve. The chain names the account
+    // itself, so nothing has to be derived and nothing can be derived wrong.
+    `/cosmos/auth/v1beta1/module_accounts`,
   ];
 
   const out: ModuleProbe[] = [];
@@ -280,4 +286,87 @@ function shortHost(base: string): string {
 /** The router id is 66 characters and the same on every line. */
 function shorten(path: string, routerId: string): string {
   return path.replace(routerId, "<id>");
+}
+
+
+/**
+ * The account Hyperlane's Cosmos module escrows collateral in.
+ *
+ * Not derived: Cosmos lists its module accounts by name through the standard
+ * auth module, so the chain states which address belongs to Hyperlane and
+ * this only has to read it. Deriving an address instead would risk landing
+ * on an account that exists and belongs to something else, whose balance
+ * would then be printed under this token's name.
+ */
+async function findHyperlaneModuleAccount(chainKey: string): Promise<string | undefined> {
+  const chain = getCosmosChain(chainKey);
+  if (!chain) return undefined;
+
+  for (const rawBase of chain.restUrls) {
+    try {
+      const response = await fetch(`${rawBase.replace(/\/$/, "")}/cosmos/auth/v1beta1/module_accounts`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) continue;
+
+      const body = (await response.json()) as any;
+      const accounts = Array.isArray(body?.accounts) ? body.accounts : [];
+      for (const account of accounts) {
+        const name: unknown = account?.name ?? account?.base_account?.name;
+        const address: unknown = account?.base_account?.address ?? account?.address;
+        if (typeof name === "string" && /hyperlane|warp/i.test(name) && typeof address === "string") {
+          return address;
+        }
+      }
+    } catch {
+      // Next host.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Balances held by Hyperlane's Cosmos module.
+ *
+ * One row per chain and denom rather than per route: the module escrows
+ * every route's collateral in one account, so the routes cannot be told
+ * apart from the outside. Reporting the same balance once per route would
+ * multiply it, which for a report about whether a withdrawal will go through
+ * is the worst possible error.
+ */
+export async function findNativeModuleBalances(symbol: string): Promise<CosmosBalanceRow[]> {
+  const routes = findNativeModuleRoutes(symbol);
+  if (routes.length === 0) return [];
+
+  const byChainDenom = new Map<string, { chainKey: string; denom: string; decimals: number }>();
+  for (const route of routes) {
+    if (!route.denom) continue;
+    const key = `${route.chainKey}:${route.denom}`;
+    if (!byChainDenom.has(key)) {
+      byChainDenom.set(key, { chainKey: route.chainKey, denom: route.denom, decimals: route.decimals });
+    }
+  }
+
+  const rows = await Promise.all(
+    [...byChainDenom.values()].map(async (entry): Promise<CosmosBalanceRow | undefined> => {
+      const account = await findHyperlaneModuleAccount(entry.chainKey);
+      if (!account) return undefined;
+
+      const amount = await readBankBalance(entry.chainKey, account, entry.denom);
+      if (amount === undefined) return undefined;
+
+      return {
+        protocol: "hyperlane" as const,
+        chainKey: entry.chainKey,
+        custodyAddress: account,
+        tokenAddress: entry.denom,
+        note: "модуль Hyperlane, общий залог сети",
+        amount,
+        decimals: entry.decimals,
+      };
+    })
+  );
+
+  return rows.filter((r): r is CosmosBalanceRow => r !== undefined);
 }

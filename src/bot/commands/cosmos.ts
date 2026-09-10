@@ -44,7 +44,11 @@ export function registerCosmosCommand(bot: Telegraf) {
       lines.push("  по этому тикеру таких маршрутов нет");
     }
 
-    for (const route of native.slice(0, 2)) {
+    // One per chain: the question is whether that chain's endpoints serve the
+    // module, and every route on a chain gives the same answer.
+    const chains = [...new Set(native.map((r) => r.chainKey))];
+    const sample = chains.map((c) => native.find((r) => r.chainKey === c)!);
+    for (const route of sample.slice(0, 2)) {
       lines.push(
         "",
         `<i>${esc(route.routeId)}</i> — ${esc(route.chainKey)}`,

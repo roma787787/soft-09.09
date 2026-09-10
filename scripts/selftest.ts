@@ -363,6 +363,17 @@ check(
   "and none of them is also counted as readable",
   nativeRoutes.every((r) => !readable.has(r.routeId + r.chainKey))
 );
+// The module escrows every route's collateral in one account, so the routes
+// cannot be told apart from outside. One row per chain and denom: reporting
+// the same balance once per route would multiply it, which in a report about
+// whether a withdrawal will go through is the worst error available.
+check("a native-module route knows the denom it escrows", nativeRoutes.every((r) => !!r.denom));
+const chainDenoms = new Set(nativeRoutes.map((r) => `${r.chainKey}:${r.denom}`));
+check(
+  "seven TIA routes collapse to far fewer accounts",
+  chainDenoms.size < nativeRoutes.length,
+  `${nativeRoutes.length} маршрутов -> ${chainDenoms.size} аккаунтов`
+);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

@@ -8,7 +8,7 @@ import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians } from "../../bridges/stargate";
 import { findSvmBalances } from "../../bridges/svm";
-import { findCosmosBalances } from "../../bridges/cosmos";
+import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -255,7 +255,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
   const [svmAll, cosmosAll] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : [],
-    !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : [],
+    !chainFilter || !!getCosmosChain(chainFilter)
+      ? Promise.all([findCosmosBalances(symbol), findNativeModuleBalances(symbol)]).then((r) => r.flat())
+      : [],
   ]);
   const nonEvmAll = [...svmAll, ...cosmosAll];
   const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
