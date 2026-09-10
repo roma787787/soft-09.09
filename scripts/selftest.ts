@@ -208,8 +208,21 @@ check(
 );
 // And when there is genuinely no eid, the entry's own fields are named, so
 // an unread shape can be told from an empty one.
-extractEids({ "odd-mainnet": { someOtherShape: true } });
-check("an entry with no eid has its fields named", /Поля записи: someOtherShape/.test(explainMissing("odd", 999999)));
+extractEids({
+  "odd-mainnet": { deployments: [{ notAnEid: 1 }] },
+  "described-mainnet": { chainName: "Described", rpcs: [] },
+});
+check(
+  "an entry with deployments but no eid has its fields named",
+  /deployments есть, но eid не найден/.test(explainMissing("odd", 999999))
+);
+// A chain entry with no deployments field is a description, not a
+// deployment - saying so beats printing field names and leaving the reader
+// to work it out.
+check(
+  "an entry that is only a description says exactly that",
+  /только описание сети/.test(explainMissing("described", 999998))
+);
 
 // --- address validation ------------------------------------------------------
 // This guard was silently passing everything: viem's getAddress() returns a

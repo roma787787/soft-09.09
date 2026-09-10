@@ -155,10 +155,16 @@ export function explainMissing(chainKey: string, evmChainId: number): string {
 
   const eids = [...new Set(hits.flatMap((h) => h.eids))];
   if (eids.length === 0) {
-    // Naming the fields is the difference between "nothing is deployed here"
-    // and "this entry is shaped in a way the reader does not handle".
+    // An entry with no deployments field at all is a chain description, not
+    // a chain LayerZero is on - a plain answer, and one worth giving plainly
+    // rather than leaving to be inferred from a list of field names.
+    if (!hits[0].fields.includes("deployments")) {
+      return `есть как «${hits[0].key}», но деплоя LayerZero в ней не указано — только описание сети`;
+    }
+    // Otherwise the entry does carry deployments and this reader still found
+    // no eid in them, which is a shape it does not handle: name the fields.
     const fields = hits[0].fields.slice(0, 8).join(", ") || "нет полей";
-    return `есть как «${hits[0].key}», но eid не найден. Поля записи: ${fields}`;
+    return `есть как «${hits[0].key}», deployments есть, но eid не найден. Поля записи: ${fields}`;
   }
 
   const v2 = eids.filter((e) => e > 30000 && e < 31000);
