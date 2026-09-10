@@ -24,6 +24,7 @@ const HELP_TEXT = `🌉 <b>Bridge Liquidity Tracker</b>
 <code>/ccip &lt;сеть&gt;</code> — по шагам показать, как бот ищет пулы CCIP в этой сети.
 <code>/lzmesh &lt;тикер&gt;</code> — откуда взялось покрытие LayerZero по этому тикеру.
 <code>/lzchains</code> — у каких сетей известен eid LayerZero и откуда.
+<code>/svm &lt;тикер&gt;</code> — где на Solana лежит залог по этому токену (пока диагностика).
 <code>/diag</code> — проверить связь с нодами всех сетей.
 
 Поддерживаемые сети: ${CHAINS.map((c) => c.label).join(", ")}.

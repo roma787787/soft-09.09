@@ -30,6 +30,10 @@ let loadFailed = false;
  * to load it must never take the bot down, so this degrades to "no
  * Hyperlane routes known".
  */
+export function loadHyperlaneRegistry(): Record<string, WarpRouteConfig> {
+  return loadRegistry();
+}
+
 function loadRegistry(): Record<string, WarpRouteConfig> {
   if (cache) return cache;
   if (loadFailed) return {};

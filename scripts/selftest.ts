@@ -25,6 +25,12 @@ import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
+import {
+  findSolanaHyperlaneRoutes,
+  hyperlaneEscrowCandidates,
+  wormholeCustodyCandidates,
+  solanaTokenBridge,
+} from "../src/bridges/svm";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../src/protocols/addresses/portal";
 import { vaultAddressesByChain } from "../src/bridges/vaults";
 import { stargateCoverage } from "../src/bridges/stargate";
@@ -222,6 +228,42 @@ check(
 check(
   "an entry that is only a description says exactly that",
   /только описание сети/.test(explainMissing("described", 999998))
+);
+
+// --- Solana routes -----------------------------------------------------------
+// The EVM rule "has collateralAddressOrDenom, therefore holds collateral" is
+// wrong on Sealevel: synthetic routes carry that field too and mint their
+// supply. Using the EVM signal would report twenty minting routes as custody
+// contracts sitting at zero - a wrong answer dressed as a measurement.
+
+const solRoutes = findSolanaHyperlaneRoutes("Bonk");
+check("Solana collateral routes are found", solRoutes.length > 0, `${solRoutes.length}`);
+check("and every one of them actually locks something", solRoutes.every((r) => /Collateral|Native/i.test(r.standard)));
+check("a route brings both its program and its mint", solRoutes.every((r) => !!r.programId && !!r.mint));
+check("a ticker with no Solana route yields nothing", findSolanaHyperlaneRoutes("QWERTYNOPE").length === 0);
+
+// Derivation is deterministic, so the same inputs must always name the same
+// account - a candidate that moved between runs could never be verified.
+const cands = hyperlaneEscrowCandidates(
+  "2mYa5q9chqBxR89Nc5CtAqdy5Wwjev5269GyxNFaT95U",
+  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+);
+check("several candidate accounts are offered", cands.length >= 4, `${cands.length}`);
+check("each candidate says how it was derived", cands.every((c) => c.how.length > 0));
+check(
+  "derivation is stable across calls",
+  JSON.stringify(
+    hyperlaneEscrowCandidates(
+      "2mYa5q9chqBxR89Nc5CtAqdy5Wwjev5269GyxNFaT95U",
+      "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+    )
+  ) === JSON.stringify(cands)
+);
+check("a malformed address yields no candidates rather than throwing", hyperlaneEscrowCandidates("не адрес", "тоже нет").length === 0);
+check("Wormhole's Solana bridge is known", !!solanaTokenBridge());
+check(
+  "and its custody account can be derived from a mint",
+  wormholeCustodyCandidates("DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263").length > 0
 );
 
 // --- address validation ------------------------------------------------------
