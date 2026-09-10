@@ -56,7 +56,7 @@ function closeOpenTags(text: string): string {
  * boundary; there the cut is repaired instead - the half-written tag or HTML
  * entity is dropped and whatever it left open is closed.
  */
-function capToTelegramLimit(text: string): string {
+export function capToTelegramLimit(text: string): string {
   if (visibleLength(text) <= MAX_MESSAGE_CHARS) return text;
 
   const budget = MAX_MESSAGE_CHARS - 50;
