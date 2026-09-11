@@ -28,6 +28,7 @@ import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { toTonAddress } from "../src/config/tonChain";
+import { entriesForSymbol } from "../src/bridges/layerzero";
 import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
@@ -56,6 +57,7 @@ import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { toTonAddress } from "../src/config/tonChain";
+import { entriesForSymbol } from "../src/bridges/layerzero";
 import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
@@ -393,6 +395,18 @@ check("Near is read through Portal", resolveNonEvmPlatform(undefined, "near-prot
 check("and so is Aptos", resolveNonEvmPlatform(undefined, "aptos") === "aptos");
 // TON is read too: LayerZero lists four adapters there and all of them lock
 // what they carry, which is what this bot measures.
+// The registry is full of keys that are not all-capitals - USDe, sUSDe,
+// wstETH, weETH, ezETH - and the ticker always arrives uppercased, because
+// that is how the price API reports it. Looking the key up directly meant
+// those tokens had no registry deployments at all as far as the bot was
+// concerned: USDe has an adapter on TON holding real collateral, and the
+// report said the chain carried nothing.
+const mixedCaseRegistry = { USDe: [{ a: 1 }], USDT: [{ b: 2 }], usdt: [{ c: 3 }] };
+check("a mixed-case key is found from an uppercased ticker", entriesForSymbol(mixedCaseRegistry, "USDE").length === 1);
+check("and the ticker's own case does not matter either", entriesForSymbol(mixedCaseRegistry, "usde").length === 1);
+check("every spelling of one ticker is collected", entriesForSymbol(mixedCaseRegistry, "USDT").length === 2);
+check("and a ticker the registry lacks finds nothing", entriesForSymbol(mixedCaseRegistry, "NOPE").length === 0);
+
 check("TON resolves through its LayerZero adapters", resolveNonEvmPlatform(undefined, "ton") === "ton");
 
 // TON writes an address as workchain and hash together, and the registry

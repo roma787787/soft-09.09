@@ -238,12 +238,31 @@ export async function findLayerZeroRegistryDeployments(symbol: string): Promise<
   if (!registry) return [];
 
   const wanted = symbol.toUpperCase();
-  const found = extractDeployments(registry[wanted] ?? registry[symbol]);
+  const found = entriesForSymbol(registry, wanted).flatMap((entries) => extractDeployments(entries));
 
   for (const key of aliasKeysFor(wanted, Object.keys(registry))) {
     for (const deployment of extractDeployments(registry[key])) {
       found.push({ ...deployment, viaAlias: key });
     }
+  }
+  return found;
+}
+
+/**
+ * The registry entries for a ticker, whatever case the registry filed it in.
+ *
+ * Looking the key up directly missed every entry that is not all-capitals -
+ * and the registry is full of them: USDe, sUSDe, wstETH, weETH, ezETH. The
+ * ticker always arrives uppercased, because that is how the price API
+ * reports it, so those tokens had no registry deployments at all as far as
+ * the bot was concerned. USDe has an adapter on TON holding real collateral
+ * and the bot reported the chain as carrying nothing.
+ */
+export function entriesForSymbol(registry: Record<string, unknown>, symbol: string): unknown[] {
+  const wanted = symbol.toUpperCase();
+  const found: unknown[] = [];
+  for (const [key, value] of Object.entries(registry)) {
+    if (key.toUpperCase() === wanted) found.push(value);
   }
   return found;
 }
@@ -297,7 +316,7 @@ export async function findRegistryDeploymentsOnChain(
     }
   };
 
-  collect(registry[wanted] ?? registry[symbol]);
+  for (const entries of entriesForSymbol(registry, wanted)) collect(entries);
   for (const key of aliasKeysFor(wanted, Object.keys(registry))) collect(registry[key], key);
   return found;
 }
