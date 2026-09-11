@@ -36,6 +36,7 @@ import {
   type DiscoveryReport,
 } from "../src/services/chainDiscovery";
 import { describeError, groupByReason, mostActionable, splitFailures } from "../src/bot/commands/diag";
+import { deploymentsOnChain } from "../src/bot/commands/lzprobe";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
@@ -413,6 +414,27 @@ check(
   "a bare address asks the fungible store first",
   (fungibleFirst[0].balance as { function: string }).function === "0x1::primary_fungible_store::balance"
 );
+// The reader keeps only hex addresses on chains that resolve to EVM, so a
+// TON or Sui deployment disappears before anyone can see its shape - and
+// building a reader for a chain means first seeing what the registry holds
+// for it. This scan is deliberately unfiltered for that reason.
+const registrySample = {
+  USDT: [
+    {
+      deployments: {
+        ethereum: { type: "OFTAdapter", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+        ton: { type: "OFT", address: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs" },
+      },
+    },
+  ],
+  USDC: [{ deployments: { "ton-mainnet": { type: "OFT", address: "EQAbc" } } }],
+};
+const tonFound = deploymentsOnChain(registrySample, "TON");
+check("a non-EVM chain's deployments are found", tonFound.found === 2);
+check("under every key the registry spells it with", tonFound.chainKeys.sort().join() === "ton,ton-mainnet");
+check("and the raw address is shown, not filtered out", tonFound.rows.some((r) => r.includes("EQCxE6mU")));
+check("a chain the registry does not carry finds nothing", deploymentsOnChain(registrySample, "tezos").found === 0);
+
 check(
   "and each falls back to the other",
   (coinFirst[1].balance as { function: string }).function ===
