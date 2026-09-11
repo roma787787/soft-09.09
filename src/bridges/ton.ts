@@ -211,7 +211,10 @@ function bases(): string[] {
  * row: an empty vault is the most useful answer a liquidity report can give
  * about a route, and the one most often mistaken for an unchecked one.
  */
-export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<TonBalanceRow>> {
+export async function findTonBalances(
+  symbol: string,
+  knownJetton?: string
+): Promise<NonEvmReadResult<TonBalanceRow>> {
   const attempts: Record<string, number> = {};
   const failures: Record<string, number> = {};
   const reasons: Record<string, string> = {};
@@ -236,7 +239,15 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
 
     let holdings: JettonHolding[] = [];
     for (const base of bases()) {
-      const url = `${base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}&limit=${MAX_WALLETS}`;
+      // Asked for the jetton wanted, when it is known, rather than listed
+      // and filtered afterwards. Anyone can send a worthless jetton to any
+      // address on TON, and a wallet appears under it: this adapter owns
+      // eight, seven of them named SUR-3.5, NEC, KYU, AMD and the like.
+      // Listing everything and guessing by symbol was answering a question
+      // about spam. The address of the jetton is published - the price API
+      // lists it for TON - and an address cannot be spoofed by naming.
+      const filter = knownJetton ? `&jetton_address=${encodeURIComponent(knownJetton)}` : "";
+      const url = `${base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}${filter}&limit=${MAX_WALLETS}`;
       const body = await getJson(url);
       holdings = parseJettonWallets(body);
       if (holdings.length > 0) break;
@@ -251,7 +262,9 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
       if (body === undefined) continue;
       const listed = (body as { jetton_wallets?: unknown }).jetton_wallets;
       lastFailure = Array.isArray(listed)
-        ? `индекс вернул пустой список кошельков для этого адреса`
+        ? knownJetton
+          ? `у адаптера нет кошелька этого джеттона — он ничего не держит`
+          : `индекс вернул пустой список кошельков для этого адреса`
         : `индекс ответил без поля jetton_wallets: ${describeBody(body)}`;
     }
 
@@ -298,13 +311,18 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
       continue;
     }
 
-    const matching = known.length === 1 ? known : known.filter((k) => symbolsAgree(k.symbol, wanted));
+    // With the jetton named, the index already returned only its wallet and
+    // there is nothing left to choose. Without it, the symbol is all there
+    // is - and on a chain where anyone can mint a name, that is a guess.
+    const matching = knownJetton || known.length === 1 ? known : known.filter((k) => symbolsAgree(k.symbol, wanted));
 
     if (matching.length === 0) {
       failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;
       lastFailure =
-        `у адаптера ${known.length} кошельков, и ни один джеттон не назвался похоже на ${wanted}: ` +
-        known.map((k) => k.symbol ?? "без символа").slice(0, 5).join(", ");
+        `адрес джеттона неизвестен, а из ${known.length} кошельков адаптера ни один ` +
+        `не назвался похоже на ${wanted}: ` +
+        known.map((k) => k.symbol ?? "без символа").slice(0, 5).join(", ") +
+        ". Похоже на спам-джеттоны — под любой адрес TON их может прислать кто угодно.";
       continue;
     }
 

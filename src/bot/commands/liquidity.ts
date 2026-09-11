@@ -281,7 +281,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     !chainFilter || !!getPortalChain(chainFilter)
       ? findPortalNonEvmBalances(portalTokens)
       : empty,
-    !chainFilter || chainFilter === TON_CHAIN.key ? findTonBalances(symbol) : empty,
+    !chainFilter || chainFilter === TON_CHAIN.key
+      ? findTonBalances(symbol, token.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress)
+      : empty,
   ]);
 
   // Typed as the rows a report renders, not as any one reader's own row:

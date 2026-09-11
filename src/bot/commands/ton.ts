@@ -2,6 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { TON_CHAIN, toTonAddress } from "../../config/tonChain";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { findTonBalances, tonApiBase } from "../../bridges/ton";
+import { lookupToken } from "../../services/coingecko";
 import { env } from "../../config/env";
 import { formatAmount } from "../../services/balances";
 import { capToTelegramLimit } from "../render";
@@ -56,7 +57,19 @@ export function registerTonCommand(bot: Telegraf) {
       return;
     }
 
-    const { rows, failures, attempts, reasons } = await findTonBalances(symbol);
+    // The jetton's own address, when the price API knows it. Without it the
+    // reader has to guess by symbol among whatever the adapter has been
+    // sent, and on TON that is mostly spam.
+    const token = await lookupToken(symbol);
+    const knownJetton = token?.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress;
+    lines.push(
+      knownJetton
+        ? `Адрес джеттона у CoinGecko: <code>${esc(knownJetton)}</code>`
+        : "CoinGecko не знает адрес этого токена на TON — придётся искать по символу.",
+      ""
+    );
+
+    const { rows, failures, attempts, reasons } = await findTonBalances(symbol, knownJetton);
     lines.push("", `<b>Чтение</b>: спрошено ${attempts[TON_CHAIN.key] ?? 0}`);
     for (const row of rows) {
       lines.push(
