@@ -9,6 +9,11 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** The name a person would recognise, not the key the code files it under. */
+function labelOf(chainKey: string): string {
+  return PORTAL_CHAINS.find((c) => c.key === chainKey)?.label ?? chainKey;
+}
+
 /**
  * Shows, step by step, how a balance on Near or Aptos was arrived at.
  *
@@ -66,21 +71,21 @@ export function registerPortalCommand(bot: Telegraf) {
     }
 
     for (const t of targets) {
-      lines.push(`Адрес токена на ${esc(t.chainKey)}: <code>${esc(t.tokenAddress)}</code>`);
+      lines.push(`Адрес токена на ${esc(labelOf(t.chainKey))}: <code>${esc(t.tokenAddress)}</code>`);
     }
     lines.push("");
 
     const { rows, failures } = await findPortalNonEvmBalances(targets);
     for (const row of rows) {
       lines.push(
-        `✅ ${esc(row.chainKey)}: <b>${esc(formatAmount(row.amount, row.decimals))}</b> ${esc(symbol)} ` +
+        `✅ ${esc(labelOf(row.chainKey))}: <b>${esc(formatAmount(row.amount, row.decimals))}</b> ${esc(symbol)} ` +
           `<i>(${row.decimals} знаков)</i>`
       );
     }
     for (const chainKey of Object.keys(failures)) {
       // Named as unread rather than left out: an unanswered chain holds an
       // unknown amount, and silence would read as zero.
-      lines.push(`❌ ${esc(chainKey)}: прочитать не удалось — ни один узел не ответил по делу.`);
+      lines.push(`❌ ${esc(labelOf(chainKey))}: прочитать не удалось — ни один узел не ответил по делу.`);
     }
 
     await ctx.reply(capToTelegramLimit(lines.join("\n")), {
