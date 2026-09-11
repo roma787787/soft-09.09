@@ -1364,6 +1364,32 @@ check("it names the networks CoinGecko listed", scoped.includes("Ethereum, BNB C
 check("it names networks outside the bot's coverage", scoped.includes("TON"));
 check("the scoped report still fits the message limit", scoped.length < 4096);
 
+// A bridge that was asked and holds nothing looked exactly like a bridge the
+// bot does not implement, which is how "Stargate carries PENGU" came back as
+// a parsing bug: Stargate's site routes it, Stargate's pools never held it.
+const asked = renderLiquidityReport({
+  symbol: "GRAM",
+  name: "Gram",
+  balances: [fakeBalance("ethereum", "hyperlane", 49_468_000000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { hyperlane: 1 },
+    checkedProtocols: ["wormhole", "hyperlane", "layerzero", "stargate", "across", "ccip"],
+    notFoundNotes: { stargate: "пулы только под USDC, USDT." },
+  },
+});
+check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, но хранилищ"));
+check("and lists them by name", asked.includes("Stargate") && asked.includes("CCIP"));
+check("it does not list a bridge that did contribute", !/хранилищ[^\n]*Hyperlane/.test(asked));
+check("a known reason for the gap is printed", asked.includes("пулы только под USDC, USDT."));
+// Without the caller vouching for what it asked, the report must not invent
+// a list of bridges it cannot stand behind.
+check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но хранилищ"));
+
 // --- LayerZero OFT registry parsing (real response shape) --------------------
 
 // Exactly the shape the live registry returned for DELABS.

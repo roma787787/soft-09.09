@@ -119,7 +119,10 @@ async function findErc20Pools(symbol: string): Promise<Custodian[]> {
     }));
 }
 
-/** Which tickers Stargate pools cover, for the /sources report. */
+/**
+ * Which tickers Stargate pools cover, for the /sources report and for the
+ * line that explains an absent Stargate row.
+ */
 export function stargateCoverage(): { assets: string[]; pools: number } {
   const assets = Object.keys(STARGATE_POOLS_BY_SYMBOL);
   const erc20 = assets.reduce(

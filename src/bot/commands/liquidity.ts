@@ -11,7 +11,7 @@ import {
 import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
-import { findStargateCustodians } from "../../bridges/stargate";
+import { findStargateCustodians, stargateCoverage } from "../../bridges/stargate";
 import { findSvmBalances } from "../../bridges/svm";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
@@ -20,7 +20,7 @@ import { findTonBalances } from "../../bridges/ton";
 import type { NonEvmReadResult } from "../../bridges/types";
 import { TON_CHAIN } from "../../config/tonChain";
 import { getPortalChain } from "../../config/portalChains";
-import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
+import { BRIDGE_ORDER, BRIDGE_SHORT_LABELS, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
   findLayerZeroRegistryDeployments,
@@ -162,6 +162,23 @@ function countByProtocol(
     if (n > 0) counts[p] = n;
   }
   return counts;
+}
+
+/**
+ * Why a report can come back without a Stargate row.
+ *
+ * Stargate's site moves far more tickers than Stargate the liquidity layer
+ * has pools for: everything else it routes through the token's own LayerZero
+ * contracts. So "I can send this on Stargate" and "Stargate holds some of
+ * this" are different statements, and the report kept getting read as broken
+ * for telling them apart silently.
+ */
+function stargateNote(): string {
+  const assets = stargateCoverage().assets.join(", ");
+  return (
+    `собственные пулы у Stargate есть только под ${assets}. ` +
+    "Остальные токены его сайт возит контрактами LayerZero самого токена — они идут строкой LayerZero."
+  );
 }
 
 export async function buildLiquidityReport(rawSymbol: string, chainFilter?: string): Promise<string> {
@@ -331,7 +348,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     } else {
       lines.push(
         "",
-        "Адреса берутся из реестров Wormhole, Hyperlane и LayerZero — ни в одном из них этот тикер не встречается."
+        `Проверены все мосты, которые бот знает: ${BRIDGE_ORDER.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} — ` +
+          "ни один из них не держит контракта под этот тикер.",
+        stargateNote()
       );
     }
     return lines.join("\n");
@@ -407,6 +426,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       supportedChains: [...supportedChains, ...solanaLabel],
       unsupportedPlatforms,
       byProtocol: countByProtocol(scoped, solanaRows),
+      // Every bridge above is asked on every report, so the ones that
+      // contributed nothing were asked too, and saying so is the difference
+      // between "this bridge holds none of it" and "this bot ignores it".
+      checkedProtocols: BRIDGE_ORDER,
+      notFoundNotes: { stargate: stargateNote() },
     },
   });
 }

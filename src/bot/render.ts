@@ -136,6 +136,18 @@ export interface ReportInput {
     unsupportedPlatforms: string[];
     /** How many contracts each bridge contributed. */
     byProtocol: Partial<Record<BridgeProtocol, number>>;
+    /**
+     * Which bridges were actually consulted for this token.
+     *
+     * A bridge that contributed nothing was simply absent from the report,
+     * so "asked Stargate, it has no pool for this ticker" looked exactly
+     * like "Stargate is not implemented" - and that is the reading the bot
+     * keeps getting back as a bug. Naming what was asked is the same rule
+     * the rest of this report already follows for empty chains.
+     */
+    checkedProtocols?: BridgeProtocol[];
+    /** Why a checked bridge found nothing, where the reason is known. */
+    notFoundNotes?: Partial<Record<BridgeProtocol, string>>;
   };
 }
 
@@ -155,6 +167,18 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
     return `${BRIDGE_SHORT_LABELS[p]} — ${n} ${plural(n, ...BRIDGE_UNITS[p])}`;
   });
   const lines = parts.length > 0 ? [`Откуда взялись контракты: ${parts.join(", ")}.`] : [];
+
+  const checked = new Set(scope.checkedProtocols ?? []);
+  const notFound = BRIDGE_ORDER.filter((p) => checked.has(p) && (scope.byProtocol[p] ?? 0) === 0);
+  if (notFound.length > 0) {
+    lines.push(
+      `Проверены, но хранилищ под этот тикер не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+    );
+    for (const p of notFound) {
+      const note = scope.notFoundNotes?.[p];
+      if (note) lines.push(`${BRIDGE_SHORT_LABELS[p]}: ${esc(note)}`);
+    }
+  }
 
   if (scope.supportedChains.length > 0) {
     lines.push(`CoinGecko знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
