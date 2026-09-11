@@ -318,10 +318,19 @@ export async function findTonBalances(
 
     if (matching.length === 0) {
       failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;
+      // With the balances, because the one that matters is recognisable by
+      // its size even when its symbol is missing: a spam jetton is sent in
+      // dust, and a bridge vault is not. This is for reading, not for
+      // deciding - the reader still refuses rather than picking the largest,
+      // which would answer a different question than the one asked.
+      const biggestFirst = [...known].sort((a, b) => (b.balance > a.balance ? 1 : -1));
       lastFailure =
         `адрес джеттона неизвестен, а из ${known.length} кошельков адаптера ни один ` +
-        `не назвался похоже на ${wanted}: ` +
-        known.map((k) => k.symbol ?? "без символа").slice(0, 5).join(", ") +
+        `не назвался похоже на ${wanted}. Что лежит: ` +
+        biggestFirst
+          .slice(0, 5)
+          .map((k) => `${k.symbol ?? "без символа"} ${k.balance} (${k.jetton.slice(0, 12)}…)`)
+          .join("; ") +
         ". Похоже на спам-джеттоны — под любой адрес TON их может прислать кто угодно.";
       continue;
     }
