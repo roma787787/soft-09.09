@@ -55,7 +55,7 @@ interface NodeHealth {
   error?: string;
 }
 
-interface ChainHealth {
+export interface ChainHealth {
   chainKey: string;
   label: string;
   ok: boolean;
@@ -65,6 +65,8 @@ interface ChainHealth {
   alive: number;
   asked: number;
   error?: string;
+  /** How many other distinct failures this chain's remaining nodes gave. */
+  otherReasons?: number;
   /** Never asked: the sweep ran out of time before reaching this chain. */
   skipped?: boolean;
   custom: boolean;
@@ -105,6 +107,14 @@ export function describeError(err: unknown): string {
   return (informative.length > 0 ? informative : parts).join(" ← ") || String(err);
 }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 async function probeNode(url: string): Promise<NodeHealth> {
   const started = Date.now();
   const controller = new AbortController();
@@ -117,10 +127,15 @@ async function probeNode(url: string): Promise<NodeHealth> {
       signal: controller.signal,
     });
     const ms = Date.now() - started;
-    if (!response.ok) return { url, ok: false, ms, error: `HTTP ${response.status}` };
+    // The host travels with the status. A DNS failure names the host because
+    // Node puts it in the message; an HTTP one did not, so "HTTP 400" on
+    // four different chains gave no way to tell whether it was four broken
+    // chains or one provider answering badly for all of them.
+    const at = hostOf(url);
+    if (!response.ok) return { url, ok: false, ms, error: `HTTP ${response.status} (${at})` };
     const body = (await response.json()) as { result?: unknown; error?: { message?: string } };
-    if (body.error) return { url, ok: false, ms, error: String(body.error.message ?? "ошибка RPC") };
-    if (typeof body.result !== "string") return { url, ok: false, ms, error: "ответ без result" };
+    if (body.error) return { url, ok: false, ms, error: `${String(body.error.message ?? "ошибка RPC")} (${at})` };
+    if (typeof body.result !== "string") return { url, ok: false, ms, error: `ответ без result (${at})` };
     return { url, ok: true, ms, blockNumber: BigInt(body.result) };
   } catch (err) {
     const ms = Date.now() - started;
@@ -181,9 +196,11 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
       ok: false,
       alive: 0,
       asked: nodes.length,
-      // The other reasons are counted, not listed: they would give every
-      // chain a reason of its own and the grouping would stop grouping.
-      error: others > 0 ? `${trimmed} (+${others} ${others === 1 ? "другая" : "других"})` : trimmed,
+      error: trimmed,
+      // Carried apart from the reason, not appended to it. Appended, it
+      // became part of the key the report groups by, and "HTTP 400 (+3)"
+      // and "HTTP 400 (+2)" turned one reason into two groups.
+      otherReasons: others,
       custom,
     };
   }
@@ -209,6 +226,25 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
  * than as down: calling them down would send the reader hunting for RPC
  * keys they do not need.
  */
+/**
+ * Failures gathered under the reason they share, commonest first.
+ *
+ * Keyed by the reason alone. The count of a chain's *other* failures used to
+ * be appended to it, which made it part of the key: "HTTP 400 (+3)" and
+ * "HTTP 400 (+2)" became two groups for one reason, which is the opposite of
+ * grouping.
+ */
+export function groupByReason(failed: ChainHealth[]): Array<[string, ChainHealth[]]> {
+  const byReason = new Map<string, ChainHealth[]>();
+  for (const chain of failed) {
+    const reason = chain.error ?? "нет ответа";
+    const group = byReason.get(reason);
+    if (group) group.push(chain);
+    else byReason.set(reason, [chain]);
+  }
+  return [...byReason.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+
 async function sweep(deadline: number): Promise<ChainHealth[]> {
   return mapWithConcurrency(CHAINS, HEALTH_CHECK_CONCURRENCY, async (chain) => {
     if (Date.now() > deadline) {
@@ -251,18 +287,12 @@ export function registerDiagCommand(bot: Telegraf) {
       // each saying "нет ответа за 6 с" on its own line filled the whole
       // message and pushed the part that carries information - which chains
       // answered - off the end of it.
-      const byReason = new Map<string, ChainHealth[]>();
-      for (const h of failed) {
-        const reason = h.error ?? "нет ответа";
-        const group = byReason.get(reason);
-        if (group) group.push(h);
-        else byReason.set(reason, [h]);
-      }
-      const groups = [...byReason.entries()].sort((a, b) => b[1].length - a[1].length);
+      const groups = groupByReason(failed);
       for (const [reason, chains] of groups) {
-        lines.push(
-          `❌ <b>${esc(reason)}</b> — ${chains.length}\n   ${esc(chains.map((h) => h.label).join(", "))}`
-        );
+        // A chain whose other nodes failed differently says so next to its
+        // own name, where it does not split the group it belongs to.
+        const named = chains.map((h) => (h.otherReasons ? `${h.label} (+${h.otherReasons})` : h.label));
+        lines.push(`❌ <b>${esc(reason)}</b> — ${chains.length}\n   ${esc(named.join(", "))}`);
       }
       if (failed.length > 0) lines.push("");
 

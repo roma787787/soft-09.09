@@ -31,7 +31,7 @@ import {
   mergeFacts,
   type DiscoveryReport,
 } from "../src/services/chainDiscovery";
-import { describeError, mostActionable } from "../src/bot/commands/diag";
+import { describeError, groupByReason, mostActionable } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
@@ -1755,6 +1755,22 @@ check(
   mostActionable(["getaddrinfo ENOTFOUND x", "read ECONNRESET (ECONNRESET)"]).includes("ECONNRESET")
 );
 check("one reason is itself", mostActionable(["HTTP 429"]) === "HTTP 429");
+
+// And the count of a chain's other failures must not become part of the key
+// the report groups by: appended to the reason, "HTTP 400 (+3)" and
+// "HTTP 400 (+2)" turned one reason into two groups, which is the opposite
+// of grouping.
+const failedChains = [
+  { chainKey: "a", label: "A", ok: false, alive: 0, asked: 4, error: "HTTP 400", otherReasons: 3, custom: false },
+  { chainKey: "b", label: "B", ok: false, alive: 0, asked: 3, error: "HTTP 400", otherReasons: 2, custom: false },
+  { chainKey: "c", label: "C", ok: false, alive: 0, asked: 1, error: "HTTP 403", custom: false },
+];
+const grouped = groupByReason(failedChains);
+check("one reason is one group, whatever else failed", grouped.length === 2);
+check("and the commonest comes first", grouped[0][0] === "HTTP 400" && grouped[0][1].length === 2);
+check("a chain with no reason at all is still grouped", groupByReason([
+  { chainKey: "d", label: "D", ok: false, alive: 0, asked: 0, custom: false },
+])[0][0] === "нет ответа");
 check("and no reason at all is not a crash", mostActionable([]) === "нет ответа");
 
 // The alternates table is keyed by chain id, not by the bot's name for a
