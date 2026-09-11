@@ -17,8 +17,10 @@
  *
  * Run with: npm run sync:cosmos
  */
+import "./offline-env";
 import fs from "node:fs";
 import { chains, chainToPlatform, contracts } from "@wormhole-foundation/sdk-base";
+import { CHAINS } from "../src/config/chains";
 
 const OUT = "src/config/cosmosChains.generated.ts";
 
@@ -118,6 +120,24 @@ async function getJson(url: string): Promise<any> {
   }
 }
 
+/**
+ * A key no EVM chain already answers to.
+ *
+ * Sei is one brand with two execution environments, and both were landing on
+ * the key "sei": the EVM chain the bot already had, and the CosmWasm one
+ * added here for Wormhole. A key decides how a row is labelled and which
+ * explorer its address is linked to, so a balance found on the CosmWasm side
+ * would have been printed under the EVM chain's name with a bech32 address
+ * in an EVM explorer link.
+ *
+ * The EVM table had the name first and keeps it; this side is qualified,
+ * in the key and in the label, so a report says which Sei it means.
+ */
+function freeKey(name: string): { key: string; suffix: boolean } {
+  const taken = new Set(CHAINS.map((c) => c.key));
+  return taken.has(name) ? { key: `${name}cosmos`, suffix: true } : { key: name, suffix: false };
+}
+
 async function main(): Promise<void> {
   const have = new Set(rows.map((r) => r.key));
   const wanted = wormholeCosmosChains().filter((name) => !have.has(name));
@@ -125,6 +145,12 @@ async function main(): Promise<void> {
   for (const name of wanted) {
     const row = await fromChainRegistry(name);
     if (row) {
+      const { key, suffix } = freeKey(row.key);
+      if (suffix) {
+        console.log(`[wormhole] ${name}: ключ занят EVM-сетью, беру «${key}»`);
+        row.key = key;
+        row.label = `${row.label} (Cosmos)`;
+      }
       rows.push(row);
       console.log(`[wormhole] ${name}: добавлена из реестра Cosmos, ${row.restUrls.length} узлов`);
     } else {

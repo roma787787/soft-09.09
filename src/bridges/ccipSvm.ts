@@ -123,47 +123,62 @@ export interface CcipSvmCheck extends CcipSvmCandidate {
 }
 
 /**
- * Asks the chain about each candidate. Kept whole rather than stopping at
- * the first hit, so the diagnostic can show which derivations resolved and
- * which did not - when a pool stops being found, the only useful question
- * is which derivation changed.
+ * Asks the chain about every candidate, in one call.
+ *
+ * One call, not one per candidate, and that is not a refinement: three pool
+ * programs times three seed spellings times three account shapes is
+ * twenty-seven addresses, and this runs on every report for every token the
+ * price API lists on Solana. Twenty-seven small requests in a burst is
+ * exactly what a public Solana endpoint rate-limits, and being refused here
+ * reads as "CCIP holds nothing on Solana" - a wrong answer rather than a
+ * slow one. The reader beside this one was written the same way for the
+ * same reason.
+ *
+ * Kept whole rather than stopping at the first hit, so the diagnostic can
+ * show which derivations resolved and which did not: when a pool stops being
+ * found, the only useful question is which derivation changed.
  */
 export async function checkCcipCandidates(
   mint: string,
   candidates: CcipSvmCandidate[]
 ): Promise<CcipSvmCheck[]> {
-  const results: CcipSvmCheck[] = [];
+  if (candidates.length === 0) return [];
 
-  for (const candidate of candidates) {
-    try {
-      const parsed = await withSvmClient(SOLANA_KEY, (c) =>
-        c.getParsedAccountInfo(new PublicKey(candidate.address))
-      );
-      const info = (parsed.value?.data as any)?.parsed?.info;
-      if (!info) {
-        results.push({ ...candidate, outcome: "аккаунта нет", ok: false });
-        continue;
-      }
-      if (info.mint !== mint) {
-        results.push({ ...candidate, outcome: `другой минт: ${info.mint ?? "неизвестно"}`, ok: false });
-        continue;
-      }
-      const amount = BigInt(info.tokenAmount?.amount ?? "0");
-      const decimals = Number(info.tokenAmount?.decimals ?? 0);
-      results.push({
-        ...candidate,
-        outcome: `баланс ${info.tokenAmount?.uiAmountString ?? amount}`,
-        amount,
-        decimals,
-        ok: true,
-      });
-    } catch (err) {
-      const text = err instanceof Error ? err.message.split("\n")[0] : String(err);
-      results.push({ ...candidate, outcome: `ошибка: ${text.slice(0, 70)}`, ok: false });
-    }
+  // Addresses, not candidates: two derivations can land on the same account,
+  // and asking about it twice in one batch wastes half the budget the node
+  // allows.
+  const unique = [...new Set(candidates.map((c) => c.address))];
+
+  let byAddress: Map<string, any>;
+  try {
+    const accounts = await withSvmClient(SOLANA_KEY, (c) =>
+      c.getMultipleParsedAccounts(unique.map((a) => new PublicKey(a))).then((r) => r.value)
+    );
+    byAddress = new Map(unique.map((address, i) => [address, accounts[i]]));
+  } catch (err) {
+    // The whole read failed, which is not the same as the accounts being
+    // absent - and every candidate has to say so, or a rate limit would come
+    // back as twenty-seven confident "no such account" answers.
+    const text = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    return candidates.map((c) => ({ ...c, outcome: `ошибка: ${text.slice(0, 70)}`, ok: false }));
   }
 
-  return results;
+  return candidates.map((candidate) => {
+    const info = (byAddress.get(candidate.address)?.data as any)?.parsed?.info;
+    if (!info) return { ...candidate, outcome: "аккаунта нет", ok: false };
+    if (info.mint !== mint) {
+      return { ...candidate, outcome: `другой минт: ${info.mint ?? "неизвестно"}`, ok: false };
+    }
+    const amount = BigInt(info.tokenAmount?.amount ?? "0");
+    const decimals = Number(info.tokenAmount?.decimals ?? 0);
+    return {
+      ...candidate,
+      outcome: `баланс ${info.tokenAmount?.uiAmountString ?? amount}`,
+      amount,
+      decimals,
+      ok: true,
+    };
+  });
 }
 
 /** Only this pool type holds anything; the others mint on arrival. */

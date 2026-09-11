@@ -62,6 +62,7 @@ import {
   factsFromRegistryEntry,
   freeKeyFor,
   keyForSlug,
+  qualifiedLabel,
   reasonForChain,
   refusalFromRegistryEntry,
   registryRefusal,
@@ -76,7 +77,15 @@ import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { svmEscrows } from "../src/bridges/svm";
 import { resolveCustodians } from "../src/bridges";
-import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
+import {
+  chainMeta,
+  getChain,
+  getChainByChainId,
+  registerChain,
+  resolveChain,
+  resolveAnyChain,
+  CHAINS,
+} from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
@@ -1851,7 +1860,7 @@ check("a missing ticker yields nothing rather than throwing", extractDeployments
 // Addresses from the SDK, never transcribed - a redeployment arrives with an
 // upgrade instead of going unnoticed.
 check("the Token Bridge is found on Injective", portalCosmosChain("injective")?.tokenBridge.startsWith("inj1") === true);
-check("and on Sei, which Hyperlane's registry does not describe", portalCosmosChain("sei")?.tokenBridge.startsWith("sei1") === true);
+check("and on Sei, which Hyperlane's registry does not describe", portalCosmosChain("seicosmos")?.tokenBridge.startsWith("sei1") === true);
 check("a chain with no Wormhole deployment is not claimed", portalCosmosChain("osmosis") === undefined);
 check(
   "every entry carries a bech32 contract",
@@ -1860,6 +1869,93 @@ check(
 // A chain Wormhole is on that the bot cannot reach is a gap, and a gap
 // nobody can see is indistinguishable from a bridge that holds nothing.
 check("and the ones with no endpoint are named rather than dropped", portalCosmosUnreachable().includes("Wormchain"));
+
+// -----------------------------------------------------------------------------
+// No two chain tables may claim the same key or the same alias.
+//
+// A key decides how a row is labelled and which explorer its address is
+// linked to, and the lookups walk the tables in a fixed order - so a shared
+// key means one chain silently answers for another. Adding Sei to the Cosmos
+// table for Wormhole did exactly that: the EVM chain already held "sei", and
+// a balance found on the CosmWasm side would have been printed under the EVM
+// chain's name with a bech32 address in an EVM explorer link.
+//
+// Checked as a rule rather than as a case, because the next collision will
+// arrive the same way this one did - with a new chain, quietly.
+// -----------------------------------------------------------------------------
+
+const chainTables: Array<[string, ReadonlyArray<{ key: string; label: string; aliases?: readonly string[] }>]> = [
+  ["EVM", CHAINS],
+  ["SVM", SVM_CHAINS],
+  ["Cosmos", COSMOS_CHAINS],
+  ["Other", OTHER_CHAINS],
+  ["Portal", PORTAL_CHAINS],
+  ["TON", [{ key: TON_CHAIN.key, label: TON_CHAIN.label, aliases: TON_CHAIN.aliases }]],
+];
+
+const keyOwners = new Map<string, string[]>();
+const aliasOwners = new Map<string, string[]>();
+for (const [table, list] of chainTables) {
+  for (const chain of list) {
+    keyOwners.set(chain.key, [...(keyOwners.get(chain.key) ?? []), `${table}:${chain.label}`]);
+    for (const alias of chain.aliases ?? []) {
+      const a = alias.toLowerCase();
+      aliasOwners.set(a, [...(aliasOwners.get(a) ?? []), `${table}:${chain.label}`]);
+    }
+  }
+}
+const sharedKeys = [...keyOwners].filter(([, owners]) => owners.length > 1);
+check("no key is claimed by two chain tables", sharedKeys.length === 0, sharedKeys.map(([k, o]) => `${k}: ${o.join(" | ")}`).join("; "));
+
+const sharedAliases = [...aliasOwners].filter(([, owners]) => new Set(owners).size > 1);
+check("and no alias is pulled by two", sharedAliases.length === 0, sharedAliases.map(([a, o]) => `${a}: ${[...new Set(o)].join(" | ")}`).join("; "));
+
+// A key in one table that another table hands out as an alias is the same
+// bug wearing a different hat: whoever the resolver reaches first wins.
+const crossed = [...keyOwners].filter(([key, owners]) => (aliasOwners.get(key.toLowerCase()) ?? []).some((o) => !owners.includes(o)));
+check("nor is one table's key another's alias", crossed.length === 0, crossed.map(([k]) => k).join(", "));
+
+// And the rename must not have lost the bridge it was made for.
+check("Sei's Token Bridge survived being renamed", PORTAL_COSMOS_CHAINS.some((c) => c.wormholeChain === "Sei"));
+check("under a label that says which Sei it is", chainMeta("seicosmos")?.label === "Sei (Cosmos)");
+check("and links to a Cosmos explorer", (chainMeta("seicosmos")?.explorerAddressUrl("sei1abc") ?? "").includes("sei1abc"));
+
+// A bridge that mints on a chain where other bridges do hold something. The
+// closing note covers only chains with no rows at all, so on a chain with
+// rows the fact was dropped entirely - and "CCIP mints on Solana" is not
+// something a reader can infer from its absence.
+const mintsBeside = renderLiquidityReport({
+  symbol: "PIPPIN",
+  name: "pippin",
+  balances: [fakeBalance("solanamainnet", "hyperlane", 5_000000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { solanamainnet: 2 },
+  mintsOnly: [{ chainKey: "solanamainnet", protocol: "ccip" }],
+});
+check("a minting bridge is marked on the chain it mints on", /чеканит, не держит/.test(mintsBeside), mintsBeside);
+check("and is not repeated in the closing note", !/Мост чеканит, а не держит/.test(mintsBeside));
+
+// With no rows of its own the chain gets no block, so the note is the only
+// place the fact can go.
+const mintsAlone = renderLiquidityReport({
+  symbol: "PIPPIN",
+  name: "pippin",
+  balances: [fakeBalance("ethereum", "hyperlane", 5_000000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  mintsOnly: [{ chainKey: "solanamainnet", protocol: "ccip" }],
+});
+check("a chain with nothing else is named in the closing note", /Мост чеканит, а не держит/.test(mintsAlone));
+// It must never be called an empty vault: an empty vault might fill, a
+// mint-burn deployment never holds anything at all.
+check("and never as a vault standing empty", !/хранилища пусты[^\n]*Solana/.test(mintsAlone));
+
+// A key that had to be qualified must be qualified where people read it too:
+// a unique key nobody can see is half a fix.
+check("a suffixed key carries a qualified label", qualifiedLabel("Injective", "injectiveevm", "injective") === "Injective (EVM)");
+check("and an untouched key is left alone", qualifiedLabel("Base", "base", "base") === "Base");
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

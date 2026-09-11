@@ -1,5 +1,5 @@
 import { chains, chainToPlatform, contracts } from "@wormhole-foundation/sdk-base";
-import { getCosmosChain, resolveCosmosChain } from "./cosmosChains";
+import { COSMOS_CHAINS, getCosmosChain, resolveCosmosChain } from "./cosmosChains";
 
 /**
  * The CosmWasm chains Wormhole's Token Bridge is deployed on.
@@ -23,6 +23,11 @@ export interface PortalCosmosChain {
   tokenBridge: string;
 }
 
+/** A chain's name without the qualifier that keeps its key unique. */
+function bareName(value: string): string {
+  return value.toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]/g, "");
+}
+
 function build(): PortalCosmosChain[] {
   const found: PortalCosmosChain[] = [];
   for (const chain of chains) {
@@ -36,9 +41,18 @@ function build(): PortalCosmosChain[] {
     if (!tokenBridge) continue;
 
     // Matched by name, because a Cosmos chain has no chain id to match on.
-    // Both sides use the chain's own short name, and where they do not, the
-    // alias table already carries the spellings people type.
-    const ours = resolveCosmosChain(String(chain)) ?? getCosmosChain(String(chain).toLowerCase());
+    //
+    // On the label first, with any qualifier in brackets dropped. Sei is one
+    // brand with two execution environments, so the CosmWasm side is filed
+    // under "seicosmos" and labelled "Sei (Cosmos)" to keep the EVM chain's
+    // key and explorer to itself - and matching on the key alone then lost
+    // the chain entirely, which is the silent kind of loss: a bridge that
+    // simply stops being asked reads as a bridge holding nothing.
+    const wanted = String(chain);
+    const ours =
+      COSMOS_CHAINS.find((c) => bareName(c.label) === bareName(wanted)) ??
+      resolveCosmosChain(wanted) ??
+      getCosmosChain(wanted.toLowerCase());
     if (!ours) continue;
 
     found.push({ chainKey: ours.key, wormholeChain: String(chain), tokenBridge });

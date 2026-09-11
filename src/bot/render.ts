@@ -585,12 +585,15 @@ export function renderLiquidityReport(input: ReportInput): string {
   // deployment is a wrong answer, not a partial one.
   const mintsOnly = new Map<string, Set<BridgeProtocol>>();
   for (const entry of input.mintsOnly ?? []) {
-    if (byChain.has(entry.chainKey)) continue;
     if (!mintsOnly.has(entry.chainKey)) mintsOnly.set(entry.chainKey, new Set());
     mintsOnly.get(entry.chainKey)!.add(entry.protocol);
   }
-  if (mintsOnly.size > 0) {
-    const described = [...mintsOnly.entries()].map(
+  // The closing note covers only the chains with no rows of their own; a
+  // chain that does have rows carries the same fact on its own block, so it
+  // is not repeated here.
+  const mintsOnlyChains = [...mintsOnly.entries()].filter(([chainKey]) => !byChain.has(chainKey));
+  if (mintsOnlyChains.length > 0) {
+    const described = mintsOnlyChains.map(
       ([chainKey, protocols]) =>
         `${esc(chainName(chainKey))} (${esc([...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))})`
     );
@@ -728,6 +731,18 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
     if (empty.length > 0) {
       block.push(`   <i>пусто: ${esc(empty.map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))}</i>`);
+    }
+
+    // And the bridges that mint here rather than hold. Said on the chain's
+    // own block for the same reason "пусто" is: the note at the foot of the
+    // report covers only chains with no rows at all, so on a chain that has
+    // rows the fact was being dropped entirely - and "CCIP mints on Solana"
+    // is not something the reader can infer from its absence.
+    const minting = [...(mintsOnly.get(chainKey) ?? [])].filter((p) => !rows.some((r) => r.protocol === p));
+    if (minting.length > 0) {
+      block.push(
+        `   <i>чеканит, не держит: ${esc(minting.map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))}</i>`
+      );
     }
 
     lines.push(block.join("\n"));

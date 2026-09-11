@@ -396,6 +396,11 @@ export function freeKeyFor(slug: string, taken: (key: string) => boolean = keyTa
   return `${key}evmchain`;
 }
 
+/** "Injective" -> "Injective (EVM)", but only where the key was suffixed. */
+export function qualifiedLabel(label: string, key: string, slug: string): string {
+  return key === keyForSlug(slug) ? label : `${label} (EVM)`;
+}
+
 function keyTakenElsewhere(key: string): boolean {
   const resolved = resolveAnyChain(key);
   return !!resolved && !getChain(key);
@@ -515,7 +520,12 @@ export function reasonForChain(outcomes: ProbeOutcome[]): string {
 
 function chainDefFor(platform: AssetPlatform, facts: ChainFacts, rpcUrl: string): ChainDef {
   const key = freeKeyFor(platform.id);
-  const label = platform.name || facts.name;
+  // Qualified whenever the key had to be, and for the same reason one step
+  // further on. Giving Injective's EVM chain a key of its own stopped it
+  // answering for the Cosmos chain of that name - and left both of them
+  // printing the word "Injective" in the same report, with nothing to say
+  // which row was which. A unique key nobody can see is half a fix.
+  const label = qualifiedLabel(platform.name || facts.name, key, platform.id);
   const explorer = facts.explorerUrl?.replace(/\/+$/, "");
   const viem = viemById.get(platform.chainId!);
 
