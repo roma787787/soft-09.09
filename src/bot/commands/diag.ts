@@ -5,6 +5,7 @@ import { MAX_ENDPOINTS_PER_CHAIN } from "../../services/rpcClient";
 import { plural, capToTelegramLimit } from "../render";
 import { mapWithConcurrency } from "../../services/concurrency";
 import { healthSummary, orderedRpcUrls } from "../../services/rpcHealth";
+import { learnedSummary } from "../../services/extraEndpoints";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -410,6 +411,17 @@ export function registerDiagCommand(bot: Telegraf) {
           ` У ${ordering.chainsWithDeadFirst} ${plural(ordering.chainsWithDeadFirst, "сети", "сетей", "сетей")} ` +
           `первый узел в списке мёртв — бот ходит не к нему.`;
       }
+    }
+
+    // Endpoints the bot picked up from the bridges' own metadata, on top of
+    // the generated table. Said here because this screen is where a chain
+    // with one dead node shows up, and these are what rescues it.
+    const learned = learnedSummary();
+    if (learned.endpoints > 0) {
+      footer +=
+        `\nИз метаданных мостов добавлено ${learned.endpoints} ` +
+        `${plural(learned.endpoints, "узел", "узла", "узлов")} ` +
+        `для ${learned.chains} ${plural(learned.chains, "сети", "сетей", "сетей")}.`;
     }
 
     const fragile = ok.filter((h) => h.alive === 1 && !h.custom);

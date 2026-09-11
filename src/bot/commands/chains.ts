@@ -56,6 +56,13 @@ export function registerChainsCommand(bot: Telegraf) {
     if (report.fromBridges > 0) {
       lines.push(`Из них ${report.fromBridges} знает только реестр моста, а CoinGecko — нет.`);
     }
+    // The other half of what the bridge metadata is good for, and the half
+    // that helps chains already in the table: a chain whose only listed node
+    // refuses this server drops out of every report, and a missing chain
+    // reads as "no liquidity here" rather than as nobody being able to ask.
+    if (report.learnedEndpoints > 0) {
+      lines.push(`Плюс ${report.learnedEndpoints} запасных узлов для сетей, которые уже были в таблице.`);
+    }
     if (accounted !== report.listed) {
       lines.push(`⚠️ Сходится ${accounted} из ${report.listed} — где-то теряются сети, это баг.`);
     }

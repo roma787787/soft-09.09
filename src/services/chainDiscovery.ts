@@ -5,6 +5,8 @@ import * as viemChains from "viem/chains";
 import { type ChainDef, CHAINS, getChainByChainId, registerChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
 import { lzChainCandidates, type LzChainCandidate } from "../bridges/lzMetadata";
+import { learnEndpoints } from "./extraEndpoints";
+import { sweepRpcHealth } from "./rpcHealth";
 import { env } from "../config/env";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -64,6 +66,14 @@ export interface DiscoveryReport {
   listed: number;
   /** Of those, how many only the bridge registry named. */
   fromBridges: number;
+  /**
+   * Endpoints picked up for chains the bot already had.
+   *
+   * Not a chain count: a chain with one working node and a chain with none
+   * are both "known", and the difference between them is whether anything
+   * can be read there at all.
+   */
+  learnedEndpoints: number;
   /** Of those, the ones the bot already had. */
   known: number;
   added: DiscoveredChain[];
@@ -445,6 +455,7 @@ async function runDiscovery(): Promise<DiscoveryReport> {
     at: new Date(),
     listed: 0,
     fromBridges: 0,
+    learnedEndpoints: 0,
     known: 0,
     added: [],
     rejected: [],
@@ -477,6 +488,12 @@ async function runDiscovery(): Promise<DiscoveryReport> {
     if (candidate.fromBridgeOnly) report.fromBridges++;
     if (getChainByChainId(candidate.chainId)) {
       report.known++;
+      // A chain already in the table is not skipped entirely: its endpoints
+      // are what a chain with one dead node needs. /diag found fourteen
+      // chains whose node refuses this server and seven whose only listed
+      // node is broken, and these were being thrown away for exactly the
+      // chains that could use them.
+      report.learnedEndpoints += learnEndpoints(candidate.chainId, candidate.facts?.rpcUrls ?? []);
       continue;
     }
     candidates.push(candidate);
@@ -535,6 +552,15 @@ async function runDiscovery(): Promise<DiscoveryReport> {
   }
 
   saveDiscoveredChains(found);
+
+  // Endpoints learned for a chain the bot already had change nothing until
+  // they are measured: the clients hold the order they were built with, and
+  // a new endpoint sitting last behind a dead one is no rescue at all. The
+  // sweep re-ranks them and rebuilds the clients.
+  if (report.learnedEndpoints > 0 || report.added.length > 0) {
+    sweepRpcHealth().catch((err) => console.error("[chains] пересчёт здоровья узлов не удался:", err));
+  }
+
   lastReport = report;
   return report;
 }

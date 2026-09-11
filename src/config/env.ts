@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { CHAINS } from "./chains";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "./rpcs.generated";
+import { learnedEndpoints } from "../services/extraEndpoints";
 
 /**
  * Reads an env var, trimming surrounding whitespace. Values are frequently
@@ -95,8 +96,14 @@ export function rpcUrlsFor(chainKey: string): string[] {
   // runtime has no name in a file generated at build time, and that is
   // exactly the set of chains most short of alternates.
   const extras = EXTRA_RPC_URLS_BY_CHAIN_ID[chain.viemChain.id] ?? [];
+  // And behind those, the endpoints the bridges publish for their own
+  // chains, picked up while the bot was reading that metadata anyway. Last,
+  // because they are the least vouched-for; present at all, because a chain
+  // whose only listed node refuses this server drops out of every report,
+  // and a missing chain reads as "no liquidity here".
+  const learned = learnedEndpoints(chain.viemChain.id);
   const configured = read(chain.rpcEnvVar);
-  const urls = [...chain.defaultRpcUrls, ...extras];
+  const urls = [...new Set([...chain.defaultRpcUrls, ...extras, ...learned])];
   return configured ? [configured, ...urls] : urls;
 }
 

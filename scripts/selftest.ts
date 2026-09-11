@@ -46,6 +46,7 @@ import {
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
+import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
 import { CCIP_EVM_DEPLOYMENTS, CCIP_SOLANA } from "../src/protocols/addresses/ccip.generated";
 import { CCIP_ROUTER_BY_CHAIN } from "../src/protocols/addresses/transporter";
 import { parseSelectors } from "../scripts/sync-ccip";
@@ -3090,11 +3091,42 @@ const balanced: DiscoveryReport = {
   at: new Date(),
   listed: 275,
   fromBridges: 9,
+  learnedEndpoints: 31,
   known: 120,
   added: [{ key: "a", label: "A", chainId: 1, rpcUrl: "https://a.example" }],
   rejected: [{ label: "B", chainId: 2, reason: "нет узлов" }],
   duplicates: 153,
 };
+// -----------------------------------------------------------------------------
+// Endpoints learned at runtime. /diag found fourteen chains whose node
+// refuses this server and seven whose only listed node is broken; the
+// bridges publish endpoints for the chains they are on, and those were being
+// used only for chains being ADDED and thrown away for chains already in the
+// table - exactly backwards, since a chain already in the table with one
+// dead node is the one that needs an alternate.
+// -----------------------------------------------------------------------------
+
+forgetLearnedEndpoints();
+check("nothing is known before anything is learned", learnedEndpoints(1).length === 0);
+check(
+  "endpoints are recorded against their chain id",
+  learnEndpoints(1, ["https://one.example", "https://two.example"]) === 2 &&
+    learnedEndpoints(1).length === 2
+);
+// Additive on purpose: a later refresh publishing fewer endpoints must not
+// take away the one that is currently the only working node.
+check("a second batch adds rather than replaces", learnEndpoints(1, ["https://three.example"]) === 1 && learnedEndpoints(1).length === 3);
+check("and the same endpoint is not counted twice", learnEndpoints(1, ["https://one.example"]) === 0 && learnedEndpoints(1).length === 3);
+check("a trailing slash is the same endpoint", learnEndpoints(1, ["https://one.example/"]) === 0);
+// An endpoint needing a key the bot does not have is not an endpoint, and
+// plain http is not one either.
+check("a templated endpoint is refused", learnEndpoints(2, ["https://rpc.example/${API_KEY}"]) === 0);
+check("and so is an insecure one", learnEndpoints(2, ["http://rpc.example"]) === 0);
+check("a nonsense chain id is refused rather than stored", learnEndpoints(0, ["https://x.example"]) === 0);
+check("the summary counts chains and endpoints apart", learnedSummary().chains === 1 && learnedSummary().endpoints === 3);
+forgetLearnedEndpoints();
+check("and clearing leaves nothing behind", learnedSummary().endpoints === 0);
+
 check(
   "a report accounts for every candidate",
   balanced.known + balanced.added.length + balanced.rejected.length + balanced.duplicates ===
