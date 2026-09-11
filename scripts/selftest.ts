@@ -26,6 +26,7 @@ import { mapWithConcurrency } from "../src/services/concurrency";
 import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
+import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -49,6 +50,7 @@ import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
+import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -377,10 +379,20 @@ check("and a slug for nothing we carry still resolves to nothing", resolveEvmPla
 // check TRON" on the same screen as a Tron section listing balances.
 check("Tron resolves despite not having EVM addresses", resolveNonEvmPlatform(undefined, "tron") === "tron");
 check("and so do the chains that always did", resolveNonEvmPlatform(undefined, "solana") === "solanamainnet");
+// Near and Aptos are read now: neither has a warp route or a pool, but both
+// have a Wormhole Token Bridge, and its address comes from Wormhole's own
+// registry rather than from anything typed here.
+check("Near is read through Portal", resolveNonEvmPlatform(undefined, "near-protocol") === "near");
+check("and so is Aptos", resolveNonEvmPlatform(undefined, "aptos") === "aptos");
 check(
-  "while a chain the bot genuinely cannot read still resolves to nothing",
-  ["tezos", "aptos", "ton", "near-protocol"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
+  "while a chain no registry describes still resolves to nothing",
+  ["tezos", "ton", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
 );
+// The custody address is derived, not written down - a chain Wormhole stops
+// naming a Token Bridge for drops out of the table instead of being read at
+// an address nobody vouches for.
+check("every Portal chain has a custody address", PORTAL_CHAINS.every((c) => !!portalCustodyAddress(c.key)));
+check("and they are distinct chains", new Set(PORTAL_CHAINS.map((c) => c.key)).size === PORTAL_CHAINS.length);
 
 // /gecko answers "is the key working" with a request rather than a guess,
 // and the plan's own numbers are what it reports back.

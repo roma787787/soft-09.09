@@ -3,6 +3,7 @@ import { CHAINS } from "../../config/chains";
 import { SVM_CHAINS } from "../../config/svmChains";
 import { COSMOS_CHAINS } from "../../config/cosmosChains";
 import { OTHER_CHAINS } from "../../config/otherChains";
+import { PORTAL_CHAINS } from "../../config/portalChains";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
@@ -24,11 +25,12 @@ export function registerSourcesCommand(bot: Telegraf) {
     const lines: string[] = ["<b>Что бот знает о мостах</b>", ""];
 
     lines.push(
-      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length}</b>`,
+      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length}</b>`,
       `  ${CHAINS.length} EVM (включая Tron — у него EVM-совместимый RPC)`,
       `  ${SVM_CHAINS.length} на VM Solana: ${SVM_CHAINS.map((c) => c.label).join(", ")}`,
       `  ${COSMOS_CHAINS.length} Cosmos: ${COSMOS_CHAINS.map((c) => c.label).join(", ")}`,
-      `  ${OTHER_CHAINS.length} прочих: ${OTHER_CHAINS.map((c) => c.label).join(", ")}`
+      `  ${OTHER_CHAINS.length} прочих: ${OTHER_CHAINS.map((c) => c.label).join(", ")}`,
+      `  ${PORTAL_CHAINS.length} только через Portal: ${PORTAL_CHAINS.map((c) => c.label).join(", ")}`
     );
     lines.push("");
 
@@ -36,6 +38,7 @@ export function registerSourcesCommand(bot: Telegraf) {
     lines.push(
       `<b>Wormhole</b> — Token Bridge в ${wormholeChains} из ${CHAINS.length} сетей EVM, плюс Solana.`,
       "Адреса из официального реестра Wormhole, держит любой токен, который через него проходил.",
+      `На Near и Aptos это единственный мост, который бот умеет читать: ни warp-маршрутов, ни пулов там нет.`,
       ""
     );
 

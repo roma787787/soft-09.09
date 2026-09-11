@@ -3,6 +3,7 @@ import { CHAINS } from "../../config/chains";
 import { SVM_CHAINS } from "../../config/svmChains";
 import { COSMOS_CHAINS } from "../../config/cosmosChains";
 import { OTHER_CHAINS } from "../../config/otherChains";
+import { PORTAL_CHAINS } from "../../config/portalChains";
 import { capToTelegramLimit } from "../render";
 
 /**
@@ -13,7 +14,7 @@ import { capToTelegramLimit } from "../render";
  * table had before any of them arrived.
  */
 function helpText(): string {
-  const total = CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length;
+  const total = CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length;
   return `🌉 <b>Bridge Liquidity Tracker</b>
 
 Показывает, сколько токена лежит в контрактах-хранилищах мостов по всем сетям. Это нужно, чтобы понять, хватит ли ликвидности на вывод, прежде чем заводить туда деньги.
@@ -41,12 +42,13 @@ function helpText(): string {
 <code>/svm &lt;тикер&gt;</code> — как бот находит хранилища на сетях VM Solana, по шагам.
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
+<code>/portal &lt;тикер&gt;</code> — то же для Near и Aptos, где единственный мост — Portal.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
 <code>/gecko</code> — работает ли ключ CoinGecko и сколько квоты осталось.
 <code>/lzprobe &lt;тикер&gt;</code> — сырой ответ реестра LayerZero по тикеру.
 
-Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
+Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length + PORTAL_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
 
 <b>Откуда берутся адреса хранилищ:</b>
 • Wormhole — фиксированный Token Bridge на каждую сеть, зашит в бот

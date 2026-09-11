@@ -15,6 +15,8 @@ import { findStargateCustodians } from "../../bridges/stargate";
 import { findSvmBalances } from "../../bridges/svm";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
+import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
+import { getPortalChain } from "../../config/portalChains";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
   probeLayerZeroToken,
@@ -260,14 +262,25 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // Solana would otherwise be reported as not bridged at all.
   const solanaMint = token.otherPlatforms.find((p) => p.chainKey === "solanamainnet")?.tokenAddress;
   const empty = { rows: [], attempts: {}, failures: {} };
-  const [svmRead, cosmosRead, nativeRead, otherRead] = await Promise.all([
+  // Near and Aptos have no warp route, no pool and no shared vault - only
+  // Wormhole's Token Bridge, which holds everything it ever carried. So the
+  // question there is which token to ask it about, and the answer comes from
+  // the price API's own listing for those chains.
+  const portalTokens = token.otherPlatforms
+    .filter((p) => p.chainKey && !!getPortalChain(p.chainKey))
+    .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
+
+  const [svmRead, cosmosRead, nativeRead, otherRead, portalRead] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
+    !chainFilter || !!getPortalChain(chainFilter)
+      ? findPortalNonEvmBalances(portalTokens)
+      : empty,
   ]);
 
-  const nonEvmReads = [svmRead, cosmosRead, nativeRead, otherRead];
+  const nonEvmReads = [svmRead, cosmosRead, nativeRead, otherRead, portalRead];
   const nonEvmAll = nonEvmReads.flatMap((r) => r.rows);
 
   // A chain that could not be reached must be named, not silently absent:

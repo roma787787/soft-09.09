@@ -7,6 +7,7 @@ import { CHAINS } from "../config/chains";
 import { SVM_CHAINS } from "../config/svmChains";
 import { COSMOS_CHAINS } from "../config/cosmosChains";
 import { OTHER_CHAINS } from "../config/otherChains";
+import { PORTAL_CHAINS } from "../config/portalChains";
 
 export class TokenSourceNotConfiguredError extends Error {}
 export class TokenSourceRequestError extends Error {}
@@ -134,7 +135,7 @@ export function resolveNonEvmPlatform(
   platformId: string
 ): string | undefined {
   const candidates = nameCandidates(platform?.name ?? platformId, platformId);
-  for (const list of [SVM_CHAINS, COSMOS_CHAINS, OTHER_CHAINS]) {
+  for (const list of [SVM_CHAINS, COSMOS_CHAINS, OTHER_CHAINS, PORTAL_CHAINS]) {
     const hit = list.find((c) => matchesByName(candidates, c));
     if (hit) return hit.key;
   }

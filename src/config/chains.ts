@@ -146,6 +146,7 @@ import type { Chain } from "viem";
 import { SVM_CHAINS, resolveSvmChain } from "./svmChains";
 import { COSMOS_CHAINS, resolveCosmosChain } from "./cosmosChains";
 import { OTHER_CHAINS, resolveOtherChain } from "./otherChains";
+import { PORTAL_CHAINS, resolvePortalChain } from "./portalChains";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -1886,6 +1887,9 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
   const other = OTHER_CHAINS.find((c) => c.key === chainKey);
   if (other) return { label: other.label, explorerAddressUrl: other.explorerAddressUrl };
 
+  const portal = PORTAL_CHAINS.find((c) => c.key === chainKey);
+  if (portal) return { label: portal.label, explorerAddressUrl: portal.explorerAddressUrl };
+
   return undefined;
 }
 
@@ -1910,6 +1914,9 @@ export function resolveAnyChain(name: string): { key: string; label: string } | 
 
   const other = resolveOtherChain(name);
   if (other) return { key: other.key, label: other.label };
+
+  const portal = resolvePortalChain(name);
+  if (portal) return { key: portal.key, label: portal.label };
 
   return undefined;
 }
