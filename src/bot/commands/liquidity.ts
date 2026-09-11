@@ -334,11 +334,37 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // five EVM chains, so Across was being asked on two of the twenty-seven it
   // is deployed on - and the USDT it holds on Arbitrum, Base, Optimism and
   // Polygon never reached the report.
-  const tokenByChain = withCustodianTokens(tokenByChainFrom(token.platforms), [
-    ...custodians,
-    ...found,
-    ...stargate,
-  ]);
+  const listedTokens = tokenByChainFrom(token.platforms);
+  const fromBridges = new Map<string, Address>();
+  for (const custodian of [...custodians, ...found, ...stargate]) {
+    if (!custodian.chainKey || !custodian.tokenAddress) continue;
+    if (listedTokens.has(custodian.chainKey) || fromBridges.has(custodian.chainKey)) continue;
+    fromBridges.set(custodian.chainKey, custodian.tokenAddress);
+  }
+
+  // Each one asked what it is before it widens anything.
+  //
+  // A bridge's own row can carry an unvouched address and still be honest:
+  // it says this bridge holds so much of what it locks, and it names the
+  // bridge. A shared vault cannot. It holds every token its bridge carries,
+  // so handed the wrong address it answers with a real balance of the wrong
+  // token, printed under the ticker somebody asked about, with no bridge in
+  // the sentence to give the game away. On exactly the chains this widening
+  // is for - the ones the price API never listed - nothing else checks.
+  //
+  // A contract that will not answer symbol() is still accepted, the same
+  // decision the peer walk makes and for the same reason: the registry entry
+  // is already strong evidence, and refusing here would hide real liquidity,
+  // which is the thing this whole change exists to stop.
+  const vouched = await Promise.all(
+    [...fromBridges].map(async ([chainKey, tokenAddress]) =>
+      (await symbolLooksRight(chainKey, tokenAddress, symbol)) ? { chainKey, tokenAddress } : undefined
+    )
+  );
+  const tokenByChain = withCustodianTokens(
+    listedTokens,
+    vouched.filter((v): v is { chainKey: string; tokenAddress: Address } => v !== undefined)
+  );
 
   const [vaults, ccip] = await Promise.all([
     findVaultCustodians(tokenByChain),
