@@ -405,9 +405,16 @@ export function renderLiquidityReport(input: ReportInput): string {
   // chain and minted on another, and the minted side was silently missing
   // from every report that found liquidity anywhere.
   if (nativeOftChains.length > 0) {
+    // Said of LayerZero, not of the chain. The first wording claimed the
+    // chain had no vault at all, while the line above it named vaults on the
+    // same four chains - the report contradicting itself inside one message.
+    // Both facts are true and they are about different bridges: PENGU is
+    // minted by LayerZero there, and Across happens to hold none of it.
+    const alsoEmpty = nativeOftChains.some((c) => emptyByChain.has(c) && !byChain.has(c));
     notes.push(
-      `Омничейн-выпуск LayerZero (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
-        "Там хранилища нет по устройству моста: при переводе токен сжигается в одной сети и чеканится в другой."
+      `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
+        "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой." +
+        (alsoEmpty ? " Остальные мосты на этих сетях проверены отдельно — строкой выше." : "")
     );
   }
   const closingNotes = [

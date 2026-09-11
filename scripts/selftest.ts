@@ -1795,6 +1795,11 @@ check(
 // A minted-side chain has no custody contract by construction, and it was
 // mentioned only in reports that found nothing anywhere.
 check("an omnichain chain is named even when liquidity was found", withEmptyChains.includes("Abstract"));
+// The claim must be about LayerZero, not about the chain: the line above it
+// names vaults on chains that appear in this list too, and "there is no
+// vault here" beside "here is the vault, it is empty" is the report
+// contradicting itself inside one message.
+check("the omnichain claim is scoped to LayerZero", withEmptyChains.includes("У LayerZero там хранилища нет"));
 check("the report stays valid HTML", tagsBalanced(withEmptyChains));
 
 const nothingCalledEmpty = renderLiquidityReport({
@@ -1815,6 +1820,49 @@ const nothingCalledEmpty = renderLiquidityReport({
   attemptsByChain: {},
 });
 check("and nothing is claimed empty when nothing was", !nothingCalledEmpty.includes("хранилища пусты"));
+
+const overlapping = renderLiquidityReport({
+  symbol: "PENGU",
+  name: "Pudgy Penguins",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "solanamainnet",
+      custodyAddress: "9WzD",
+      tokenAddress: "2zMM",
+      amount: 1n,
+      decimals: 6,
+    },
+    zeroRow("bsc", "across"),
+  ],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["bsc"],
+});
+check(
+  "a chain in both lists is told where to read the other one",
+  overlapping.includes("проверены отдельно")
+);
+const noOverlap = renderLiquidityReport({
+  symbol: "PENGU",
+  name: "Pudgy Penguins",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "solanamainnet",
+      custodyAddress: "9WzD",
+      tokenAddress: "2zMM",
+      amount: 1n,
+      decimals: 6,
+    },
+  ],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["bsc"],
+});
+check("and without an overlap that pointer is not added", !noOverlap.includes("проверены отдельно"));
 // Two-letter tickers must not count as variants of each other. "AAA" sorts
 // first, so it can only lose here if "OP" was wrongly treated as a variant
 // of "OPX" - which is the whole thing being guarded against.
