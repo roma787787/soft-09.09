@@ -8,7 +8,7 @@ import {
   TokenSourceNotConfiguredError,
   TokenSourceRequestError,
 } from "../../services/coingecko";
-import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bridges";
+import { resolveCustodians, dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians, stargateCoverage } from "../../bridges/stargate";
@@ -325,16 +325,27 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // Shared vaults answer for any token at all - one contract per chain holds
   // everything that bridge carries - so they are asked regardless of whether
   // a registry happens to list this ticker.
-  const tokenByChain = tokenByChainFrom(token.platforms);
-  const [vaults, ccip, stargate] = await Promise.all([
+  // Stargate first, because it names the token it holds on each of its
+  // chains and those names widen the search below.
+  const stargate = await findStargateCustodians(symbol);
+
+  // Every chain where something has already confirmed this token's address,
+  // not only the ones the price API listed. For USDT the price API lists
+  // five EVM chains, so Across was being asked on two of the twenty-seven it
+  // is deployed on - and the USDT it holds on Arbitrum, Base, Optimism and
+  // Polygon never reached the report.
+  const tokenByChain = withCustodianTokens(tokenByChainFrom(token.platforms), [
+    ...custodians,
+    ...found,
+    ...stargate,
+  ]);
+
+  const [vaults, ccip] = await Promise.all([
     findVaultCustodians(tokenByChain),
     // CCIP keeps a pool per token, but the pool is found by asking the
     // contracts rather than by looking the ticker up in a list, so it needs
     // no registry of its own.
     findCcipCustodians(tokenByChain),
-    // Stargate is LayerZero's own liquidity layer and holds the largest
-    // balances here, but no registry maps a ticker to its pools.
-    findStargateCustodians(symbol),
   ]);
 
   // Solana is read on its own terms: the balance there is not at the

@@ -95,7 +95,7 @@ import {
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
-import { dedupeCustodians } from "../src/bridges";
+import { dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
 import {
   candidatesFrom,
   extractEids,
@@ -1992,6 +1992,44 @@ check("and the test ones were actually found and dropped", hyperlaneSkippedRoute
 const liveRoutes = Object.keys(loadHyperlaneRegistry());
 check("no staging route survives into the registry the bot reads", !liveRoutes.some((id) => !isProductionRoute(id)));
 check("while the routes the report is built from are still there", liveRoutes.includes("oUSDT/production"));
+
+// -----------------------------------------------------------------------------
+// The shared vaults could only be asked about a token they were given an
+// address for, and that address came from the price API alone. For USDT the
+// price API lists five EVM chains, so Across was asked on two of the
+// twenty-seven it is deployed on and the USDT it holds on Arbitrum, Base,
+// Optimism and Polygon never reached the report - on a token whose whole
+// report is about where the liquidity is.
+//
+// The addresses were in hand the entire time: an OFT adapter names the
+// ERC-20 it locks and a Stargate pool names the token it holds, each already
+// confirmed against the contract before it earned a row.
+// -----------------------------------------------------------------------------
+
+const USDT_ETH = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as Address;
+const USDT_ARB = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9" as Address;
+const SOMETHING_ELSE = "0x3333333333333333333333333333333333333333" as Address;
+
+const listed = tokenByChainFrom([
+  { chainKey: "ethereum", platformName: "Ethereum", tokenAddress: USDT_ETH },
+  { chainKey: "avalanche", platformName: "Avalanche", tokenAddress: USDT_ETH },
+]);
+check("the price API's own chains are the starting point", listed.size === 2);
+
+const widened = withCustodianTokens(listed, [
+  { chainKey: "arbitrum", tokenAddress: USDT_ARB },
+  { chainKey: "base", tokenAddress: USDT_ARB },
+  { chainKey: "ethereum", tokenAddress: SOMETHING_ELSE },
+]);
+check("a chain a bridge confirmed is added", widened.get("arbitrum") === USDT_ARB);
+check("and so is the next one", widened.get("base") === USDT_ARB);
+check("so the vault lookup reaches four chains instead of two", widened.size === 4);
+// The price API is the one source tied to the ticker a person typed, so a
+// bridge naming something else on a chain it already covers must not
+// redirect the vault lookup there.
+check("but it never overwrites what the price API said", widened.get("ethereum") === USDT_ETH);
+check("and the original map is left alone", listed.size === 2);
+check("nothing to add is not a change", withCustodianTokens(listed, []).size === 2);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
