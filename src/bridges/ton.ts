@@ -36,13 +36,20 @@ const ATTEMPTS = 3;
 const BACKOFF_MS = 1_200;
 
 /**
- * How long to leave between requests of one read.
+ * How long to leave between requests of one read, when there is no key.
  *
  * A read asks for the adapter's wallets and then for each jetton's
  * decimals. Fired together they are two requests in the same instant, which
- * is exactly one more than the free tier allows.
+ * is exactly one more than the keyless tier allows.
+ *
+ * With a key the limit is no longer the binding constraint, and the wait
+ * would be a second of every report paid for nothing.
  */
 const SPACING_MS = 1_100;
+
+function spacing(): number {
+  return env.tonApiKey ? 0 : SPACING_MS;
+}
 
 /** Jetton wallets read per adapter. An adapter normally owns one. */
 const MAX_WALLETS = 20;
@@ -211,7 +218,7 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
         continue;
       }
       for (const base of bases()) {
-        await wait(SPACING_MS);
+        if (spacing() > 0) await wait(spacing());
         const meta = parseJettonMaster(
           await getJson(`${base}/jetton/masters?address=${encodeURIComponent(h.jetton)}&limit=1`)
         );
