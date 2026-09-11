@@ -1528,6 +1528,11 @@ check(
   "and it names the escrow, which no derivation could",
   shapeOfResources(aptAdapter)?.escrow === "0x40e701f7542e15cc594ec406c5f54a08ce114d2fe6f5c5d46d20dd5179dc048e"
 );
+// The adapter also names what it locks, which is how a chain the price API
+// lists no address for gets read at all: WBTC's adapter holds real
+// collateral on Aptos and CoinGecko knows nothing about it there, so every
+// WBTC report called the chain unread.
+check("the adapter names the asset it locks", shapeOfResources(aptAdapter)?.asset === "0xa");
 check("a mint ref means the deployment makes its own supply", shapeOfResources(usdeMinter)?.mints === true);
 check("and a minting deployment names no escrow", shapeOfResources(usdeMinter)?.escrow === undefined);
 check("an object with neither is not guessed at", shapeOfResources([{ type: "0x1::coin::CoinStore", data: {} }]) === undefined);

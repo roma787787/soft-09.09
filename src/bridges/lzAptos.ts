@@ -55,17 +55,7 @@ export async function findLayerZeroAptosBalances(
   );
   if (deployments.length === 0) return { rows: [], attempts, failures };
 
-  const token = tokenByChain.get(APTOS);
-  if (!token) {
-    // Named rather than skipped: the adapters are there and hold something,
-    // and a report that omits the chain says "nothing is bridged here",
-    // which is the opposite of what this means.
-    attempts[APTOS] = deployments.length;
-    failures[APTOS] = deployments.length;
-    reasons[APTOS] = "CoinGecko не указал адрес токена в Aptos — спросить адаптер не о чем";
-    return { rows: [], attempts, failures, reasons };
-  }
-
+  const listed = tokenByChain.get(APTOS);
   attempts[APTOS] = deployments.length;
   const rows: AptosBalanceRow[] = [];
   let mints = false;
@@ -89,6 +79,18 @@ export async function findLayerZeroAptosBalances(
     if (!shape.escrow) {
       failures[APTOS] = (failures[APTOS] ?? 0) + 1;
       reasons[APTOS] = `${shape.module} не назвал объект эскроу`;
+      continue;
+    }
+
+    // The price API's address first, where it has one: it is what the rest
+    // of the report is about, and it has been read correctly here. The
+    // object's own is the fallback that reaches what the price API does not
+    // know - WBTC's adapter locks real collateral on a chain CoinGecko lists
+    // no address for at all.
+    const token = listed ?? shape.asset;
+    if (!token) {
+      failures[APTOS] = (failures[APTOS] ?? 0) + 1;
+      reasons[APTOS] = `${shape.module} не назвал актив, и CoinGecko не знает токен в Aptos`;
       continue;
     }
 

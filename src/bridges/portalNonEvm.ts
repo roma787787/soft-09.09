@@ -209,6 +209,16 @@ export interface AptosOftShape {
   mints: boolean;
   /** The object holding the locked collateral, when it locks one. */
   escrow?: string;
+  /**
+   * The asset it locks, as the object itself names it.
+   *
+   * The same answer readAdapterUnderlying gets from an EVM adapter, and for
+   * the same reason: the contract is the authority on what it holds. It also
+   * reaches what the price API does not - WBTC's adapter locks real
+   * collateral on Aptos and CoinGecko lists no address there at all, so the
+   * chain was reported as unread on every WBTC report.
+   */
+  asset?: string;
   /** The module that settled it, so the report can say what decided. */
   module: string;
 }
@@ -237,8 +247,13 @@ export function shapeOfResources(resources: unknown[]): AptosOftShape | undefine
 
     if (/::oft_adapter[a-z0-9_]*::/i.test(type)) {
       const ref = data?.escrow_extend_ref as { self?: unknown } | undefined;
-      const escrow = typeof ref?.self === "string" ? ref.self : undefined;
-      return { mints: false, escrow, module: type };
+      const metadata = data?.metadata as { inner?: unknown } | undefined;
+      return {
+        mints: false,
+        escrow: typeof ref?.self === "string" ? ref.self : undefined,
+        asset: typeof metadata?.inner === "string" ? metadata.inner : undefined,
+        module: type,
+      };
     }
     // A mint ref is the deployment saying outright that it makes its own
     // supply; there is no escrow to look for and no balance to report.
