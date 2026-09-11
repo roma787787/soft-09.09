@@ -1695,6 +1695,56 @@ check(
 );
 check("one name is just itself", preferredRouteId(["USDT/moonpay"], "USDT") === "USDT/moonpay");
 check("duplicates collapse", preferredRouteId(["A/x", "A/x"], "A") === "A/x");
+
+// The customer's question, verbatim: does the report say whether there are
+// tokens on Robinhood Chain or not? It did not. CoinGecko listed the token
+// there, no tracked bridge held custody there, so the chain produced no row
+// and no mention - and "checked, no bridge there" looked exactly like "not
+// checked", which is the one distinction this bot exists to make.
+const withSupplyOnly = renderLiquidityReport({
+  symbol: "PENGU",
+  name: "Pudgy Penguins",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 2_067n * 10n ** 18n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 7,
+  failuresByChain: {},
+  attemptsByChain: {},
+  supplyOnly: [
+    { chainKey: "robinhood", amount: 5_000_000n * 10n ** 18n, decimals: 18 },
+    { chainKey: "abstract", amount: 0n, decimals: 18 },
+    { chainKey: "bsc" },
+  ],
+});
+check("a chain with supply but no custody is named", withSupplyOnly.includes("Robinhood"));
+check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
+check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
+check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
+check(
+  "and the reader is told it cannot be withdrawn that way",
+  withSupplyOnly.includes("вывести его через мосты из этого отчёта нельзя")
+);
+check("the report is still valid HTML", tagsBalanced(withSupplyOnly));
+
+// It must not appear when there is nothing to say, or every report grows a
+// paragraph explaining an absence that is not there.
+const noSupplyOnly = renderLiquidityReport({
+  symbol: "X",
+  name: "X",
+  balances: [],
+  checkedCount: 0,
+  failuresByChain: {},
+  attemptsByChain: {},
+  supplyOnly: [],
+});
+check("and it is silent when there is nothing to report", !noSupplyOnly.includes("ни один отслеживаемый мост"));
 // Two-letter tickers must not count as variants of each other. "AAA" sorts
 // first, so it can only lose here if "OP" was wrongly treated as a variant
 // of "OPX" - which is the whole thing being guarded against.

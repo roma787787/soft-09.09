@@ -111,6 +111,15 @@ export interface ReportInput {
   mismatchedAdapters?: number;
   /** Contracts that reverted rather than answering with a balance. */
   notReadableByChain?: Record<string, number>;
+  /**
+   * Chains where the token exists but no tracked bridge holds any of it.
+   *
+   * The customer's question, verbatim: does the report say whether there are
+   * tokens on Robinhood Chain or not? It did not - a chain with no custody
+   * contract produced no row and no mention, so "checked, no bridge there"
+   * looked exactly like "not checked".
+   */
+  supplyOnly?: Array<{ chainKey: string; amount?: bigint; decimals?: number }>;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinGecko listed that this bot supports. */
@@ -148,6 +157,31 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
     );
   }
   return lines;
+}
+
+/**
+ * Names the chains where the token is, but the bridges are not.
+ *
+ * Two facts, kept apart on purpose: the token exists there, and nothing the
+ * bot tracks holds it. Together they say the only useful thing - that it
+ * reached that chain by some route this bot does not follow, so it cannot be
+ * withdrawn through the ones it does. Separately, the first alone would read
+ * as liquidity and the second alone as an oversight.
+ */
+function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
+  if (!supplyOnly || supplyOnly.length === 0) return [];
+
+  const described = supplyOnly.map((s) => {
+    const name = esc(chainName(s.chainKey));
+    if (s.amount === undefined || s.decimals === undefined) return `${name} (узел не ответил)`;
+    if (s.amount === 0n) return `${name} (выпуска нет)`;
+    return `${name} — выпущено ${esc(formatAmount(s.amount, s.decimals))}`;
+  });
+
+  return [
+    `ℹ️ Токен есть в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
+    "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя.",
+  ];
 }
 
 function chainName(chainKey: string): string {
@@ -272,6 +306,8 @@ export function renderLiquidityReport(input: ReportInput): string {
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
+    const supplyText = supplyOnlyLines(input.supplyOnly);
+    if (supplyText.length > 0) lines.push("", ...supplyText);
     const scopeText = scopeLines(scope);
     if (scopeText.length > 0) lines.push("", ...scopeText);
     return capToTelegramLimit(lines.join("\n"));
@@ -337,7 +373,11 @@ export function renderLiquidityReport(input: ReportInput): string {
         " LayerZero: они не подтвердили, что держат именно этот токен. Подробности: <code>/lzmesh</code>."
     );
   }
-  const closingNotes = [`Всего проверено контрактов: ${checkedCount}.`, ...scopeLines(scope)];
+  const closingNotes = [
+    ...supplyOnlyLines(input.supplyOnly),
+    `Всего проверено контрактов: ${checkedCount}.`,
+    ...scopeLines(scope),
+  ];
 
   // The closing notes are what explain a thin report - which chains failed,
   // what was skipped, how much was checked. Budgeting the body first and

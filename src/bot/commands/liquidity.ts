@@ -28,7 +28,7 @@ import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import type { Custodian } from "../../bridges/types";
 import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
-import { readCustodianBalances } from "../../services/balances";
+import { readChainSupplies, readCustodianBalances } from "../../services/balances";
 import { renderLiquidityReport } from "../render";
 
 function esc(s: string): string {
@@ -325,6 +325,17 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const { balances, failuresByChain, attemptsByChain, notReadableByChain } =
     await readCustodianBalances(scoped);
 
+  // The chains the token lives on that produced no custody contract at all.
+  // Until now they produced no row and no mention either, so "we checked and
+  // no bridge is there" was indistinguishable from "we did not check" - and
+  // telling those two apart is the entire job. Asking the token itself how
+  // much of it exists there turns the silence into an answer.
+  const withCustody = new Set(scoped.map((c) => c.chainKey));
+  const supplyTargets = token.platforms
+    .filter((p) => p.chainKey && !withCustody.has(p.chainKey) && !nativeOftChains.has(p.chainKey))
+    .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
+  const supplyOnly = supplyTargets.length > 0 ? await readChainSupplies(supplyTargets) : [];
+
   // Solana now counts as a chain the bot checks, so it belongs with the
   // supported ones rather than in the "not checked" footer.
   const solanaLabel = [...new Set(nonEvmAll.map((r) => chainMeta(r.chainKey)?.label ?? r.chainKey))];
@@ -349,6 +360,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     nativeOftChains: [...nativeOftChains],
     mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
+    supplyOnly,
     scope: {
       supportedChains: [...supportedChains, ...solanaLabel],
       unsupportedPlatforms,

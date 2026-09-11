@@ -13,6 +13,7 @@ const ERC20_ABI = [
     outputs: [{ type: "uint256" }],
   },
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+  { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
 export interface CustodianBalance extends Custodian {
@@ -52,6 +53,54 @@ async function readDecimals(chainKey: string, token: Address): Promise<number> {
   })) as number;
   decimalsCache.set(key, value);
   return value;
+}
+
+export interface ChainSupply {
+  chainKey: string;
+  tokenAddress: Address;
+  /** Undefined when the chain or the contract would not answer. */
+  amount?: bigint;
+  decimals?: number;
+}
+
+/**
+ * How much of the token exists on a chain, asked of the token itself.
+ *
+ * Not a bridge balance and never mixed in with one: this answers the
+ * question a report could not previously answer at all. A chain where
+ * CoinGecko lists the token but no tracked bridge holds custody produced no
+ * rows and no mention, so "we looked and no bridge is there" was
+ * indistinguishable from "we did not look" - which for a bot whose whole
+ * job is telling those two apart is the worst answer available.
+ *
+ * A supply with no custody behind it means the token reached that chain by
+ * a route this bot does not track, or was minted there natively. Either way
+ * it cannot be withdrawn through the bridges here, and saying so is the
+ * point.
+ */
+export async function readChainSupplies(
+  tokens: Array<{ chainKey: string; tokenAddress: Address }>
+): Promise<ChainSupply[]> {
+  return Promise.all(
+    tokens.map(async ({ chainKey, tokenAddress }) => {
+      try {
+        const [amount, decimals] = await Promise.all([
+          getClient(chainKey).readContract({
+            address: tokenAddress,
+            abi: ERC20_ABI,
+            functionName: "totalSupply",
+          }) as Promise<bigint>,
+          readDecimals(chainKey, tokenAddress),
+        ]);
+        return { chainKey, tokenAddress, amount, decimals };
+      } catch {
+        // A node that will not answer is reported as unknown rather than as
+        // zero: zero would read as "the token is not there", which is the
+        // very confusion this exists to remove.
+        return { chainKey, tokenAddress };
+      }
+    })
+  );
 }
 
 export interface BalanceReport {
