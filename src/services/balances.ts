@@ -3,6 +3,7 @@ import { getClient } from "./rpcClient";
 import { getChain } from "../config/chains";
 import type { Custodian } from "../bridges/types";
 import { isTransportError } from "../protocols/util";
+import { isFragile, noteChainTrouble } from "./rpcHealth";
 
 const ERC20_ABI = [
   {
@@ -161,6 +162,31 @@ export interface BalanceReport {
  */
 const MAX_CONCURRENT_PER_CHAIN = 4;
 
+/** Parallel reads allowed on a chain that answers on a single node. */
+const FRAGILE_CONCURRENCY = 2;
+
+/** Attempts such a chain gets, since there is no second node to try. */
+const FRAGILE_RETRIES = 2;
+
+/** Grows with each attempt: a node that just refused needs a moment, not a nudge. */
+const RETRY_BACKOFF_MS = 400;
+
+/**
+ * The two policies, apart from the state they read, so they can be checked.
+ *
+ * A chain's own declared limit always wins: it was written down because
+ * someone watched that chain throttle, which is better evidence than
+ * anything measured in passing.
+ */
+export function concurrencyFor(override: number | undefined, fragile: boolean): number {
+  if (override !== undefined) return override;
+  return fragile ? FRAGILE_CONCURRENCY : MAX_CONCURRENT_PER_CHAIN;
+}
+
+export function attemptsFor(fragile: boolean): number {
+  return fragile ? FRAGILE_RETRIES : 1;
+}
+
 export async function readCustodianBalances(custodians: Custodian[]): Promise<BalanceReport> {
   const failuresByChain: Record<string, number> = {};
   const notReadable: Record<string, number> = {};
@@ -207,14 +233,25 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
           return undefined;
         }
 
-        // One retry: a public node under load refuses a request that
+        // Retried, because a public node under load refuses a request that
         // succeeds moments later, and a dropped row reads as "no liquidity
         // here", which is the opposite of what it means.
-        if (attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 400));
-          return readOne(c, 1);
+        //
+        // A chain with one working node gets a second attempt and a longer
+        // wait: the fallback transport has nowhere to fall, so this retry is
+        // the only other chance there is. A chain with six healthy nodes has
+        // already tried five others by the time it gets here, and waiting
+        // longer would only add to a report that is already slow.
+        const attempts = attemptsFor(isFragile(c.chainKey));
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS * (attempt + 1)));
+          return readOne(c, attempt + 1);
         }
         failuresByChain[c.chainKey] = (failuresByChain[c.chainKey] ?? 0) + 1;
+        // The reads know a node has gone bad long before the next scheduled
+        // measurement would, and the ordering is only as fresh as that
+        // measurement. This is them saying so.
+        noteChainTrouble(c.chainKey);
         return undefined;
       }
   };
@@ -229,7 +266,11 @@ export async function readCustodianBalances(custodians: Custodian[]): Promise<Ba
     [...byChain.entries()].map(async ([chainKey, queue]) => {
       // A chain may ask for less: TronGrid throttles four parallel reads
       // into three failures, and a throttled read costs a whole row.
-      const limit = getChain(chainKey)?.maxConcurrentReads ?? MAX_CONCURRENT_PER_CHAIN;
+      // Gentler on a chain with nothing to fall back to. Four parallel
+      // requests into a single public node is how a 429 is earned, and a
+      // chain down to one node cannot absorb one: the refusal costs the
+      // whole row, which reads as "no liquidity here".
+      const limit = concurrencyFor(getChain(chainKey)?.maxConcurrentReads, isFragile(chainKey));
       const out: Array<CustodianBalance | undefined> = [];
       for (let i = 0; i < queue.length; i += limit) {
         out.push(...(await Promise.all(queue.slice(i, i + limit).map((c) => readOne(c)))));

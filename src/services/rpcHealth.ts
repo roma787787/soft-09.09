@@ -156,6 +156,79 @@ export async function sweepRpcHealth(): Promise<SweepResult> {
   return result;
 }
 
+/** How many of a chain's endpoints answered when last measured. */
+export function healthyCount(chainKey: string): number {
+  let alive = 0;
+  for (const url of rpcUrlsFor(chainKey)) if (health.get(url)?.ok) alive++;
+  return alive;
+}
+
+/**
+ * Whether a chain has nothing to fall back to.
+ *
+ * Forty-three chains answer on exactly one node. For those there is no
+ * second chance inside a single read: the fallback has nowhere to fall. So
+ * they are asked more gently and given more patience, which is the opposite
+ * of what a chain with six healthy nodes needs.
+ */
+export function isFragile(chainKey: string): boolean {
+  const measured = rpcUrlsFor(chainKey).some((url) => health.has(url));
+  return measured && healthyCount(chainKey) <= 1;
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Chains queued for an unscheduled re-measure, and the timer that drains them. */
+const suspect = new Set<string>();
+let remeasureTimer: NodeJS.Timeout | undefined;
+
+/** Waited before acting on a chain's failures, so a burst costs one sweep. */
+const REMEASURE_DEBOUNCE_MS = 30_000;
+
+/**
+ * Says a chain's reads are failing, so its nodes get measured again soon.
+ *
+ * Without this the ordering is only as fresh as the last scheduled sweep,
+ * and a node that dies a minute after one stays in first place for six
+ * hours - with every read of that chain beginning by waiting it out. The
+ * reads themselves know when something has gone wrong long before the next
+ * sweep would; this is them saying so.
+ *
+ * Debounced, because a failing chain fails several reads at once and one
+ * re-measure answers all of them.
+ */
+export function noteChainTrouble(chainKey: string): void {
+  suspect.add(chainKey);
+  if (remeasureTimer) return;
+  remeasureTimer = setTimeout(() => {
+    remeasureTimer = undefined;
+    const chains = [...suspect];
+    suspect.clear();
+    remeasure(chains).catch((err) => console.error("[rpc] повторный замер не удался:", err));
+  }, REMEASURE_DEBOUNCE_MS);
+  // Not keeping the process alive for a measurement nobody is waiting on.
+  remeasureTimer.unref?.();
+}
+
+async function remeasure(chainKeys: string[]): Promise<void> {
+  let changed = 0;
+  for (const chainKey of chainKeys) {
+    const chain = CHAINS.find((c) => c.key === chainKey);
+    if (!chain) continue;
+    const urls = rpcUrlsFor(chainKey);
+    if (urls.length === 0) continue;
+    const firstBefore = orderedRpcUrls(chainKey)[0];
+    const answers = await Promise.all(urls.map((url) => probe(url, chain.viemChain.id)));
+    urls.forEach((url, i) => health.set(url, answers[i]));
+    if (orderedRpcUrls(chainKey)[0] !== firstBefore) changed++;
+  }
+  if (changed > 0) {
+    console.log(`[rpc] после отказов пересчитан порядок узлов у ${changed} сетей`);
+    invalidateClients();
+  }
+  savePersisted();
+}
+
 /* ------------------------------------------------------------------ */
 
 let invalidateClients: () => void = () => {};

@@ -22,7 +22,8 @@ import {
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
-import { orderEndpoints } from "../src/services/rpcHealth";
+import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
+import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import {
   factsFor,
@@ -1772,6 +1773,22 @@ check("a chain with no reason at all is still grouped", groupByReason([
   { chainKey: "d", label: "D", ok: false, alive: 0, asked: 0, custom: false },
 ])[0][0] === "нет ответа");
 check("and no reason at all is not a crash", mostActionable([]) === "нет ответа");
+
+// A chain that answers on a single node has nowhere to fall back to inside
+// one read, so it is asked more gently and given more patience. A chain with
+// six healthy nodes has already tried five others by the time a retry is
+// reached, and waiting longer would only lengthen a slow report.
+check("a fragile chain is asked more gently", concurrencyFor(undefined, true) < concurrencyFor(undefined, false));
+check("and given more attempts", attemptsFor(true) > attemptsFor(false));
+check("but never fewer than one attempt", attemptsFor(false) >= 1);
+// A chain's own declared limit wins: it was written down because someone
+// watched that chain throttle, which beats anything measured in passing.
+check("a declared limit overrides both", concurrencyFor(1, false) === 1 && concurrencyFor(1, true) === 1);
+
+// And nothing is called fragile before it has been measured - otherwise
+// every chain would be throttled for the first minutes after a deploy, on
+// no evidence at all.
+check("an unmeasured chain is not fragile", isFragile("ethereum") === false);
 
 // The alternates table is keyed by chain id, not by the bot's name for a
 // chain. It discovers chains at runtime, and a chain it was never told
