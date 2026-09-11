@@ -28,7 +28,7 @@ import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol } from "../src/bridges/layerzero";
+import { entriesForSymbol, extractNonEvmDeployments } from "../src/bridges/layerzero";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
@@ -42,6 +42,7 @@ import { describeError, groupByReason, mostActionable, splitFailures } from "../
 import { deploymentsOnChain } from "../src/bot/commands/lzprobe";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
+import { svmEscrows } from "../src/bridges/svm";
 import { resolveCustodians } from "../src/bridges";
 import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport } from "../src/bot/render";
@@ -57,7 +58,7 @@ import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol } from "../src/bridges/layerzero";
+import { entriesForSymbol, extractNonEvmDeployments } from "../src/bridges/layerzero";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
@@ -1406,6 +1407,63 @@ check("a known reason for the gap is printed", asked.includes("пулы толь
 // Without the caller vouching for what it asked, the report must not invent
 // a list of bridges it cannot stand behind.
 check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но хранилищ"));
+
+// --- The registry's Solana shape, verbatim from /lzprobe PENGU --------------
+//
+// Two things here defeat the EVM reading of the same data, and both cost a
+// deploy to find out: `address` is the SPL mint rather than a contract, and
+// `type` says "OFT" on the entry that publishes the account holding every
+// token the five EVM chains have ever minted against.
+const penguRegistry = [
+  {
+    name: "Pudgy Penguins",
+    sharedDecimals: 6,
+    endpointVersion: "v2",
+    deployments: {
+      abstract: { address: "0x9ebe3a824ca958e4b3da772d2065518f009cba62", localDecimals: 18, type: "OFT" },
+      ethereum: { address: "0x6418c0dd099a9fda397c766304cdd918233e8847", localDecimals: 18, type: "OFT" },
+      solana: {
+        address: "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+        localDecimals: 6,
+        details: {
+          innerTokenProgramId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          oftProgramId: "EfRMrTJWU2CYm52kHmRYozQNdF8RH5aTi3xyeSuLAX2Y",
+          escrowTokenAccount: "8qytKBooPvD4Q7vdrKnjKmiweShS4D5mPzsgQc6HqgvX",
+          oftPDA: "qMNo1RFo11J9ZLGuq7dVmWAssuCZaNsSamk8g2q4UZA",
+        },
+        type: "OFT",
+      },
+    },
+  },
+];
+
+const penguSolana = extractNonEvmDeployments(penguRegistry, "solana");
+check("the Solana deployment is found", penguSolana.length === 1);
+check(
+  "its address is carried as the mint, not dropped for not being hex",
+  penguSolana[0]?.address === "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
+);
+check(
+  "the escrow account the registry publishes is kept",
+  penguSolana[0]?.details?.escrowTokenAccount === "8qytKBooPvD4Q7vdrKnjKmiweShS4D5mPzsgQc6HqgvX"
+);
+// The type field says "OFT", which on every EVM chain means "mints, holds
+// nothing". A named escrow outranks it: the registry is stating that this
+// deployment locks.
+check("a named escrow counts as locking collateral despite the OFT type", penguSolana[0]?.locksCollateral === true);
+check("a chain with no entry yields nothing", extractNonEvmDeployments(penguRegistry, "aptos").length === 0);
+
+const penguEscrows = svmEscrows(penguSolana);
+check("the escrow is paired with the mint it holds", penguEscrows.length === 1);
+check("the account read is the escrow", penguEscrows[0]?.escrow === "8qytKBooPvD4Q7vdrKnjKmiweShS4D5mPzsgQc6HqgvX");
+check("and the mint checked against it is the token", penguEscrows[0]?.mint === "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv");
+// Without a published escrow there is nothing to read: the account is created
+// in its own right and the store is derived from it, so it cannot be derived
+// back. Guessing would put an unrelated balance under this ticker.
+check(
+  "a deployment with no published escrow is not guessed at",
+  svmEscrows(extractNonEvmDeployments(penguRegistry, "abstract")).length === 0
+);
 
 // --- LayerZero OFT registry parsing (real response shape) --------------------
 

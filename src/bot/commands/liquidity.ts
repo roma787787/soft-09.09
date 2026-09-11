@@ -290,19 +290,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     .filter((p) => p.chainKey && !!getPortalChain(p.chainKey))
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
 
-  // An omnichain token anchored on Solana keeps the collateral for every EVM
-  // chain it reaches in one account there, so the mint per SVM chain is what
-  // turns "LayerZero mints on all five chains" into an amount.
-  const svmMintByChain = new Map<string, string>();
-  for (const p of token.otherPlatforms) {
-    if (p.chainKey && getSvmChain(p.chainKey) && !svmMintByChain.has(p.chainKey)) {
-      svmMintByChain.set(p.chainKey, p.tokenAddress);
-    }
-  }
-
   const [svmRead, lzSvmRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
-    !chainFilter || !!getSvmChain(chainFilter) ? findLayerZeroSvmBalances(symbol, svmMintByChain) : empty,
+    // The registry names both the mint and the escrow account, so this needs
+    // nothing from CoinGecko - and works on an SVM chain it never listed.
+    !chainFilter || !!getSvmChain(chainFilter) ? findLayerZeroSvmBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,

@@ -270,11 +270,38 @@ export function entriesForSymbol(registry: Record<string, unknown>, symbol: stri
 export interface NonEvmDeployment {
   /** The registry's own name for the chain, unresolved. */
   lzChainKey: string;
-  /** As written in the registry: not every chain uses hex addresses. */
+  /**
+   * As written in the registry: not every chain uses hex addresses. On
+   * Solana this is the SPL mint rather than a contract - the deployment is
+   * several accounts, and `details` names the rest of them.
+   */
   address: string;
   rawType: string;
   locksCollateral: boolean;
   viaAlias?: string;
+  /**
+   * What the registry publishes about a Solana deployment: the OFT program,
+   * its store PDA, and the token account the collateral actually sits in.
+   *
+   * `escrowTokenAccount` is the whole answer to where an omnichain token
+   * anchored on Solana keeps what it has sent to EVM, published outright.
+   * It is also the only way to know: the escrow is created as its own
+   * account and the store is derived from it, so there is nothing to derive
+   * it back from.
+   */
+  details?: SvmDeploymentDetails;
+}
+
+export interface SvmDeploymentDetails {
+  escrowTokenAccount?: string;
+  oftPDA?: string;
+  oftProgramId?: string;
+  innerTokenProgramId?: string;
+}
+
+function detailString(details: unknown, key: keyof SvmDeploymentDetails): string | undefined {
+  const value = (details as Record<string, unknown> | undefined)?.[key];
+  return typeof value === "string" && value ? value : undefined;
 }
 
 /**
@@ -297,27 +324,61 @@ export async function findRegistryDeploymentsOnChain(
   const wantedChain = chainQuery.toLowerCase().replace(/[^a-z0-9]/g, "");
   const found: NonEvmDeployment[] = [];
 
-  const collect = (entries: unknown, viaAlias?: string) => {
-    if (!Array.isArray(entries)) return;
-    for (const entry of entries as Array<{ deployments?: Record<string, { address?: unknown; type?: unknown }> }>) {
-      for (const [lzChainKey, deployment] of Object.entries(entry?.deployments ?? {})) {
-        if (lzChainKey.toLowerCase().replace(/[^a-z0-9]/g, "") !== wantedChain) continue;
-        const address = deployment?.address;
-        if (typeof address !== "string" || !address) continue;
-        const rawType = String(deployment?.type ?? "");
-        found.push({
-          lzChainKey,
-          address,
-          rawType: rawType || "неизвестно",
-          locksCollateral: /adapter|lockbox|proxy/i.test(rawType),
-          viaAlias,
-        });
-      }
-    }
-  };
+  for (const entries of entriesForSymbol(registry, wanted)) {
+    found.push(...extractNonEvmDeployments(entries, chainQuery));
+  }
+  for (const key of aliasKeysFor(wanted, Object.keys(registry))) {
+    found.push(...extractNonEvmDeployments(registry[key], chainQuery, key));
+  }
+  return found;
+}
 
-  for (const entries of entriesForSymbol(registry, wanted)) collect(entries);
-  for (const key of aliasKeysFor(wanted, Object.keys(registry))) collect(registry[key], key);
+/**
+ * Pure half of the non-EVM lookup, so the real response shape is covered by
+ * a test rather than only by a live call - the same reason extractDeployments
+ * is split out, and the same shape of bug it caught: Solana's entry carries
+ * the mint in `address` and the account holding the collateral in `details`,
+ * which no amount of reasoning about the EVM shape would have produced.
+ */
+export function extractNonEvmDeployments(
+  entries: unknown,
+  chainQuery: string,
+  viaAlias?: string
+): NonEvmDeployment[] {
+  if (!Array.isArray(entries)) return [];
+  const wantedChain = chainQuery.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const found: NonEvmDeployment[] = [];
+
+  for (const entry of entries as Array<{
+    deployments?: Record<string, { address?: unknown; type?: unknown; details?: unknown }>;
+  }>) {
+    for (const [lzChainKey, deployment] of Object.entries(entry?.deployments ?? {})) {
+      if (lzChainKey.toLowerCase().replace(/[^a-z0-9]/g, "") !== wantedChain) continue;
+      const address = deployment?.address;
+      if (typeof address !== "string" || !address) continue;
+
+      const rawType = String(deployment?.type ?? "");
+      const details: SvmDeploymentDetails = {
+        escrowTokenAccount: detailString(deployment?.details, "escrowTokenAccount"),
+        oftPDA: detailString(deployment?.details, "oftPDA"),
+        oftProgramId: detailString(deployment?.details, "oftProgramId"),
+        innerTokenProgramId: detailString(deployment?.details, "innerTokenProgramId"),
+      };
+
+      found.push({
+        lzChainKey,
+        address,
+        rawType: rawType || "неизвестно",
+        // An escrow account named outright is the registry saying this
+        // deployment locks, whatever its type field calls it. PENGU's Solana
+        // entry is typed "OFT" and publishes the account holding every token
+        // the five EVM chains ever minted against.
+        locksCollateral: /adapter|lockbox|proxy/i.test(rawType) || !!details.escrowTokenAccount,
+        viaAlias,
+        details: Object.values(details).some(Boolean) ? details : undefined,
+      });
+    }
+  }
   return found;
 }
 

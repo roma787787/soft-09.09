@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { contracts } from "@wormhole-foundation/sdk-base";
 import { withSvmClient } from "../services/svmClient";
-import { getSvmChain, type SvmChainDef } from "../config/svmChains";
+import { getSvmChain, SVM_CHAINS, type SvmChainDef } from "../config/svmChains";
 import { loadHyperlaneRegistry } from "./hyperlane";
 import { findRegistryDeploymentsOnChain } from "./layerzero";
 import type { NonEvmReadResult } from "./types";
@@ -378,59 +378,87 @@ export async function findSvmBalances(
  * chains all minting, and a report whose only row was a 2 000-token
  * Hyperlane route.
  *
- * The escrow is not derivable from the mint - it is created as its own
- * account and the OFT store is derived from it, not the other way round - so
- * it is found by asking what the deployment owns. That is also why the mint
- * has to be known: an owner can hold any number of token accounts, and only
- * the mint says which one answers the question that was asked.
+ * The registry publishes the escrow account outright, which is the only way
+ * it could be had: the account is created in its own right and the OFT store
+ * is derived from it, not the other way round, so there is nothing to derive
+ * it back from. The same entry names the mint, and the chain is asked to
+ * confirm that the account really holds it.
  */
-export async function findLayerZeroSvmBalances(
-  symbol: string,
-  mintByChain: Map<string, string>
-): Promise<NonEvmReadResult<SvmBalanceRow>> {
+export async function findLayerZeroSvmBalances(symbol: string): Promise<NonEvmReadResult<SvmBalanceRow>> {
   const attempts: Record<string, number> = {};
   const failures: Record<string, number> = {};
   const reasons: Record<string, string> = {};
   const rows: SvmBalanceRow[] = [];
 
-  for (const [chainKey, mint] of mintByChain) {
-    const chain = getSvmChain(chainKey);
-    if (!chain) continue;
+  for (const chain of SVM_CHAINS) {
+    const wanted = svmEscrows(await svmRegistryDeployments(symbol, chain));
+    if (wanted.length === 0) continue;
 
-    const deployments = (await svmRegistryDeployments(symbol, chain)).filter((d) => d.locksCollateral);
-    if (deployments.length === 0) continue;
+    attempts[chain.key] = (attempts[chain.key] ?? 0) + wanted.length;
 
-    attempts[chainKey] = (attempts[chainKey] ?? 0) + deployments.length;
-
-    for (const deployment of deployments) {
-      let owner: PublicKey;
-      let mintKey: PublicKey;
-      try {
-        owner = new PublicKey(deployment.address);
-        mintKey = new PublicKey(mint);
-      } catch {
-        failures[chainKey] = (failures[chainKey] ?? 0) + 1;
-        reasons[chainKey] = `адрес из реестра не похож на адрес ${chain.label}: ${deployment.address.slice(0, 20)}…`;
-        continue;
-      }
-
-      try {
-        const found = await escrowsOf(chainKey, owner, mintKey, mint);
-        for (const row of found) {
-          // Two registry entries can point at one escrow, and these rows go
-          // straight into the report without passing the custodian dedupe -
-          // a repeated account would read as twice the liquidity there is.
-          if (rows.some((r) => r.custodyAddress === row.custodyAddress)) continue;
-          rows.push({ ...row, protocol: "layerzero", chainKey, tokenAddress: mint, note: deployment.rawType });
-        }
-      } catch (err) {
-        failures[chainKey] = (failures[chainKey] ?? 0) + 1;
-        reasons[chainKey] = err instanceof Error ? err.message.split("\n")[0].slice(0, 90) : String(err).slice(0, 90);
-      }
+    let accounts: Array<any | null>;
+    try {
+      accounts = await withSvmClient(chain.key, (c) =>
+        c.getMultipleParsedAccounts(wanted.map((w) => new PublicKey(w.escrow))).then((r) => r.value)
+      );
+    } catch (err) {
+      console.error(`[svm] ${chain.key}: не удалось прочитать эскроу LayerZero:`, err);
+      failures[chain.key] = (failures[chain.key] ?? 0) + wanted.length;
+      reasons[chain.key] = err instanceof Error ? err.message.split("\n")[0].slice(0, 90) : String(err).slice(0, 90);
+      continue;
     }
+
+    wanted.forEach((entry, i) => {
+      const info = (accounts[i]?.data as any)?.parsed?.info;
+      // The registry says which account and which mint; the chain is what
+      // confirms both. An account that is not holding this mint is not this
+      // token's escrow, whatever the registry called it.
+      if (!info || info.mint !== entry.mint) return;
+      // Two registry entries can name one escrow, and these rows go straight
+      // into the report without passing the custodian dedupe - a repeated
+      // account would read as twice the liquidity there is.
+      if (rows.some((r) => r.custodyAddress === entry.escrow)) return;
+
+      rows.push({
+        protocol: "layerzero",
+        chainKey: chain.key,
+        custodyAddress: entry.escrow,
+        tokenAddress: entry.mint,
+        note: "эскроу OFT",
+        amount: BigInt(info.tokenAmount?.amount ?? "0"),
+        decimals: Number(info.tokenAmount?.decimals ?? 0),
+      });
+    });
   }
 
   return { rows, attempts, failures, reasons };
+}
+
+/**
+ * The escrow accounts named by a chain's registry deployments.
+ *
+ * Only the ones the registry states outright. Deriving the account from the
+ * mint is not possible - it is created as its own account and the OFT store
+ * is derived from it - and guessing would put a number from some unrelated
+ * account in front of someone about to move money.
+ */
+export function svmEscrows(
+  deployments: Array<{ address: string; details?: { escrowTokenAccount?: string } }>
+): Array<{ escrow: string; mint: string }> {
+  const out: Array<{ escrow: string; mint: string }> = [];
+  for (const deployment of deployments) {
+    const escrow = deployment.details?.escrowTokenAccount;
+    if (!escrow) continue;
+    try {
+      new PublicKey(escrow);
+      new PublicKey(deployment.address);
+    } catch {
+      continue;
+    }
+    if (out.some((o) => o.escrow === escrow)) continue;
+    out.push({ escrow, mint: deployment.address });
+  }
+  return out;
 }
 
 /**
@@ -444,51 +472,15 @@ async function svmRegistryDeployments(symbol: string, chain: SvmChainDef) {
   const out: Awaited<ReturnType<typeof findRegistryDeploymentsOnChain>> = [];
   for (const name of [chain.key, ...chain.aliases]) {
     for (const deployment of await findRegistryDeploymentsOnChain(symbol, name)) {
-      if (seen.has(deployment.address)) continue;
-      seen.add(deployment.address);
+      // By mint and escrow together: the aliases resolve to one chain, so
+      // every name returns the same deployments, while one mint can still
+      // legitimately have two escrows.
+      const key = `${deployment.address}:${deployment.details?.escrowTokenAccount ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push(deployment);
     }
   }
   return out;
 }
 
-/**
- * The token accounts holding this mint for a deployment.
- *
- * Asked of the chain rather than derived, and filtered by mint, because both
- * shapes the registry publishes have to work: the address is usually the
- * store that owns the escrow, and is sometimes the escrow account itself.
- * Anything that is not a token account for this exact mint produces no row,
- * so a wrong address costs a call and says nothing.
- */
-async function escrowsOf(
-  chainKey: string,
-  owner: PublicKey,
-  mintKey: PublicKey,
-  mint: string
-): Promise<Array<{ custodyAddress: string; amount: bigint; decimals: number }>> {
-  const owned = await withSvmClient(chainKey, (c) =>
-    c.getParsedTokenAccountsByOwner(owner, { mint: mintKey })
-  );
-
-  const rows = owned.value
-    .map(({ pubkey, account }) => ({ pubkey, info: (account.data as any)?.parsed?.info }))
-    .filter(({ info }) => info && info.mint === mint)
-    .map(({ pubkey, info }) => ({
-      custodyAddress: pubkey.toBase58(),
-      amount: BigInt(info.tokenAmount?.amount ?? "0"),
-      decimals: Number(info.tokenAmount?.decimals ?? 0),
-    }));
-  if (rows.length > 0) return rows;
-
-  const itself = await withSvmClient(chainKey, (c) => c.getParsedAccountInfo(owner));
-  const info = (itself.value?.data as any)?.parsed?.info;
-  if (!info || info.mint !== mint) return [];
-  return [
-    {
-      custodyAddress: owner.toBase58(),
-      amount: BigInt(info.tokenAmount?.amount ?? "0"),
-      decimals: Number(info.tokenAmount?.decimals ?? 0),
-    },
-  ];
-}
