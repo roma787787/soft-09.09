@@ -188,6 +188,16 @@ export interface ReportInput {
   nativeOftChains?: string[];
   /** Chains with a Hyperlane route that mints instead of locking. */
   syntheticHyperlaneChains?: string[];
+  /**
+   * Bridges found on a chain that mint rather than hold, by bridge.
+   *
+   * Not the same statement as "the vault is empty", and the difference is
+   * the whole point: an empty vault might fill, a mint-burn deployment never
+   * holds anything at all. Reporting one as the other says the bridge is
+   * here and out of stock about a bridge that was never carrying stock, and
+   * sends someone looking for liquidity that cannot exist.
+   */
+  mintsOnly?: Array<{ chainKey: string; protocol: BridgeProtocol }>;
   /** Registry adapters skipped because they lock a different contract. */
   mismatchedAdapters?: number;
   /** Contracts that reverted rather than answering with a balance. */
@@ -536,7 +546,29 @@ export function renderLiquidityReport(input: ReportInput): string {
   //
   // For a report about whether funds can be withdrawn, this is the most
   // useful sentence available: the route is there, and it is empty.
-  const emptyOnly = [...emptyByChain.entries()].filter(([chainKey]) => !byChain.has(chainKey));
+  // Bridges that mint rather than hold. Said before the empty-vault line and
+  // kept apart from it: "checked, the vault is empty" about a mint-burn
+  // deployment is a wrong answer, not a partial one.
+  const mintsOnly = new Map<string, Set<BridgeProtocol>>();
+  for (const entry of input.mintsOnly ?? []) {
+    if (byChain.has(entry.chainKey)) continue;
+    if (!mintsOnly.has(entry.chainKey)) mintsOnly.set(entry.chainKey, new Set());
+    mintsOnly.get(entry.chainKey)!.add(entry.protocol);
+  }
+  if (mintsOnly.size > 0) {
+    const described = [...mintsOnly.entries()].map(
+      ([chainKey, protocols]) =>
+        `${esc(chainName(chainKey))} (${esc([...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))})`
+    );
+    notes.push(
+      `Мост чеканит, а не держит: ${described.join(", ")}. ` +
+        "Хранилища там нет и быть не может — токен сжигается на одной стороне и чеканится на другой."
+    );
+  }
+
+  const emptyOnly = [...emptyByChain.entries()]
+    .filter(([chainKey]) => !byChain.has(chainKey))
+    .filter(([chainKey]) => !mintsOnly.has(chainKey));
   if (emptyOnly.length > 0) {
     const described = emptyOnly.map(
       ([chainKey, protocols]) =>

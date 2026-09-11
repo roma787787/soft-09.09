@@ -37,6 +37,7 @@ function helpText(): string {
 <code>/list</code> — список того, что вы отслеживаете.
 <code>/sources</code> — что бот знает: сколько сетей, маршрутов и хранилищ в реестрах.
 <code>/ccip &lt;сеть&gt;</code> — по шагам показать, как бот ищет пулы CCIP в этой сети.
+<code>/ccipsvm &lt;тикер&gt;</code> — то же для CCIP на Solana, где пул — программа, а не контракт.
 <code>/lzmesh &lt;тикер&gt;</code> — откуда взялось покрытие LayerZero по этому тикеру.
 <code>/lzchains</code> — у каких сетей известен eid LayerZero и откуда.
 <code>/lzgaps</code> — в каких сетях реестра LayerZero бот не читает хранилища.

@@ -18,6 +18,7 @@ import { registerCosmosCommand } from "./commands/cosmos";
 import { registerOtherCommand } from "./commands/other";
 import { registerPortalCommand } from "./commands/portal";
 import { registerTonCommand } from "./commands/ton";
+import { registerCcipSvmCommand } from "./commands/ccipsvm";
 import { registerLzProbeCommand } from "./commands/lzprobe";
 import { registerLzGapsCommand } from "./commands/lzgaps";
 
@@ -47,6 +48,7 @@ export function createBot(): Telegraf {
   registerOtherCommand(bot);
   registerPortalCommand(bot);
   registerTonCommand(bot);
+  registerCcipSvmCommand(bot);
   registerLzProbeCommand(bot);
   registerLzGapsCommand(bot);
 

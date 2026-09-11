@@ -18,6 +18,7 @@ import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosm
 import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
 import { findPortalCosmosBalances } from "../../bridges/portalCosmos";
+import { findCcipSvmBalances, SOLANA_KEY } from "../../bridges/ccipSvm";
 import { portalCosmosChain } from "../../config/portalCosmosChains";
 import { findTonBalances } from "../../bridges/ton";
 import type { NonEvmReadResult } from "../../bridges/types";
@@ -340,6 +341,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     otherRead,
     portalRead,
     portalCosmosRead,
+    ccipSvmRead,
     tonRead,
   ] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
@@ -360,6 +362,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     !chainFilter || !!portalCosmosChain(chainFilter)
       ? findPortalCosmosBalances(portalCosmosTokens)
       : empty,
+    // CCIP on Solana. The pool is a program, so there is no contract to walk
+    // to the way the EVM side does - the custody account is derived from the
+    // program and the mint, and the chain confirms which derivation is right.
+    !chainFilter || chainFilter === SOLANA_KEY
+      ? findCcipSvmBalances(solanaMint)
+      : { ...empty, mints: false },
     !chainFilter || chainFilter === TON_CHAIN.key
       ? findTonBalances(symbol, token.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress)
       : empty,
@@ -376,6 +384,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     otherRead,
     portalRead,
     portalCosmosRead,
+    ccipSvmRead,
     tonRead,
   ];
   const nonEvmAll: BalanceRow[] = nonEvmReads.flatMap((r) => r.rows);
@@ -488,6 +497,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     nativeOftChains: [...nativeOftChains],
     mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
+    // A CCIP pool on Solana that turned out to be burn-mint. The account is
+    // real and holds nothing by design, so it is said as "mints" rather than
+    // left out - which is how it read before, indistinguishable from Solana
+    // never having been checked.
+    mintsOnly: ccipSvmRead.mints ? [{ chainKey: SOLANA_KEY, protocol: "ccip" as const }] : [],
     supplyOnly,
     scope: {
       supportedChains: [...supportedChains, ...solanaLabel],

@@ -18,6 +18,7 @@
     "sync:cosmos": "tsx scripts/sync-cosmos-chains.ts",
     "sync:other": "tsx scripts/sync-other-chains.ts",
     "sync:rpcs": "tsx scripts/sync-rpcs.ts",
+    "sync:ccip": "tsx scripts/sync-ccip.ts",
     "check:dead": "tsx scripts/check-dead-chains.ts"
   },
   "dependencies": {

@@ -186,7 +186,12 @@ ${body}
 console.log(`${OUT}: ${rows.length} сетей — ${rows.map((r) => r.key).join(", ")}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only when run as a script. The self-test imports the parser above to cover
+// it offline, and a module that fetches on import would have made every test
+// run depend on the network.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

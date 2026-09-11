@@ -1,8 +1,47 @@
 import type { Address } from "viem";
 import type { Custodian } from "./types";
-import { getChain } from "../config/chains";
+import { getChain, getChainByChainId } from "../config/chains";
 import { getClient } from "../services/rpcClient";
 import { CCIP_ROUTER_BY_CHAIN } from "../protocols/addresses/transporter";
+import { CCIP_EVM_DEPLOYMENTS, type CcipEvmDeployment } from "../protocols/addresses/ccip.generated";
+
+/**
+ * Chainlink's published deployment for a chain, by our key.
+ *
+ * Joined on the EVM chain id, so a chain the bot discovered at runtime picks
+ * its router up without anything being written down for it - which is the
+ * point: five routers were listed here by hand out of the seventy-five
+ * Chainlink publishes, so CCIP was checked on five chains and skipped in
+ * silence on the rest.
+ */
+const deploymentByKey = new Map<string, CcipEvmDeployment>();
+function deploymentFor(chainKey: string): CcipEvmDeployment | undefined {
+  const cached = deploymentByKey.get(chainKey);
+  if (cached) return cached;
+
+  const chainId = getChain(chainKey)?.viemChain.id;
+  const found = chainId === undefined ? undefined : CCIP_EVM_DEPLOYMENTS.find((d) => d.chainId === chainId);
+  if (found) deploymentByKey.set(chainKey, found);
+  return found;
+}
+
+/** The Router on a chain: Chainlink's directory first, the old table behind. */
+export function ccipRouter(chainKey: string): Address | undefined {
+  return deploymentFor(chainKey)?.router ?? CCIP_ROUTER_BY_CHAIN[chainKey];
+}
+
+/** Our key for every chain Chainlink names, for coverage counts. */
+export function ccipChainKeys(): string[] {
+  const keys = new Set<string>();
+  for (const deployment of CCIP_EVM_DEPLOYMENTS) {
+    const chain = getChainByChainId(deployment.chainId);
+    if (chain) keys.add(chain.key);
+  }
+  for (const key of Object.keys(CCIP_ROUTER_BY_CHAIN)) {
+    if (getChain(key)) keys.add(key);
+  }
+  return [...keys];
+}
 
 /**
  * Chainlink CCIP - the rail Transporter runs on - keeps a "token pool" per
@@ -147,12 +186,22 @@ export interface CcipRegistryLookup {
 export async function findTokenAdminRegistry(chainKey: string): Promise<CcipRegistryLookup> {
   const steps: CcipStep[] = [];
 
-  const router = CCIP_ROUTER_BY_CHAIN[chainKey];
+  const router = ccipRouter(chainKey);
   if (!router) {
     steps.push({ name: "Router", ok: false, detail: "адреса роутера для этой сети нет в справочнике" });
     return { steps };
   }
   steps.push({ name: "Router", ok: true, detail: router });
+
+  // Chainlink publishes the registry per chain, so where the directory has
+  // it the walk below is skipped entirely. That walk is four calls deep -
+  // getOffRamps, getOnRamp, then getStaticConfig in one of two shapes - and
+  // every one of them has to succeed on a chain that may answer none.
+  const published = deploymentFor(chainKey)?.tokenAdminRegistry;
+  if (published) {
+    steps.push({ name: "TokenAdminRegistry", ok: true, detail: `${published} (из справочника Chainlink)` });
+    return { registry: published, steps };
+  }
 
   const client = getClient(chainKey);
 
@@ -285,7 +334,7 @@ export async function findCcipPool(chainKey: string, token: Address): Promise<Cc
 /** Every CCIP pool holding this token, across the chains we have a Router for. */
 export async function findCcipCustodians(tokenByChain: Map<string, Address>): Promise<Custodian[]> {
   const chains = [...tokenByChain.entries()].filter(
-    ([chainKey]) => getChain(chainKey) && CCIP_ROUTER_BY_CHAIN[chainKey]
+    ([chainKey]) => getChain(chainKey) && ccipRouter(chainKey)
   );
 
   const pools = await Promise.all(chains.map(([chainKey, token]) => findCcipPool(chainKey, token)));
@@ -303,5 +352,14 @@ export async function findCcipCustodians(tokenByChain: Map<string, Address>): Pr
 
 /** How many chains CCIP can be walked on, for the /sources report. */
 export function ccipChainCount(): number {
-  return Object.keys(CCIP_ROUTER_BY_CHAIN).filter((key) => getChain(key)).length;
+  return ccipChainKeys().length;
+}
+
+/**
+ * Chains Chainlink names that the bot has no EVM table entry for, so a
+ * coverage report can say which CCIP deployments are out of reach rather
+ * than leaving them out of both the covered list and the gaps.
+ */
+export function ccipChainsWithoutTable(): number {
+  return CCIP_EVM_DEPLOYMENTS.filter((d) => !getChainByChainId(d.chainId)).length;
 }

@@ -45,6 +45,10 @@ import {
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
+import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
+import { CCIP_EVM_DEPLOYMENTS, CCIP_SOLANA } from "../src/protocols/addresses/ccip.generated";
+import { CCIP_ROUTER_BY_CHAIN } from "../src/protocols/addresses/transporter";
+import { parseSelectors } from "../scripts/sync-ccip";
 import {
   PORTAL_COSMOS_CHAINS,
   portalCosmosChain,
@@ -1791,6 +1795,85 @@ check(
     metadata: { denom_units: [{ denom: "uatom", exponent: 0 }, { denom: "atom", exponent: 6 }] },
   }) === 6
 );
+// -----------------------------------------------------------------------------
+// CCIP. Five routers were written down by hand out of the seventy-five
+// Chainlink publishes, so the bridge was checked on five chains and skipped
+// in silence on the rest - Robinhood Chain, the customer's own example,
+// among them. And Solana was unreachable on top of that, because every step
+// of the EVM walk is a contract call and Solana has no contract to call.
+// -----------------------------------------------------------------------------
+
+check("the directory covers far more than the five hand-written chains", CCIP_EVM_DEPLOYMENTS.length > 60, `${CCIP_EVM_DEPLOYMENTS.length}`);
+check("every row carries a chain id to join on", CCIP_EVM_DEPLOYMENTS.every((d) => Number.isSafeInteger(d.chainId) && d.chainId > 0));
+check("and a router that is an address", CCIP_EVM_DEPLOYMENTS.every((d) => /^0x[0-9a-fA-F]{40}$/.test(d.router)));
+check("one row per chain id", new Set(CCIP_EVM_DEPLOYMENTS.map((d) => d.chainId)).size === CCIP_EVM_DEPLOYMENTS.length);
+// The registry published per chain is what replaces a four-call walk from
+// the Router through an OffRamp and an OnRamp, every step of which had to
+// succeed on a chain that may answer none of them.
+check("nearly every chain publishes its TokenAdminRegistry", CCIP_EVM_DEPLOYMENTS.filter((d) => d.tokenAdminRegistry).length > 60);
+// The chains the customer named.
+check("Robinhood Chain is in the table", CCIP_EVM_DEPLOYMENTS.some((d) => d.chainId === 4663));
+
+// The generated table against the addresses that were verified by hand. Two
+// sources agreeing is the only offline check available on generated data,
+// and it is a real one: a join on the wrong key would show up here first.
+for (const [chainKey, router] of Object.entries(CCIP_ROUTER_BY_CHAIN)) {
+  const chainId = getChain(chainKey)?.viemChain.id;
+  const generated = CCIP_EVM_DEPLOYMENTS.find((d) => d.chainId === chainId);
+  check(
+    `the directory agrees with the checked router on ${chainKey}`,
+    generated?.router.toLowerCase() === router!.toLowerCase(),
+    `справочник=${generated?.router ?? "нет"} проверено=${router}`
+  );
+}
+
+// Joined on the selector, not the name: Ethereum is "mainnet" in one file
+// and "ethereum-mainnet" in the other, and four of the largest chains fell
+// out of the table when the join was on the name.
+const selectors = parseSelectors([
+  "selectors:",
+  "  1:",
+  "    selector: 5009297550715157269",
+  '    name: "ethereum-mainnet"',
+  "    network_type: mainnet",
+  "  11155111:",
+  "    selector: 16015286601757825753",
+  '    name: "ethereum-testnet-sepolia"',
+  "    network_type: testnet",
+  '  "56":',
+  "    selector: 11344663589394136015",
+  "    name: binance_smart_chain-mainnet",
+  "    network_type: mainnet",
+].join("\n"));
+check("a mainnet selector maps to its chain id", selectors.get("5009297550715157269") === 1);
+check("a quoted chain id is read the same way", selectors.get("11344663589394136015") === 56);
+// A testnet router in this table would put play money in a liquidity report.
+check("a testnet is dropped by its own label", selectors.get("16015286601757825753") === undefined);
+check("an empty registry yields nothing rather than throwing", parseSelectors("").size === 0);
+
+// Solana: the pool programs are the part that could not have been learned
+// any other way, since the custody account is derived from the program.
+check("Solana's CCIP deployment is in the table", CCIP_SOLANA !== undefined);
+check("with a router program", (CCIP_SOLANA?.router.length ?? 0) > 30);
+check("and a lock-release pool program", Object.keys(CCIP_SOLANA?.poolPrograms ?? {}).some((k) => holdsCollateral(k)));
+// Only that one holds anything. A burn-mint pool mints on arrival and holds
+// nothing at any point, so finding a token under it is the answer "nothing
+// is held here", not an empty vault.
+check("a burn-mint pool is not treated as holding", holdsCollateral("BurnMintTokenPool") === false);
+check("nor is the CCTP pool", holdsCollateral("CCTPTokenPool") === false);
+check("a lock-release pool is", holdsCollateral("LockReleaseTokenPool") === true);
+
+const svmCandidates = ccipPoolCandidates("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+check("every pool program contributes candidates", svmCandidates.length >= 9, `${svmCandidates.length}`);
+check("each names the pool it came from", svmCandidates.every((c) => !!c.poolType && !!c.program));
+check("each names how it was derived, so a live check can say which won", svmCandidates.every((c) => c.how.length > 0));
+check("and each is a plausible Solana address", svmCandidates.every((c) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(c.address)));
+check("no candidate is offered twice", new Set(svmCandidates.map((c) => `${c.program}:${c.address}`)).size === svmCandidates.length);
+// A Token-2022 mint derives a different associated account, and deriving it
+// under the wrong token program yields an address that simply does not exist.
+check("both token programs are covered", svmCandidates.some((c) => c.how.endsWith("ATA-2022")) && svmCandidates.some((c) => c.how.endsWith("→ ATA")));
+check("a mint that is not a Solana key yields nothing rather than throwing", ccipPoolCandidates("не минт").length === 0);
+
 check("a denom with no metadata is left unread, not guessed at", parseDenomDecimals({}) === undefined);
 check("and neither is nothing at all", parseDenomDecimals(undefined) === undefined);
 
