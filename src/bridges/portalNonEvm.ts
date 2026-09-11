@@ -150,6 +150,73 @@ export function aptosCalls(token: string, custody: string): Array<{ balance: unk
   return token.includes("::") ? [asCoin, asFungible] : [asFungible, asCoin];
 }
 
+async function getJson(url: string): Promise<unknown | undefined> {
+  try {
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!response.ok) return undefined;
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+export interface AptosResource {
+  type: string;
+  /** Top-level field names, and any address-shaped value among them. */
+  fields: string[];
+  addresses: string[];
+}
+
+/**
+ * What is actually stored at an address on Aptos.
+ *
+ * Both balance calls against LayerZero's adapters answered, and answered
+ * zero: the adapter's own store holds nothing, so the collateral is in a
+ * store it owns rather than in itself. A secondary fungible store cannot be
+ * derived from the owner and the asset the way a primary one can, and the
+ * registry publishes no escrow for Aptos the way it does for Solana - so the
+ * object is asked what it is made of, and the answer names the account to
+ * read.
+ */
+export async function aptosResources(chainKey: string, address: string): Promise<AptosResource[]> {
+  const chain = getPortalChain(chainKey);
+  if (!chain) return [];
+
+  for (const url of endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls)) {
+    const body = await getJson(`${url.replace(/\/+$/, "")}/accounts/${address}/resources`);
+    if (!Array.isArray(body)) continue;
+
+    return body.slice(0, 12).map((raw) => {
+      const data = (raw as { data?: unknown })?.data;
+      const fields = data && typeof data === "object" ? Object.keys(data as object) : [];
+      return {
+        type: String((raw as { type?: unknown })?.type ?? "?"),
+        fields,
+        addresses: addressesIn(data),
+      };
+    });
+  }
+  return [];
+}
+
+/**
+ * Address-shaped values anywhere in a resource, at any depth. An object
+ * reference is written `{ inner: "0x…" }`, so the address that matters is
+ * never a top-level field - which is exactly the one worth surfacing.
+ */
+function addressesIn(value: unknown, depth = 0): string[] {
+  if (depth > 3 || !value || typeof value !== "object") return [];
+  const found: string[] = [];
+  for (const inner of Object.values(value as Record<string, unknown>)) {
+    if (typeof inner === "string" && /^0x[0-9a-fA-F]{60,64}$/.test(inner)) found.push(inner);
+    else found.push(...addressesIn(inner, depth + 1));
+  }
+  return [...new Set(found)];
+}
+
 export interface AptosReadStep {
   /** Which of the two token standards was asked. */
   how: string;

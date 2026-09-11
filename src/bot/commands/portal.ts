@@ -1,6 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../../config/portalChains";
-import { findPortalNonEvmBalances, describeAptosReads } from "../../bridges/portalNonEvm";
+import { findPortalNonEvmBalances, describeAptosReads, aptosResources } from "../../bridges/portalNonEvm";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { lookupToken } from "../../services/coingecko";
 import { formatAmount } from "../../services/balances";
@@ -105,6 +105,26 @@ export function registerPortalCommand(bot: Telegraf) {
         if (!aptosToken) continue;
         for (const step of await describeAptosReads("aptos", aptosToken, adapter.address)) {
           lines.push(`  ${esc(step.how)}\n    баланс: <code>${esc(step.balance)}</code> · знаков: <code>${esc(step.decimals)}</code>`);
+        }
+
+        // Both calls answer zero, so the collateral is in a store the object
+        // owns rather than in the object. What it is made of names that
+        // store, and every address it names is then asked for a balance -
+        // the one that answers is the escrow, and nothing else is reported.
+        const resources = await aptosResources("aptos", adapter.address);
+        lines.push(`  <i>ресурсов на объекте: ${resources.length}</i>`);
+        const candidates = new Set<string>();
+        for (const resource of resources) {
+          const short = resource.type.replace(/^0x[0-9a-f]+::/i, "");
+          lines.push(`  · <code>${esc(short)}</code>${resource.fields.length ? ` — ${esc(resource.fields.join(", "))}` : ""}`);
+          for (const address of resource.addresses) candidates.add(address);
+        }
+
+        for (const candidate of [...candidates].slice(0, 6)) {
+          const held = await describeAptosReads("aptos", aptosToken, candidate);
+          const answered = held.find((h) => h.balance !== "отказ");
+          if (!answered) continue;
+          lines.push(`  ➜ <code>${esc(candidate)}</code> — баланс <code>${esc(answered.balance)}</code>`);
         }
       }
     }
