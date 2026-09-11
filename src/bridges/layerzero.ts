@@ -7,6 +7,7 @@ import { getChain, resolveChain } from "../config/chains";
 import { getClient } from "../services/rpcClient";
 import { LZ_ENDPOINT_V2 } from "../protocols/addresses/layerzero";
 import { getLzEidMap } from "../services/idMaps";
+import { lzChainKeyIndex, normaliseLzKey } from "./lzMetadata";
 import { bytes32ToAddress, isEvmAddressBytes32 } from "../protocols/util";
 
 const OAPP_ABI = [
@@ -237,15 +238,45 @@ export async function findLayerZeroRegistryDeployments(symbol: string): Promise<
   const registry = await fetchOftRegistry();
   if (!registry) return [];
 
+  const resolve = await registryChainResolver();
   const wanted = symbol.toUpperCase();
-  const found = entriesForSymbol(registry, wanted).flatMap((entries) => extractDeployments(entries));
+  const found = entriesForSymbol(registry, wanted).flatMap((entries) => extractDeployments(entries, resolve));
 
   for (const key of aliasKeysFor(wanted, Object.keys(registry))) {
-    for (const deployment of extractDeployments(registry[key])) {
+    for (const deployment of extractDeployments(registry[key], resolve)) {
       found.push({ ...deployment, viaAlias: key });
     }
   }
   return found;
+}
+
+/** Our chain key for a name the registry uses, or undefined for a chain we have no client for. */
+export type ChainResolver = (lzChainKey: string) => string | undefined;
+
+/** Only our own alias table, for callers with no metadata to hand. */
+export const resolveByOwnAliases: ChainResolver = (lzChainKey) => resolveChain(lzChainKey)?.key;
+
+/**
+ * Resolves the registry's chain names, leaning on LayerZero's published
+ * metadata before our alias table.
+ *
+ * The metadata gives each of its chains an EVM chain id, which is the only
+ * thing both sides state the same way. Without it the registry's own
+ * spellings decide what gets read, and they are not guessable: Linea is
+ * "zkconsensys" there, Polygon zkEVM is "zkpolygon", Plume is
+ * "plumephoenix". Ten chains the bot has an RPC for were losing every
+ * deployment on them to a name lookup that could only ever have failed.
+ */
+export async function registryChainResolver(): Promise<ChainResolver> {
+  let index: Map<string, string>;
+  try {
+    index = await lzChainKeyIndex();
+  } catch {
+    // The alias table alone is worse, not useless: a report missing ten
+    // chains beats no report at all.
+    return resolveByOwnAliases;
+  }
+  return (lzChainKey) => resolveByOwnAliases(lzChainKey) ?? index.get(normaliseLzKey(lzChainKey));
 }
 
 /**
@@ -453,7 +484,10 @@ export function aliasKeysFor(symbol: string, keys: string[]): string[] {
  * Pure half of the registry lookup, so the real response shape is covered
  * by a test rather than only by a live call.
  */
-export function extractDeployments(entries: unknown): RegistryDeploymentInfo[] {
+export function extractDeployments(
+  entries: unknown,
+  resolve: ChainResolver = resolveByOwnAliases
+): RegistryDeploymentInfo[] {
   if (!Array.isArray(entries)) return [];
 
   const found: RegistryDeploymentInfo[] = [];
@@ -462,13 +496,14 @@ export function extractDeployments(entries: unknown): RegistryDeploymentInfo[] {
       const address = deployment?.address;
       if (!address || !isAddress(address, { strict: false })) continue;
 
-      // LayerZero names chains its own way; resolveChain also matches our aliases.
-      const chain = resolveChain(lzChainKey);
-      if (!chain) continue;
+      // LayerZero names chains its own way, and its own way is not guessable
+      // from ours - hence the resolver, which asks its metadata first.
+      const chainKey = resolve(lzChainKey);
+      if (!chainKey) continue;
 
       const rawType = String(deployment.type ?? "");
       found.push({
-        chainKey: chain.key,
+        chainKey,
         address: address as Address,
         locksCollateral: /adapter|lockbox|proxy/i.test(rawType),
         rawType: rawType || "неизвестно",

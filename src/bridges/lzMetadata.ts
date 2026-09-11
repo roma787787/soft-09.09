@@ -52,6 +52,35 @@ export function lastMetadataChainCount(): number {
 let cache: { at: number; data: Map<string, number> } | undefined;
 let inFlight: Promise<Map<string, number>> | undefined;
 
+/**
+ * LayerZero's own name for a chain, folded to something comparable.
+ *
+ * Its registry files Linea under "zkconsensys", Polygon zkEVM under
+ * "zkpolygon" and Plume under "plumephoenix" - names no alias table would
+ * have guessed, and resolveChain answered nothing for every one of them. A
+ * deployment on such a chain was dropped from every report, silently, even
+ * though the bot has an RPC for the chain and could read it.
+ */
+export function normaliseLzKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/mainnet$/, "");
+}
+
+/** LayerZero's name for a chain -> ours, built from the chain id both agree on. */
+let keyIndex = new Map<string, string>();
+
+/**
+ * The name index, loaded if it is not already.
+ *
+ * Matching on the EVM chain id rather than on a spelling is the same
+ * decision the price API's platform lookup makes, and for the same reason:
+ * a chain id is a number both sides agree on, where a name is a spelling one
+ * side invents and the other has to guess.
+ */
+export async function lzChainKeyIndex(): Promise<Map<string, string>> {
+  await fetchLzEidsFromMetadata();
+  return keyIndex;
+}
+
 export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
   if (inFlight) return inFlight;
@@ -90,6 +119,7 @@ export function extractEids(payload: unknown): Map<string, number> {
   if (!payload || typeof payload !== "object") return found;
   lastSeen = Object.keys(payload as Record<string, unknown>).length;
   lastEntries = [];
+  keyIndex = new Map();
 
   const byNativeId = new Map<number, string>();
   for (const chain of CHAINS) byNativeId.set(chain.viemChain.id, chain.key);
@@ -104,7 +134,14 @@ export function extractEids(payload: unknown): Map<string, number> {
     const nativeId = Number(entry.chainDetails?.nativeChainId ?? entry.nativeChainId);
     const chainKey =
       (Number.isFinite(nativeId) ? byNativeId.get(nativeId) : undefined) ?? resolveChain(rawKey)?.key;
-    if (!chainKey || found.has(chainKey)) continue;
+    if (!chainKey) continue;
+
+    // Recorded even when this chain's eid is already known from another
+    // entry: the name is what the OFT registry keys its deployments by, and
+    // a name left out of the index is a chain whose deployments keep being
+    // dropped no matter how well its eid is known.
+    keyIndex.set(normaliseLzKey(rawKey), chainKey);
+    if (found.has(chainKey)) continue;
 
     const eid = pickV2Eid(entry);
     if (eid !== undefined) found.set(chainKey, eid);

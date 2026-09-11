@@ -50,7 +50,7 @@ import { capToTelegramLimit, renderLiquidityReport } from "../src/bot/render";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
-import { extractEids, lastMetadataChainCount, explainMissing } from "../src/bridges/lzMetadata";
+import { extractEids, lastMetadataChainCount, explainMissing, normaliseLzKey } from "../src/bridges/lzMetadata";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
@@ -1438,6 +1438,24 @@ const penguRegistry = [
     },
   },
 ];
+
+// LayerZero's own name for a chain is not derivable from ours: Linea is
+// "zkconsensys" in its registry, Polygon zkEVM is "zkpolygon", Plume is
+// "plumephoenix". Ten chains the bot has an RPC for were losing every
+// deployment on them to a name lookup that could only ever have failed, and
+// the report could not say so - a dropped chain and an empty one look the
+// same. The chain id both sides publish is what settles it.
+const renamedChains = [
+  { deployments: { zkconsensys: { address: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585", type: "OFTAdapter" } } },
+];
+check("our alias table alone cannot match LayerZero's name", extractDeployments(renamedChains).length === 0);
+const viaMetadata = extractDeployments(renamedChains, (key) =>
+  normaliseLzKey(key) === "zkconsensys" ? "linea" : undefined
+);
+check("the metadata index finds the chain behind that name", viaMetadata.length === 1);
+check("and it lands on our own chain key", viaMetadata[0]?.chainKey === "linea");
+check("a name the index does not know is still dropped, not guessed", extractDeployments(renamedChains, () => undefined).length === 0);
+check("the key is folded so a -mainnet suffix does not miss", normaliseLzKey("Plume-Phoenix_Mainnet") === "plumephoenix");
 
 const penguSolana = extractNonEvmDeployments(penguRegistry, "solana");
 check("the Solana deployment is found", penguSolana.length === 1);

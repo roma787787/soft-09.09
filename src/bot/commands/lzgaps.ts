@@ -1,6 +1,12 @@
 import type { Telegraf, Context } from "telegraf";
-import { oftRegistryByChain, type RegistryChainUse } from "../../bridges/layerzero";
-import { resolveChain } from "../../config/chains";
+import {
+  oftRegistryByChain,
+  registryChainResolver,
+  resolveByOwnAliases,
+  type ChainResolver,
+  type RegistryChainUse,
+} from "../../bridges/layerzero";
+import { getChain } from "../../config/chains";
 import { resolveSvmChain } from "../../config/svmChains";
 import { resolveCosmosChain } from "../../config/cosmosChains";
 import { resolveOtherChain } from "../../config/otherChains";
@@ -29,10 +35,15 @@ export interface ChainCoverage extends RegistryChainUse {
   reader: LzReader;
 }
 
-export function classifyChain(use: RegistryChainUse): ChainCoverage {
+export function classifyChain(
+  use: RegistryChainUse,
+  resolve: ChainResolver = resolveByOwnAliases
+): ChainCoverage {
   const name = use.lzChainKey;
 
-  const evm = resolveChain(name);
+  // Through the same resolver the report uses, or this lists ten chains as
+  // unreachable that the report reads perfectly well.
+  const evm = getChain(resolve(name) ?? "");
   if (evm) return { ...use, label: evm.label, reader: "evm" };
 
   const svm = resolveSvmChain(name);
@@ -56,9 +67,9 @@ export function classifyChain(use: RegistryChainUse): ChainCoverage {
  * deployments holds nothing to miss, while one locking deployment can be the
  * whole supply of a token, as Solana was.
  */
-export function gapsFrom(uses: RegistryChainUse[]): ChainCoverage[] {
+export function gapsFrom(uses: RegistryChainUse[], resolve?: ChainResolver): ChainCoverage[] {
   return uses
-    .map(classifyChain)
+    .map((u) => classifyChain(u, resolve ?? resolveByOwnAliases))
     .filter((c) => c.reader === "нет" || c.reader === "сеть неизвестна")
     .sort((a, b) => b.locking - a.locking || b.deployments - a.deployments);
 }
@@ -73,9 +84,10 @@ export function registerLzGapsCommand(bot: Telegraf) {
       return;
     }
 
-    const all = uses.map(classifyChain);
+    const resolve = await registryChainResolver();
+    const all = uses.map((u) => classifyChain(u, resolve));
     const covered = all.filter((c) => c.reader !== "нет" && c.reader !== "сеть неизвестна");
-    const gaps = gapsFrom(uses);
+    const gaps = gapsFrom(uses, resolve);
     const totalDeployments = uses.reduce((n, u) => n + u.deployments, 0);
     const missedLocking = gaps.reduce((n, g) => n + g.locking, 0);
 
