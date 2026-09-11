@@ -138,7 +138,14 @@ export function resolveNonEvmPlatform(
     const hit = list.find((c) => matchesByName(candidates, c));
     if (hit) return hit.key;
   }
-  return undefined;
+
+  // And the EVM table last, for the chain that sits in it without EVM
+  // addresses. Tron speaks Ethereum's JSON-RPC, so the bot reads it through
+  // viem like any other chain - but its addresses are base58, so a Tron
+  // deployment never reaches the EVM branch above. It was landing here and
+  // finding nothing, and the report said "the bot does not check TRON" on
+  // the same screen as a Tron section listing balances.
+  return CHAINS.find((c) => matchesByName(candidates, c))?.key;
 }
 
 /**

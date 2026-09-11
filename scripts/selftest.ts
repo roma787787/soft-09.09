@@ -19,6 +19,7 @@ import {
   parseKeyResponse,
   pickCoin,
   resolveEvmPlatform,
+  resolveNonEvmPlatform,
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
@@ -368,6 +369,18 @@ check(
 );
 check("including Optimism, whose slug matches nothing", resolveEvmPlatform(undefined, "optimistic-ethereum") === "optimism");
 check("and a slug for nothing we carry still resolves to nothing", resolveEvmPlatform(undefined, "not-a-chain") === undefined);
+
+// Tron speaks Ethereum's JSON-RPC and the bot reads it through viem like any
+// other chain - but its addresses are base58, so a Tron deployment never
+// reaches the EVM branch and fell through the non-EVM one, which only knew
+// about Solana, Cosmos and Starknet. The report then said "the bot does not
+// check TRON" on the same screen as a Tron section listing balances.
+check("Tron resolves despite not having EVM addresses", resolveNonEvmPlatform(undefined, "tron") === "tron");
+check("and so do the chains that always did", resolveNonEvmPlatform(undefined, "solana") === "solanamainnet");
+check(
+  "while a chain the bot genuinely cannot read still resolves to nothing",
+  ["tezos", "aptos", "ton", "near-protocol"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
+);
 
 // /gecko answers "is the key working" with a request rather than a guess,
 // and the plan's own numbers are what it reports back.
