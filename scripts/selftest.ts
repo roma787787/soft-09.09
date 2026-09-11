@@ -28,7 +28,13 @@ import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
+import {
+  entriesForSymbol,
+  extractNonEvmDeployments,
+  tallyDeploymentsByChain,
+  typeLocksCollateral,
+  typeMintsAndBurns,
+} from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import {
   baseTicker,
@@ -66,7 +72,6 @@ import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import {
   baseTicker,
@@ -1660,6 +1665,42 @@ check(
 );
 check("a missing ticker yields nothing rather than throwing", extractDeployments(undefined).length === 0);
 
+// A MintBurnOFTAdapter is an adapter by name and a minter by behaviour. It
+// was read as a vault, found to hold nothing, and reported as a bridge
+// standing empty - a wrong answer, not a missing one.
+check("a mint-burn adapter is not counted as holding collateral", typeLocksCollateral("MintBurnOFTAdapter") === false);
+check(
+  "however the registry spells it",
+  typeLocksCollateral("MintBurnOFT") === false && typeLocksCollateral("mint_burn_oft_adapter") === false
+);
+check("and it is marked mint-burn outright", typeMintsAndBurns("MintBurnOFTAdapter") === true);
+// The narrowing must not cost the adapters that do hold something.
+check("a plain adapter still locks", typeLocksCollateral("OFTAdapter") === true);
+check("a native adapter still locks", typeLocksCollateral("NativeOFTAdapter") === true);
+check("a lockbox still locks", typeLocksCollateral("OFTLockbox") === true);
+check("a proxy still locks", typeLocksCollateral("ProxyOFT") === true);
+check("a plain OFT still does not", typeLocksCollateral("OFT") === false);
+check("and a plain OFT is not mint-burn either", typeMintsAndBurns("OFT") === false);
+check("nor is a plain adapter", typeMintsAndBurns("OFTAdapter") === false);
+
+const mintBurnOut = extractDeployments([
+  {
+    name: "Example",
+    deployments: {
+      ethereum: { address: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585", type: "MintBurnOFTAdapter" },
+    },
+  },
+]);
+check(
+  "a mint-burn adapter read out of the registry carries both flags",
+  mintBurnOut[0]?.locksCollateral === false && mintBurnOut[0]?.mintsAndBurns === true,
+  mintBurnOut.map((d) => `${d.rawType}:${d.locksCollateral}:${d.mintsAndBurns}`).join(" ")
+);
+check(
+  "a locking adapter is not marked mint-burn",
+  adapterOut.every((d) => d.mintsAndBurns === false)
+);
+
 // --- Russian noun agreement --------------------------------------------------
 
 function scopedWith(hyperlane: number, layerzero: number, omitted = 0): string {
@@ -1694,8 +1735,13 @@ const ADAPTER = "0x1111111111111111111111111111111111111111" as Address;
 const TOKEN = "0x2222222222222222222222222222222222222222" as Address;
 const OTHER_TOKEN = "0x3333333333333333333333333333333333333333" as Address;
 
-function deployment(chainKey: string, locksCollateral: boolean, address: Address = ADAPTER): RegistryDeploymentInfo {
-  return { chainKey, address, locksCollateral, rawType: locksCollateral ? "OFTAdapter" : "OFT" };
+function deployment(
+  chainKey: string,
+  locksCollateral: boolean,
+  address: Address = ADAPTER,
+  rawType = locksCollateral ? "OFTAdapter" : "OFT"
+): RegistryDeploymentInfo {
+  return { chainKey, address, locksCollateral, mintsAndBurns: typeMintsAndBurns(rawType), rawType };
 }
 
 async function asyncChecks(): Promise<void> {
@@ -1751,6 +1797,22 @@ async function asyncChecks(): Promise<void> {
   // believed - and if the label is ever right, this is the line that shows
   // the check earning its keep.
   check("the row says the contract overruled the registry", /контракт блокирует/.test(mislabelled.custodians[0]?.note ?? ""));
+
+  // The one case the contract cannot settle. A MintBurnOFTAdapter names a
+  // separate ERC-20 just like a locking adapter does - it was granted mint
+  // and burn on one - so the probe above reads it as a vault and the balance
+  // comes back zero. Reported that way it claims the bridge is here and
+  // empty, about a bridge that never holds anything.
+  const mintBurn = await resolveRegistryDeployments(
+    [deployment("ethereum", false, ADAPTER, "MintBurnOFTAdapter")],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => TOKEN
+  );
+  check("a mint-burn adapter naming a token is still not a custody contract", mintBurn.custodians.length === 0);
+  check("and the chain is reported as minting instead", mintBurn.nativeOftChains.includes("ethereum"));
+  check("without being counted as a mismatch", mintBurn.mismatchedAdapters === 0);
 
   const adapter = await resolveRegistryDeployments(
     [deployment("ethereum", true)],

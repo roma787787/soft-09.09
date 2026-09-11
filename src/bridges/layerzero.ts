@@ -214,6 +214,13 @@ export interface RegistryDeploymentInfo {
   address: Address;
   /** True when the contract locks a separate ERC-20 and so holds liquidity. */
   locksCollateral: boolean;
+  /**
+   * True when the registry names the deployment mint-burn. Distinct from
+   * `!locksCollateral`, which only means the label did not claim a lock and
+   * leaves the contract to decide; this one closes the question, because a
+   * mint-burn adapter answers `token()` exactly like a locking adapter.
+   */
+  mintsAndBurns: boolean;
   rawType: string;
   /**
    * The registry key this came from, when it was not the ticker itself.
@@ -296,6 +303,39 @@ export function entriesForSymbol(registry: Record<string, unknown>, symbol: stri
     if (key.toUpperCase() === wanted) found.push(value);
   }
   return found;
+}
+
+/**
+ * Whether the registry states outright that a deployment mints rather than
+ * holds - and so that reading its balance is meaningless.
+ *
+ * This is the one case the contract cannot settle. Everywhere else the type
+ * field is only a label and `token()` overrules it: an OFT names itself, an
+ * adapter names what it locks. A MintBurnOFTAdapter names a separate ERC-20
+ * too, because there is one - it just holds none of it, having been granted
+ * mint and burn on it instead. So the probe that catches a mislabelled
+ * adapter reads a mint-burn one as a vault, and the balance comes back zero
+ * for the same reason an empty vault does.
+ *
+ * The type string is the only thing that tells them apart, which makes it
+ * evidence here and nowhere else.
+ */
+export function typeMintsAndBurns(rawType: string): boolean {
+  return /mint.?burn/i.test(rawType);
+}
+
+/**
+ * Whether a deployment type means the contract holds what it carries.
+ *
+ * "Adapter" alone is not the answer: a MintBurnOFTAdapter is an adapter by
+ * name and a minter by behaviour. Reported as a vault it says "the bridge
+ * is here and it is empty" about a bridge that was never meant to hold
+ * anything - a wrong answer, not a missing one, which sends someone looking
+ * for liquidity that never existed.
+ */
+export function typeLocksCollateral(rawType: string): boolean {
+  if (typeMintsAndBurns(rawType)) return false;
+  return /adapter|lockbox|proxy/i.test(rawType);
 }
 
 export interface NonEvmDeployment {
@@ -400,7 +440,7 @@ export function tallyDeploymentsByChain(registry: Record<string, unknown>): Regi
         const use = byChain.get(lzChainKey) ?? { lzChainKey, deployments: 0, locking: 0 };
         use.deployments++;
         const rawType = String(deployment?.type ?? "");
-        if (/adapter|lockbox|proxy/i.test(rawType) || detailString(deployment?.details, "escrowTokenAccount")) {
+        if (typeLocksCollateral(rawType) || detailString(deployment?.details, "escrowTokenAccount")) {
           use.locking++;
         }
         byChain.set(lzChainKey, use);
@@ -451,7 +491,7 @@ export function extractNonEvmDeployments(
         // deployment locks, whatever its type field calls it. PENGU's Solana
         // entry is typed "OFT" and publishes the account holding every token
         // the five EVM chains ever minted against.
-        locksCollateral: /adapter|lockbox|proxy/i.test(rawType) || !!details.escrowTokenAccount,
+        locksCollateral: typeLocksCollateral(rawType) || !!details.escrowTokenAccount,
         viaAlias,
         details: Object.values(details).some(Boolean) ? details : undefined,
       });
@@ -505,7 +545,8 @@ export function extractDeployments(
       found.push({
         chainKey,
         address: address as Address,
-        locksCollateral: /adapter|lockbox|proxy/i.test(rawType),
+        locksCollateral: typeLocksCollateral(rawType),
+        mintsAndBurns: typeMintsAndBurns(rawType),
         rawType: rawType || "неизвестно",
       });
     }

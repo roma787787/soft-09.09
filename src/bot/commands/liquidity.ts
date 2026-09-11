@@ -105,7 +105,14 @@ export async function resolveRegistryDeployments(
     // So the contract decides. An OFT's token() returns itself and readUnderlying
     // answers nothing; an adapter names what it locks. Only when both the
     // label and the contract say "holds nothing" is the chain mint-only.
-    if (!onChain && !deployment.locksCollateral) {
+    //
+    // Except when the registry says mint-burn outright. Such an adapter does
+    // name a separate ERC-20 - it was granted mint and burn on one - so the
+    // contract probe reads it exactly like a locking adapter and the balance
+    // comes back zero, which is then reported as a vault standing empty.
+    // Nothing on-chain separates the two, so the label is taken at its word
+    // here, and only here.
+    if (deployment.mintsAndBurns || (!onChain && !deployment.locksCollateral)) {
       nativeOftChains.add(deployment.chainKey);
       continue;
     }
