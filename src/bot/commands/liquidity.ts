@@ -35,7 +35,7 @@ import type { Custodian } from "../../bridges/types";
 import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
 import { readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
-import { renderLiquidityReport } from "../render";
+import { renderLiquidityReport, splitForTelegram } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -491,7 +491,12 @@ export async function replyWithLiquidity(
 ): Promise<void> {
   await ctx.sendChatAction("typing");
   try {
-    await ctx.reply(await buildLiquidityReport(symbol, chainKey), REPLY_OPTS);
+    // One report, several messages. Telegram limits a message, not a reply,
+    // and paying that limit out of the report's content is what made a
+    // fully checked token look half-checked.
+    for (const part of splitForTelegram(await buildLiquidityReport(symbol, chainKey))) {
+      await ctx.reply(part, REPLY_OPTS);
+    }
   } catch (err) {
     if (err instanceof TokenSourceNotConfiguredError) {
       await ctx.reply(

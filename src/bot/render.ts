@@ -79,6 +79,59 @@ export function capToTelegramLimit(text: string): string {
   return `${closeOpenTags(cut)}\n\n… отчёт обрезан, чтобы уместиться в сообщение.`;
 }
 
+/** How many messages one report may spend before it starts leaving things out. */
+const MAX_PARTS = 6;
+
+/**
+ * Splits a report across messages instead of cutting it short.
+ *
+ * Telegram limits one message, not one reply, and the limit was being paid
+ * for by the report: USDC checked 231 contracts and dropped twenty-two
+ * networks to fit - more than it showed. Anyone reading that would conclude
+ * the bot does not cover those chains, which is the exact complaint this
+ * whole line of work started from, and by then it would be wrong.
+ *
+ * Every line the report builds is self-contained markup, so a line boundary
+ * is a safe place to break and no tag needs repairing across parts.
+ */
+export function splitForTelegram(text: string): string[] {
+  const parts: string[] = [];
+  let current: string[] = [];
+  let used = 0;
+
+  for (const line of text.split("\n")) {
+    const cost = visibleLength(line) + 1;
+    // A single line longer than a whole message has no boundary to break on,
+    // so it is capped on its own rather than dragging a part over the limit.
+    if (cost > MAX_MESSAGE_CHARS) {
+      if (current.length > 0) parts.push(current.join("\n"));
+      parts.push(capToTelegramLimit(line));
+      current = [];
+      used = 0;
+      continue;
+    }
+    if (used + cost > MAX_MESSAGE_CHARS && current.length > 0) {
+      parts.push(current.join("\n"));
+      current = [];
+      used = 0;
+    }
+    current.push(line);
+    used += cost;
+  }
+  if (current.length > 0) parts.push(current.join("\n"));
+  if (parts.length === 0) return [text];
+  if (parts.length <= MAX_PARTS) return parts;
+
+  // Still bounded: a hundred messages is its own kind of broken. What is left
+  // out is counted rather than dropped in silence.
+  const kept = parts.slice(0, MAX_PARTS);
+  const dropped = parts.length - MAX_PARTS;
+  kept[MAX_PARTS - 1] +=
+    `\n\n… и ещё ${dropped} ${plural(dropped, "сообщение", "сообщения", "сообщений")} отчёта не поместилось. ` +
+    "Спросите по одной сети: <code>/info &lt;тикер&gt; &lt;сеть&gt;</code>";
+  return kept;
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -495,17 +548,11 @@ export function renderLiquidityReport(input: ReportInput): string {
     ...scopeLines(scope),
   ];
 
-  // The closing notes are what explain a thin report - which chains failed,
-  // what was skipped, how much was checked. Budgeting the body first and
-  // appending them afterwards meant the cut landed on exactly the lines that
-  // say why the report looks the way it does. So they are measured first and
-  // the body gets what is left.
-  const notesBudget = visibleLength([...notes, ...closingNotes].join("\n")) + 80;
-
-
+  // No budget any more: the report is rendered whole and split across
+  // messages afterwards. Budgeting the body against one message meant the
+  // largest tokens lost most of their content - USDC dropped twenty-two
+  // networks, more than it printed.
   const lines: string[] = [header];
-  let used = header.length;
-  let omittedChains = 0;
 
   for (const { chainKey, rows } of chains) {
     const block: string[] = ["", `Сеть: <b>${esc(chainName(chainKey))}</b>`];
@@ -566,22 +613,8 @@ export function renderLiquidityReport(input: ReportInput): string {
       block.push(`   <i>пусто: ${esc(empty.map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))}</i>`);
     }
 
-    const blockText = block.join("\n");
-    if (used + visibleLength(blockText) > MAX_MESSAGE_CHARS - notesBudget) {
-      omittedChains++;
-      continue;
-    }
-    lines.push(blockText);
-    used += visibleLength(blockText);
+    lines.push(block.join("\n"));
   }
 
-
-
-  if (omittedChains > 0) {
-    notes.push(
-      `Ещё ${omittedChains} ${plural(omittedChains, "сеть не поместилась", "сети не поместились", "сетей не поместилось")} в сообщение.`
-    );
-  }
-
-  return capToTelegramLimit([...lines, "", ...notes, ...closingNotes].join("\n"));
+  return [...lines, "", ...notes, ...closingNotes].join("\n");
 }

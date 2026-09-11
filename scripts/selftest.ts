@@ -46,7 +46,7 @@ import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { svmEscrows } from "../src/bridges/svm";
 import { resolveCustodians } from "../src/bridges";
 import { getChain, getChainByChainId, registerChain, resolveChain, resolveAnyChain, CHAINS } from "../src/config/chains";
-import { capToTelegramLimit, renderLiquidityReport } from "../src/bot/render";
+import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
@@ -1914,6 +1914,41 @@ check(
   `${visibleLength(runaway)} visible chars`
 );
 check("and says it was cut rather than ending mid-word", runaway.includes("обрезан"));
+
+// A report is no longer paid for out of its own content. USDC checked 231
+// contracts and dropped twenty-two networks to fit one message - more than
+// it printed - and anyone reading that would conclude the bot does not cover
+// those chains, which is the complaint this whole line of work began from.
+const wide = renderLiquidityReport({
+  symbol: "WIDE",
+  name: "Widely Bridged",
+  // Distinct chains, because rows are grouped per chain: sixty rows on two
+  // chains collapse to four lines and prove nothing about a long report.
+  balances: Array.from({ length: 120 }, (_, i) =>
+    fakeBalance(`сеть-номер-${i}`, "hyperlane", BigInt(1_000_000 - i))
+  ),
+  checkedCount: 120,
+  failuresByChain: {},
+  attemptsByChain: {},
+  scope: {
+    supportedChains: Array.from({ length: 120 }, (_, i) => `Сеть номер ${i}`),
+    unsupportedPlatforms: [],
+    byProtocol: { hyperlane: 120 },
+  },
+});
+const wideParts = splitForTelegram(wide);
+check("a report too big for one message is split, not cut", wideParts.length > 1);
+check("every part fits Telegram's limit", wideParts.every((p) => visibleLength(p) <= 4096));
+check("and no part is the truncation notice", !wideParts.some((p) => p.includes("обрезан")));
+// Split, not summarised: the closing notes are the last thing, and the
+// header the first, so the reader gets a whole report across messages.
+check("the first part opens the report", wideParts[0].startsWith("Токен:"));
+check("the last part is the report's true tail", wide.endsWith(wideParts[wideParts.length - 1]));
+check("the closing notes survive the split", wideParts.join("\n").includes("Всего проверено контрактов"));
+check("nothing is lost between parts", wideParts.join("\n") === wide);
+check("every part is valid HTML on its own", wideParts.every(tagsBalanced));
+// A short report is still one message; splitting is not a new default shape.
+check("a report that fits stays a single message", splitForTelegram(smallReport).length === 1);
 
 // Telegram parses the whole message as HTML and refuses an unbalanced one,
 // so a cut through a tag fails to send - the exact outcome the cap prevents.
