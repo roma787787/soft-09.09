@@ -150,6 +150,47 @@ export function aptosCalls(token: string, custody: string): Array<{ balance: unk
   return token.includes("::") ? [asCoin, asFungible] : [asFungible, asCoin];
 }
 
+export interface AptosReadStep {
+  /** Which of the two token standards was asked. */
+  how: string;
+  balance: string;
+  decimals: string;
+}
+
+/**
+ * Every call the balance read would make, with what the chain answered.
+ *
+ * A zero is the one answer that cannot be acted on: "this adapter holds
+ * nothing" and "the balance is somewhere this call does not look" are the
+ * same number. Solana's escrow was found by looking at the raw shape rather
+ * than reasoning about it, and two Aptos adapters answering zero is the same
+ * question in the same place.
+ */
+export async function describeAptosReads(
+  chainKey: string,
+  token: string,
+  custody: string
+): Promise<AptosReadStep[]> {
+  const chain = getPortalChain(chainKey);
+  if (!chain) return [];
+  const urls = endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls);
+
+  const steps: AptosReadStep[] = [];
+  for (const call of aptosCalls(token, custody)) {
+    const fn = String((call.balance as { function?: unknown })?.function ?? "?");
+    const [balance, decimals] = await Promise.all([
+      aptosView(urls, call.balance),
+      aptosView(urls, call.decimals),
+    ]);
+    steps.push({
+      how: fn,
+      balance: balance === undefined ? "отказ" : JSON.stringify(balance).slice(0, 60),
+      decimals: decimals === undefined ? "отказ" : JSON.stringify(decimals).slice(0, 30),
+    });
+  }
+  return steps;
+}
+
 export async function readAptos(
   chainKey: string,
   token: string,

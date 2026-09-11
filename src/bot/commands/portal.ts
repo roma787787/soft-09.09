@@ -1,6 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../../config/portalChains";
-import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
+import { findPortalNonEvmBalances, describeAptosReads } from "../../bridges/portalNonEvm";
+import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { lookupToken } from "../../services/coingecko";
 import { formatAmount } from "../../services/balances";
 import { capToTelegramLimit } from "../render";
@@ -86,6 +87,26 @@ export function registerPortalCommand(bot: Telegraf) {
       // Named as unread rather than left out: an unanswered chain holds an
       // unknown amount, and silence would read as zero.
       lines.push(`❌ ${esc(labelOf(chainKey))}: прочитать не удалось — ни один узел не ответил по делу.`);
+    }
+
+    // And what LayerZero's adapters on Aptos answer, verbatim. They report
+    // zero, which is the one answer that cannot be acted on: "holds nothing"
+    // and "the balance is somewhere this call does not look" are the same
+    // number, and only the raw replies tell them apart.
+    const aptosToken = targets.find((t) => t.chainKey === "aptos")?.tokenAddress;
+    const adapters = (await findRegistryDeploymentsOnChain(symbol, "aptos")).filter((d) => d.locksCollateral);
+    if (adapters.length > 0) {
+      lines.push("", `<b>Адаптеры LayerZero на Aptos: ${adapters.length}</b>`);
+      if (!aptosToken) {
+        lines.push("CoinGecko не дал адрес токена в Aptos — спрашивать адаптер не о чем.");
+      }
+      for (const adapter of adapters.slice(0, 4)) {
+        lines.push(`<code>${esc(adapter.address)}</code> — ${esc(adapter.rawType)}`);
+        if (!aptosToken) continue;
+        for (const step of await describeAptosReads("aptos", aptosToken, adapter.address)) {
+          lines.push(`  ${esc(step.how)}\n    баланс: <code>${esc(step.balance)}</code> · знаков: <code>${esc(step.decimals)}</code>`);
+        }
+      }
     }
 
     await ctx.reply(capToTelegramLimit(lines.join("\n")), {
