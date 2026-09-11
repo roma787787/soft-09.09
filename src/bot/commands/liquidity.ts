@@ -85,15 +85,29 @@ export async function resolveRegistryDeployments(
     rejected.push({ chainKey: d.chainKey, address: d.address, reason });
   };
 
-  for (const deployment of deployments) {
-    if (alreadyConfigured.has(deployment.chainKey)) continue;
-    if (!deployment.locksCollateral) {
+  // Asked all at once. Every deployment is now read whatever the registry
+  // called it, and a widely bridged token has thirty of them - one at a time
+  // that is thirty round trips stacked end to end.
+  const pending = deployments.filter((d) => !alreadyConfigured.has(d.chainKey));
+  const underlyings = await Promise.all(pending.map((d) => readUnderlying(d.chainKey, d.address)));
+
+  for (const [i, deployment] of pending.entries()) {
+    const listed = platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
+    const onChain = underlyings[i];
+
+    // The registry's type field is not evidence, it is a label. On Aptos it
+    // called three minting deployments adapters; the same field calling an
+    // adapter an OFT would hide real collateral, and nothing downstream
+    // would ever ask - the contract probe skips chains the registry already
+    // named, and the peer walk skips whatever landed here.
+    //
+    // So the contract decides. An OFT's token() returns itself and readUnderlying
+    // answers nothing; an adapter names what it locks. Only when both the
+    // label and the contract say "holds nothing" is the chain mint-only.
+    if (!onChain && !deployment.locksCollateral) {
       nativeOftChains.add(deployment.chainKey);
       continue;
     }
-
-    const listed = platforms.find((p) => p.chainKey === deployment.chainKey)?.tokenAddress;
-    const onChain = await readUnderlying(deployment.chainKey, deployment.address);
 
     // A deployment found under a neighbouring ticker has to prove itself:
     // it is only this token if the contract says so. Falling back to the
@@ -130,14 +144,14 @@ export async function resolveRegistryDeployments(
       continue;
     }
 
-    const underlying = onChain ?? listed;
-    if (!underlying) continue;
+    const locked = onChain ?? listed;
+    if (!locked) continue;
 
     // An exact-ticker deployment locking something else is a different
     // project sharing the symbol, and reading its balance under this ticker
     // would be worse than omitting it.
-    if (listed && underlying.toLowerCase() !== listed.toLowerCase()) {
-      reject(deployment, `блокирует ${underlying}, а CoinGecko указал ${listed}`);
+    if (listed && locked.toLowerCase() !== listed.toLowerCase()) {
+      reject(deployment, `блокирует ${locked}, а CoinGecko указал ${listed}`);
       continue;
     }
 
@@ -145,8 +159,10 @@ export async function resolveRegistryDeployments(
       protocol: "layerzero",
       chainKey: deployment.chainKey,
       custodyAddress: deployment.address,
-      tokenAddress: underlying,
-      note: "реестр",
+      tokenAddress: locked,
+      // Worth saying when the contract overruled the registry: that row
+      // exists only because the label was not believed.
+      note: deployment.locksCollateral ? "реестр" : "реестр звал OFT, контракт блокирует",
     });
   }
 

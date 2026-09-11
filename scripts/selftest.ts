@@ -1708,6 +1708,27 @@ async function asyncChecks(): Promise<void> {
   check("a plain OFT yields no custody contract", native.custodians.length === 0);
   check("and is reported as an omnichain chain instead", native.nativeOftChains.includes("ethereum"));
 
+  // The registry's type field is a label, not evidence: on Aptos it called
+  // three minting deployments adapters. The same field calling an adapter an
+  // OFT is the dangerous direction - the collateral would be invisible on
+  // every path, since the contract probe skips chains the registry named and
+  // the peer walk skips whatever was filed as mint-only. So the contract is
+  // asked whatever the label said.
+  const mislabelled = await resolveRegistryDeployments(
+    [deployment("ethereum", false)],
+    [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
+    new Set(),
+    "TKN",
+    async () => TOKEN
+  );
+  check("a deployment the registry calls an OFT is still asked what it locks", mislabelled.custodians.length === 1);
+  check("and its balance is read against what it named", mislabelled.custodians[0]?.tokenAddress === TOKEN);
+  check("a chain with real collateral is not called mint-only", !mislabelled.nativeOftChains.includes("ethereum"));
+  // Said out loud, because that row exists only because the label was not
+  // believed - and if the label is ever right, this is the line that shows
+  // the check earning its keep.
+  check("the row says the contract overruled the registry", /контракт блокирует/.test(mislabelled.custodians[0]?.note ?? ""));
+
   const adapter = await resolveRegistryDeployments(
     [deployment("ethereum", true)],
     [{ chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN }],
