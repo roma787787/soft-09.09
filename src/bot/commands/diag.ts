@@ -227,6 +227,25 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
  * keys they do not need.
  */
 /**
+ * Failures split by what they mean, because the two halves need different
+ * things.
+ *
+ * A server that answered and refused is alive: a key opens it, and every one
+ * of those is a job worth doing. A name that does not resolve, a certificate
+ * issued for another host, a node that says nothing - no key fixes any of
+ * that; the endpoint itself has to be replaced, and no registry has another
+ * one to offer. Sending someone hunting for a key on those wastes their
+ * evening.
+ *
+ * An HTTP status is the signal, and the only one that means "something on
+ * the other end read the request and decided".
+ */
+export function splitFailures(failed: ChainHealth[]): { refusing: ChainHealth[]; broken: ChainHealth[] } {
+  const answered = (h: ChainHealth) => /^HTTP \d/.test(h.error ?? "");
+  return { refusing: failed.filter(answered), broken: failed.filter((h) => !answered(h)) };
+}
+
+/**
  * Failures gathered under the reason they share, commonest first.
  *
  * Keyed by the reason alone. The count of a chain's *other* failures used to
@@ -347,8 +366,7 @@ export function registerDiagCommand(bot: Telegraf) {
       // Dogechain has nine endpoints and all nine refuse. That is not a
       // chain short of nodes, and telling the reader to go find more would
       // waste their evening.
-      const refusing = failed.filter((h) => /^HTTP \d/.test(h.error ?? ""));
-      const broken = failed.filter((h) => !/^HTTP \d/.test(h.error ?? ""));
+      const { refusing, broken } = splitFailures(failed);
       const varsOf = (rows: ChainHealth[]) =>
         rows
           .map((h) => CHAINS.find((c) => c.key === h.chainKey)?.rpcEnvVar)

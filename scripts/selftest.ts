@@ -32,7 +32,7 @@ import {
   mergeFacts,
   type DiscoveryReport,
 } from "../src/services/chainDiscovery";
-import { describeError, groupByReason, mostActionable } from "../src/bot/commands/diag";
+import { describeError, groupByReason, mostActionable, splitFailures } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
@@ -1766,6 +1766,24 @@ const failedChains = [
   { chainKey: "b", label: "B", ok: false, alive: 0, asked: 3, error: "HTTP 400", otherReasons: 2, custom: false },
   { chainKey: "c", label: "C", ok: false, alive: 0, asked: 1, error: "HTTP 403", custom: false },
 ];
+// A server that answered and refused is alive and a key opens it; a name
+// that does not resolve is not, and no key fixes it. The footer used to send
+// the reader hunting for a key on both. Dogechain has nine endpoints and all
+// nine refuse - that chain is not short of nodes.
+const split = splitFailures([
+  { chainKey: "a", label: "Refusing", ok: false, alive: 0, asked: 2, error: "HTTP 429 (lb.routeme.sh)", custom: false },
+  { chainKey: "b", label: "Forbidden", ok: false, alive: 0, asked: 1, error: "HTTP 403 (rpc.ankr.com)", custom: false },
+  { chainKey: "c", label: "Gone", ok: false, alive: 0, asked: 1, error: "getaddrinfo ENOTFOUND x", custom: false },
+  { chainKey: "d", label: "BadCert", ok: false, alive: 0, asked: 1, error: "Hostname/IP does not match certificate's altnames", custom: false },
+  { chainKey: "e", label: "Silent", ok: false, alive: 0, asked: 1, error: "нет ответа за 6 с", custom: false },
+]);
+check("a refusal counts as alive", split.refusing.map((h) => h.label).join() === "Refusing,Forbidden");
+check("and everything else as broken", split.broken.map((h) => h.label).join() === "Gone,BadCert,Silent");
+check("every failure lands on exactly one side", split.refusing.length + split.broken.length === 5);
+check("a chain with no reason is not called alive", splitFailures([
+  { chainKey: "f", label: "F", ok: false, alive: 0, asked: 0, custom: false },
+]).refusing.length === 0);
+
 const grouped = groupByReason(failedChains);
 check("one reason is one group, whatever else failed", grouped.length === 2);
 check("and the commonest comes first", grouped[0][0] === "HTTP 400" && grouped[0][1].length === 2);
