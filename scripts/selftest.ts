@@ -1981,6 +1981,69 @@ check("an omnichain chain is named even when liquidity was found", withEmptyChai
 // vault here" beside "here is the vault, it is empty" is the report
 // contradicting itself inside one message.
 check("the omnichain claim is scoped to LayerZero", withEmptyChains.includes("У LayerZero там хранилища нет"));
+
+// And it is never made about a chain where LayerZero was just shown holding
+// something. USDT's report said both about Arbitrum One in one message: an
+// OFT Adapter with 7.3 million in it, and a line underneath explaining that
+// there is no vault there. Both readings come from real contracts - the
+// token's own address answers like a native OFT while a separate adapter
+// locks collateral - but the vault the report just printed settles it.
+const lzRowAndOft = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [
+    {
+      protocol: "layerzero",
+      chainKey: "arbitrum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 7_327_582n * 10n ** 18n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["arbitrum", "fantom"],
+});
+check(
+  "a chain holding LayerZero collateral is not called mint-only",
+  !/омничейн[^.]*Arbitrum One/.test(lzRowAndOft)
+);
+check("while the chains that are stay named", lzRowAndOft.includes("Fantom"));
+
+// An empty LayerZero vault is still a vault: the claim is about the bridge
+// having no vault there at all, and an empty one disproves it just as well.
+const emptyLzAndOft = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 5n,
+      decimals: 18,
+    },
+    {
+      protocol: "layerzero",
+      chainKey: "arbitrum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 0n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["arbitrum"],
+});
+check(
+  "an empty LayerZero vault also disproves the claim",
+  !emptyLzAndOft.includes("омничейн")
+);
 check("the report stays valid HTML", tagsBalanced(withEmptyChains));
 
 const nothingCalledEmpty = renderLiquidityReport({

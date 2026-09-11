@@ -266,11 +266,25 @@ export function renderLiquidityReport(input: ReportInput): string {
     checkedCount,
     failuresByChain,
     attemptsByChain,
-    nativeOftChains = [],
+    nativeOftChains: claimedNativeOft = [],
     syntheticHyperlaneChains = [],
     mismatchedAdapters = 0,
     scope,
   } = input;
+  // A chain where LayerZero was found holding something cannot also be a
+  // chain where LayerZero holds nothing by construction. USDT's report said
+  // both about Arbitrum One in one message - an OFT Adapter with 7.3 million
+  // in it, and a line underneath explaining that there is no vault there.
+  //
+  // Both readings come from real contracts: the token's own address answers
+  // like a native OFT while a separate adapter locks collateral. But the
+  // claim is about the bridge on that chain, and the vault the report just
+  // printed settles it.
+  const chainsWithLayerZeroRow = new Set(
+    balances.filter((b) => b.protocol === "layerzero").map((b) => b.chainKey)
+  );
+  const nativeOftChains = claimedNativeOft.filter((c) => !chainsWithLayerZeroRow.has(c));
+
   const withLiquidity = balances.filter((b) => b.amount > 0n);
   const { unreachable, partial } = describeFailures(balances, failuresByChain, attemptsByChain);
 
