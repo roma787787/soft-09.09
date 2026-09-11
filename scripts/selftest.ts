@@ -1543,6 +1543,73 @@ check(
 );
 check("a LayerZero row holding zero is not pointed at either", !/строка LayerZero/.test(stargateNote([fakeBalance("ethereum", "layerzero", 0n)])));
 check("and the assets Stargate does have pools for are still named", /USDC/.test(stargateNote([])));
+// And it must not send anyone to a row that is not there: on a token where
+// nothing was found there is no LayerZero line to look at.
+check("with nothing found it says there is nothing to carry", /нечем/.test(stargateNote([])));
+
+// Two contracts of one bridge on one chain can carry the same note. USDT's
+// report showed "LayerZero (OFT Adapter) USDT0" twice on Ethereum, 3.1
+// billion against 25 million, with nothing to say which was which.
+const sameNoteAdapters = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [
+    { protocol: "layerzero", chainKey: "ethereum", custodyAddress: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee", tokenAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", note: "USDT0", amount: 3_186_119_993_856100n, decimals: 6 },
+    { protocol: "layerzero", chainKey: "ethereum", custodyAddress: "0x1234567890AbcdEF1234567890aBcdef12345678", tokenAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", note: "USDT0", amount: 25_258_466_654600n, decimals: 6 },
+  ],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 2 },
+});
+check("two rows sharing a note are told apart by address", sameNoteAdapters.includes("…7Fa41dee".slice(0, 7)) || /…[0-9a-fA-F]{6}/.test(sameNoteAdapters), sameNoteAdapters.slice(0, 400));
+check("and both amounts still appear", sameNoteAdapters.includes("3 186 119 993,8561") && sameNoteAdapters.includes("25 258 466,6546"));
+
+// A single row needs no address: the note alone is unambiguous, and a tail
+// on every line is noise.
+const loneNoteAdapter = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [
+    { protocol: "layerzero", chainKey: "ethereum", custodyAddress: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee", tokenAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", note: "USDT0", amount: 1n, decimals: 6 },
+    { protocol: "wormhole", chainKey: "ethereum", custodyAddress: "0x3ee18B2214AFF97000D974cf647E7C347E8fa585", tokenAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", amount: 2n, decimals: 6 },
+  ],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 2 },
+});
+check("a note that appears once carries no address tail", !/…[0-9a-fA-F]{6}/.test(loneNoteAdapter));
+
+// A chain's own coin has no contract address anywhere, and every lookup here
+// starts from one. SOL's report found a single route and said nothing about
+// why - which reads as a bot that failed rather than a question it cannot
+// ask that way.
+const nativeCoin = renderLiquidityReport({
+  symbol: "SOL",
+  name: "Solana",
+  balances: [fakeBalance("ethereum", "hyperlane", 74500000n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: { supportedChains: [], unsupportedPlatforms: [], byProtocol: { hyperlane: 1 }, noTokenAddresses: true },
+});
+check("a coin with no contract anywhere is explained", /собственная монета сети/.test(nativeCoin));
+check("and an ordinary token is not", !/собственная монета сети/.test(scopedWith(1, 1)));
+
+// "1 адаптер ... они не подтвердили" - the number disagreed with the verb.
+const oneSkipped = renderLiquidityReport({
+  symbol: "T", name: "Test",
+  balances: [fakeBalance("ethereum", "hyperlane", 1n)],
+  checkedCount: 1, failuresByChain: {}, attemptsByChain: { ethereum: 1 },
+  mismatchedAdapters: 1,
+});
+check("one skipped adapter reads in the singular", /он не подтвердил, что держит/.test(oneSkipped));
+const twoSkipped = renderLiquidityReport({
+  symbol: "T", name: "Test",
+  balances: [fakeBalance("ethereum", "hyperlane", 1n)],
+  checkedCount: 1, failuresByChain: {}, attemptsByChain: { ethereum: 1 },
+  mismatchedAdapters: 2,
+});
+check("and two in the plural", /они не подтвердили, что держат/.test(twoSkipped));
 // Without the caller vouching for what it asked, the report must not invent
 // a list of bridges it cannot stand behind.
 check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но своих хранилищ"));

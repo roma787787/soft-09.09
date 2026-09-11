@@ -240,6 +240,18 @@ export interface ReportInput {
     /** Why a checked bridge found nothing, where the reason is known. */
     notFoundNotes?: Partial<Record<BridgeProtocol, string>>;
     /**
+     * True when the price API lists no contract address for the token on any
+     * chain at all.
+     *
+     * A chain's own coin has no contract to have an address: SOL, and the
+     * report for it found one route and said nothing about why. Every lookup
+     * here starts from an address - which bridge holds THIS token on THIS
+     * chain - so with none the search has almost nothing to work with, and a
+     * report that does not say so reads as a bot that failed rather than a
+     * question it cannot ask that way.
+     */
+    noTokenAddresses?: boolean;
+    /**
      * True while the chain table is still being built.
      *
      * Discovery runs in the background and adds most of the long tail, so a
@@ -284,6 +296,13 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
     }
   }
 
+  if (scope.noTokenAddresses) {
+    lines.push(
+      "Адреса контракта у этого токена нет ни в одной сети — это собственная монета сети, а не токен. " +
+        "Бот ищет хранилища по адресу токена в каждой сети, поэтому спросить почти нечего: " +
+        "видно только мосты, которые сами называют свой маршрут."
+    );
+  }
   if (scope.supportedChains.length > 0) {
     lines.push(`CoinGecko знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
   }
@@ -325,6 +344,11 @@ function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
     `ℹ️ Токен есть в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
     "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя.",
   ];
+}
+
+/** The end of an address: enough to tell two rows apart at a glance. */
+function addressTail(address: string): string {
+  return address.length > 8 ? `…${address.slice(-6)}` : address;
 }
 
 function chainName(chainKey: string): string {
@@ -534,7 +558,13 @@ export function renderLiquidityReport(input: ReportInput): string {
   if (mismatchedAdapters > 0) {
     notes.push(
       `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
-        " LayerZero: они не подтвердили, что держат именно этот токен. Подробности: <code>/lzmesh</code>."
+        ` LayerZero: ${plural(
+          mismatchedAdapters,
+          "он не подтвердил, что держит",
+          "они не подтвердили, что держат",
+          "они не подтвердили, что держат"
+        )}` +
+        " именно этот токен. Подробности: <code>/lzmesh</code>."
     );
   }
 
@@ -646,6 +676,16 @@ export function renderLiquidityReport(input: ReportInput): string {
       const shown = protocolRows.slice(0, MAX_ROWS_PER_GROUP);
       const rest = protocolRows.slice(MAX_ROWS_PER_GROUP);
 
+      // Two contracts of one bridge on one chain can carry the same note:
+      // USDT's report showed "LayerZero (OFT Adapter) USDT0" twice on
+      // Ethereum, with 3.1 billion against 25 million, and nothing to say
+      // which was which. Where the note repeats, the end of the address is
+      // added - enough to tell them apart and to match against the link.
+      const noteCounts = new Map<string, number>();
+      for (const row of protocolRows) {
+        if (row.note) noteCounts.set(row.note, (noteCounts.get(row.note) ?? 0) + 1);
+      }
+
       for (const row of shown) {
         const explorer = chainMeta(chainKey)?.explorerAddressUrl(row.custodyAddress);
         // Escaped, not assumed safe: an amount is usually digits, but a
@@ -664,7 +704,9 @@ export function renderLiquidityReport(input: ReportInput): string {
         // chain - a live deployment beside a deprecated one, say - and three
         // identical labels in a row leave no way to tell which is which.
         // The note earns its place only then.
-        const tag = protocolRows.length > 1 && row.note ? ` <i>${esc(row.note)}</i>` : "";
+        const ambiguous = !!row.note && (noteCounts.get(row.note) ?? 0) > 1;
+        const label = ambiguous ? `${row.note} ${addressTail(row.custodyAddress)}` : row.note;
+        const tag = protocolRows.length > 1 && label ? ` <i>${esc(label)}</i>` : "";
         block.push(` - ${esc(BRIDGE_LABELS[protocol])}${tag}: <b>${amount}</b>${link}`);
       }
 

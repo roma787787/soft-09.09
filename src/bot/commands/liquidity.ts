@@ -221,7 +221,13 @@ export function stargateNote(balances: BalanceRow[] = []): string {
 
   const viaLayerZero = balances.filter((b) => b.protocol === "layerzero" && b.amount > 0n);
   if (viaLayerZero.length === 0) {
-    return `${own} Остальные токены его сайт возит контрактами LayerZero самого токена — они идут строкой LayerZero.`;
+    // Careful not to point at a row that is not there. "They come under the
+    // LayerZero line" is help when there is a LayerZero line and a puzzle
+    // when there is not - and there is not, on a token nothing found.
+    return (
+      `${own} Остальные токены его сайт возит контрактом LayerZero самого токена, ` +
+      "а такого контракта под этот тикер бот не нашёл — значит, и возить Stargate тут нечем."
+    );
   }
 
   // The biggest row, because that is the one a person is deciding against.
@@ -451,7 +457,10 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
         "",
         `Проверены все мосты, которые бот знает: ${BRIDGE_ORDER.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} — ` +
           "ни один из них не держит контракта под этот тикер.",
-        stargateNote()
+        // Labelled like every other bridge's note. Unlabelled it started a
+        // line with a lowercase "своих пулов", reading as a sentence the
+        // report had lost the beginning of.
+        `Stargate: ${stargateNote()}`
       );
     }
     return lines.join("\n");
@@ -531,6 +540,10 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     scope: {
       supportedChains: [...supportedChains, ...solanaLabel],
       unsupportedPlatforms,
+      // Said out loud, because the alternative reads as a failure. A chain's
+      // own coin has no contract address anywhere, and every lookup here
+      // starts from one.
+      noTokenAddresses: token.platforms.length === 0 && token.otherPlatforms.length === 0,
       byProtocol: countByProtocol(scoped, solanaRows),
       // Every bridge above is asked on every report, so the ones that
       // contributed nothing were asked too, and saying so is the difference
