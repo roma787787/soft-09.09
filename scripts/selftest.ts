@@ -1484,6 +1484,30 @@ check(
 check("a named escrow counts as locking collateral despite the OFT type", penguSolana[0]?.locksCollateral === true);
 check("a chain with no entry yields nothing", extractNonEvmDeployments(penguRegistry, "aptos").length === 0);
 
+// Aptos, verbatim from /lzprobe aptos. Four adapters, all locking, and the
+// address is a bare object address - no "::" - so the balance is asked for
+// as a fungible asset rather than as a coin. Nothing here is EVM-shaped, so
+// the EVM reader drops all four and always did.
+const aptosRegistry = [
+  {
+    deployments: {
+      aptos: { address: "0xa84a503845236bbb2fc83693cfb25ee4f5dc31e078131c38de8c7d27b65d3243", type: "NATIVE_OFT_ADAPTER" },
+    },
+  },
+];
+const aptosDeployments = extractNonEvmDeployments(aptosRegistry, "aptos");
+check("an Aptos deployment is found", aptosDeployments.length === 1);
+// NATIVE_OFT_ADAPTER locks the chain's own coin; OFT_ADAPTER locks a token.
+// Both hold something, and both have to survive the locking filter or the
+// chain contributes nothing however well it is read.
+check("a native adapter still counts as locking", aptosDeployments[0]?.locksCollateral === true);
+check(
+  "and so does a plain one",
+  extractNonEvmDeployments([{ deployments: { aptos: { address: "0x96", type: "OFT_ADAPTER" } } }], "aptos")[0]
+    ?.locksCollateral === true
+);
+check("the EVM reader still drops it, as it must", extractDeployments(aptosRegistry).length === 0);
+
 const penguEscrows = svmEscrows(penguSolana);
 check("the escrow is paired with the mint it holds", penguEscrows.length === 1);
 check("the account read is the escrow", penguEscrows[0]?.escrow === "8qytKBooPvD4Q7vdrKnjKmiweShS4D5mPzsgQc6HqgvX");
@@ -1506,7 +1530,7 @@ const tally = tallyDeploymentsByChain({
       deployments: {
         ethereum: { address: "0x1", type: "OFTAdapter" },
         solana: { address: "Ao", type: "OFT", details: { escrowTokenAccount: "Es" } },
-        aptos: { address: "0x2", type: "OFT" },
+        injective: { address: "inj1", type: "OFT" },
       },
     },
   ],
@@ -1515,15 +1539,24 @@ const byKey = (key: string) => tally.find((t) => t.lzChainKey === key);
 check("every chain in the registry is counted", byKey("ethereum")?.deployments === 2);
 check("a locking deployment is counted as such", byKey("ethereum")?.locking === 1);
 check("a published escrow counts as locking", byKey("solana")?.locking === 2);
-check("a minting deployment is not counted as locking", byKey("aptos")?.locking === 0);
+check("a minting deployment is not counted as locking", byKey("injective")?.locking === 0);
 check("chains are ordered by how much sits on them", tally[0].deployments >= tally[tally.length - 1].deployments);
 
 const gaps = gapsFrom(tally);
 check("a chain with a reader is not a gap", !gaps.some((g) => g.lzChainKey === "solana"));
 check("and neither is an EVM one", !gaps.some((g) => g.lzChainKey === "ethereum"));
-// Aptos the bot knows - Wormhole reads it - but nothing reads what LayerZero
-// locks there, which is the distinction the command exists to draw.
-check("a chain read by another bridge is still a LayerZero gap", gaps.some((g) => g.lzChainKey === "aptos"));
+// Aptos has its own LayerZero reader now, so it is no longer a gap - but it
+// stopped being one once before without being fixed, by being mis-filed
+// under Ethereum, so which of the two it is gets asserted rather than
+// inferred from its absence.
+check("a chain with its own reader is named by that reader", classifyChain({ lzChainKey: "aptos", deployments: 4, locking: 4 }).reader === "aptos");
+check("and is therefore not a gap", !gaps.some((g) => g.lzChainKey === "aptos"));
+// A chain the bot knows through Hyperlane alone is still a LayerZero gap,
+// which is the distinction the command exists to draw.
+check(
+  "a chain read by another bridge is still a LayerZero gap",
+  classifyChain({ lzChainKey: "injective", deployments: 1, locking: 1 }).reader === "нет"
+);
 check("a gap the bot has no chain for is named as such", classifyChain({ lzChainKey: "sui", deployments: 3, locking: 3 }).reader === "сеть неизвестна");
 check("gaps lead with the ones holding collateral", gaps.every((g, i) => i === 0 || gaps[i - 1].locking >= g.locking));
 

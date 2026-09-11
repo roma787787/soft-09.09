@@ -150,7 +150,7 @@ export function aptosCalls(token: string, custody: string): Array<{ balance: unk
   return token.includes("::") ? [asCoin, asFungible] : [asFungible, asCoin];
 }
 
-async function readAptos(
+export async function readAptos(
   chainKey: string,
   token: string,
   custody: string

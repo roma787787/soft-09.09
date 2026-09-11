@@ -29,7 +29,7 @@ function esc(s: string): string {
  * which no LayerZero reader covered - and nothing in any report could have
  * said so.
  */
-export type LzReader = "evm" | "svm" | "ton" | "нет" | "сеть неизвестна";
+export type LzReader = "evm" | "svm" | "ton" | "aptos" | "нет" | "сеть неизвестна";
 
 export interface ChainCoverage extends RegistryChainUse {
   label: string;
@@ -54,9 +54,12 @@ export function classifyChain(
     return { ...use, label: TON_CHAIN.label, reader: "ton" };
   }
 
+  const portal = resolvePortalChain(name);
+  if (portal?.key === "aptos") return { ...use, label: portal.label, reader: "aptos" };
+
   // Known to the bot, but only through some other bridge. Wormhole reads
-  // Aptos and Near; nothing reads what LayerZero locks there.
-  const known = resolveCosmosChain(name) ?? resolveOtherChain(name) ?? resolvePortalChain(name);
+  // Near; nothing reads what LayerZero locks there.
+  const known = resolveCosmosChain(name) ?? resolveOtherChain(name) ?? portal;
   if (known) return { ...use, label: known.label, reader: "нет" };
 
   return { ...use, label: name, reader: "сеть неизвестна" };
@@ -99,7 +102,8 @@ export function registerLzGapsCommand(bot: Telegraf) {
       `Читаются: ${covered.length} ${covered.length === 1 ? "сеть" : "сетей"} ` +
         `(EVM — ${all.filter((c) => c.reader === "evm").length}, ` +
         `VM Solana — ${all.filter((c) => c.reader === "svm").length}, ` +
-        `TON — ${all.filter((c) => c.reader === "ton").length}).`,
+        `TON — ${all.filter((c) => c.reader === "ton").length}, ` +
+        `Aptos — ${all.filter((c) => c.reader === "aptos").length}).`,
     ];
 
     if (gaps.length === 0) {

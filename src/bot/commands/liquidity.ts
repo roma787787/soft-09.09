@@ -13,6 +13,7 @@ import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians, stargateCoverage } from "../../bridges/stargate";
 import { findSvmBalances, findLayerZeroSvmBalances } from "../../bridges/svm";
+import { findLayerZeroAptosBalances } from "../../bridges/lzAptos";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
@@ -290,11 +291,20 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     .filter((p) => p.chainKey && !!getPortalChain(p.chainKey))
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
 
-  const [svmRead, lzSvmRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
+  // The same map the Token Bridge read uses: on Aptos the question is which
+  // token to ask about, and the price API is what answers it.
+  const portalTokenByChain = new Map(portalTokens.map((p) => [p.chainKey, p.tokenAddress]));
+
+  const [svmRead, lzSvmRead, lzAptosRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
     // The registry names both the mint and the escrow account, so this needs
     // nothing from CoinGecko - and works on an SVM chain it never listed.
     !chainFilter || !!getSvmChain(chainFilter) ? findLayerZeroSvmBalances(symbol) : empty,
+    // Four adapters on Aptos lock collateral, and until now the only reader
+    // that chain had was Wormhole's.
+    !chainFilter || !!getPortalChain(chainFilter)
+      ? findLayerZeroAptosBalances(symbol, portalTokenByChain)
+      : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
@@ -311,6 +321,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const nonEvmReads: Array<NonEvmReadResult<BalanceRow>> = [
     svmRead,
     lzSvmRead,
+    lzAptosRead,
     cosmosRead,
     nativeRead,
     otherRead,
