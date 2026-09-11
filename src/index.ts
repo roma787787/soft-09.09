@@ -4,6 +4,7 @@ import { CHAINS } from "./config/chains";
 import { createBot } from "./bot";
 import { startTracker } from "./services/tracker";
 import { startChainDiscovery } from "./services/chainDiscovery";
+import { startRpcHealth } from "./services/rpcHealth";
 import "./services/db"; // ensure schema is created on boot
 
 async function main() {
@@ -17,11 +18,15 @@ async function main() {
   // Not awaited: a slow or rate-limited token API would delay the bot
   // answering at all, and what discovery adds is the long tail.
   const stopDiscovery = startChainDiscovery();
+  // Measures which nodes answer and puts those first. Also not awaited: the
+  // bot works on the registries' order until the first measurement lands.
+  const stopRpcHealth = startRpcHealth();
 
   const shutdown = (signal: string) => {
     console.log(`[shutdown] received ${signal}`);
     stopTracker();
     stopDiscovery();
+    stopRpcHealth();
     bot.stop(signal);
     process.exit(0);
   };

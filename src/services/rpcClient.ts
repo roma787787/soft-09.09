@@ -1,6 +1,6 @@
 import { createPublicClient, fallback, http, type PublicClient } from "viem";
 import { CHAINS, getChain } from "../config/chains";
-import { rpcUrlsFor } from "../config/env";
+import { orderedRpcUrls, onHealthChanged } from "./rpcHealth";
 
 const clients = new Map<string, PublicClient>();
 
@@ -40,7 +40,11 @@ export function getClient(chainKey: string): PublicClient {
   // five alternates behind the one that matters - and a node that needs
   // more than six seconds for one call cannot serve the dozen a bridge
   // sweep asks it anyway.
-  const transports = rpcUrlsFor(chainKey)
+  // Ordered by what the endpoints actually did, not by what the registries
+  // listed. The fallback walks them in order and pays a full timeout for
+  // each one that does not answer, so a dead node in first place is a tax on
+  // every read of that chain.
+  const transports = orderedRpcUrls(chainKey)
     .slice(0, MAX_ENDPOINTS_PER_CHAIN)
     .map((url) => http(url, { timeout: 6_000, retryCount: 0 }));
 
@@ -51,6 +55,10 @@ export function getClient(chainKey: string): PublicClient {
   clients.set(chainKey, client);
   return client;
 }
+
+// Rebuilt when the measurements change: a client holds the order it was
+// created with, and that order is the thing being improved.
+onHealthChanged(() => clients.clear());
 
 export function allChainKeysWithClients(): string[] {
   return CHAINS.map((c) => c.key);

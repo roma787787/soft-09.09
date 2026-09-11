@@ -22,6 +22,7 @@ import {
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
+import { orderEndpoints } from "../src/services/rpcHealth";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -1727,6 +1728,56 @@ check("a chain with supply but no custody is named", withSupplyOnly.includes("Ro
 check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
+// Endpoint order decides how long a read waits before it succeeds. viem's
+// fallback walks the list and pays a full timeout for each node that does
+// not answer, so a dead node in first place is a tax on every read of that
+// chain - Kroma lists five endpoints and the first is a hostname that no
+// longer resolves.
+const fast = { ok: true, ms: 100, at: 0 };
+const slow = { ok: true, ms: 900, at: 0 };
+const dead = { ok: false, ms: 5000, at: 0 };
+const measured: Record<string, typeof fast> = {
+  "https://dead.example": dead,
+  "https://slow.example": slow,
+  "https://fast.example": fast,
+};
+const look = (u: string) => measured[u];
+
+check(
+  "a dead node goes last",
+  orderEndpoints(["https://dead.example", "https://fast.example"], false, look).join() ===
+    "https://fast.example,https://dead.example"
+);
+check(
+  "and the quickest that answered goes first",
+  orderEndpoints(["https://slow.example", "https://fast.example"], false, look)[0] ===
+    "https://fast.example"
+);
+check(
+  "an unmeasured node outranks a dead one but not a live one",
+  orderEndpoints(
+    ["https://dead.example", "https://unknown.example", "https://fast.example"],
+    false,
+    look
+  ).join() === "https://fast.example,https://unknown.example,https://dead.example"
+);
+// Someone paid for a configured RPC; one slow probe must not demote it
+// behind a public node. That is the bot overruling its operator.
+check(
+  "a configured RPC stays first even when measured slow",
+  orderEndpoints(["https://slow.example", "https://fast.example"], true, look)[0] ===
+    "https://slow.example"
+);
+check("a single endpoint is left alone", orderEndpoints(["https://only.example"], false, look).length === 1);
+check("and an empty list does not throw", orderEndpoints([], false, look).length === 0);
+// Unmeasured nodes keep the order the registries gave, which is their own
+// ranking and better than nothing.
+check(
+  "unmeasured nodes keep the registries' order",
+  orderEndpoints(["https://a.example", "https://b.example", "https://c.example"], false, () => undefined).join() ===
+    "https://a.example,https://b.example,https://c.example"
+);
+
 // A native pool's precision comes from the chain, not from a constant. It
 // was hardcoded to 18 on the grounds that every chain carrying one used 18 -
 // true of a table kept by hand, and not something a discovered table can

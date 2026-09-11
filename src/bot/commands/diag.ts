@@ -4,6 +4,7 @@ import { hasCustomRpc, rpcUrlsFor } from "../../config/env";
 import { MAX_ENDPOINTS_PER_CHAIN } from "../../services/rpcClient";
 import { plural, capToTelegramLimit } from "../render";
 import { mapWithConcurrency } from "../../services/concurrency";
+import { healthSummary } from "../../services/rpcHealth";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -294,6 +295,19 @@ export function registerDiagCommand(bot: Telegraf) {
     // not broken, it is one refusal away from being broken - and a chain
     // that drops out of a report reads as "no liquidity here" rather than as
     // a node that said no.
+    // What the measured ordering is doing right now. A chain whose first
+    // listed node is dead used to pay a full timeout on every read before
+    // reaching a working one; this says how many are no longer paying it.
+    const ordering = healthSummary();
+    if (ordering.measured > 0) {
+      footer += `\n\nУзлы измерены: ${ordering.alive} из ${ordering.measured} отвечают.`;
+      if (ordering.chainsWithDeadFirst > 0) {
+        footer +=
+          ` У ${ordering.chainsWithDeadFirst} ${plural(ordering.chainsWithDeadFirst, "сети", "сетей", "сетей")} ` +
+          `первый узел в списке мёртв — бот ходит не к нему.`;
+      }
+    }
+
     const fragile = ok.filter((h) => h.alive === 1 && !h.custom);
     if (fragile.length > 0) {
       footer +=
