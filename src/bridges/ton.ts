@@ -27,7 +27,22 @@ const TIMEOUT_MS = 12_000;
  * problem in one sentence.
  */
 const ATTEMPTS = 3;
-const BACKOFF_MS = 700;
+
+/**
+ * Above a second, because the limit being waited out is about one request a
+ * second. Seven hundred milliseconds was a polite way of being refused
+ * twice more.
+ */
+const BACKOFF_MS = 1_200;
+
+/**
+ * How long to leave between requests of one read.
+ *
+ * A read asks for the adapter's wallets and then for each jetton's
+ * decimals. Fired together they are two requests in the same instant, which
+ * is exactly one more than the free tier allows.
+ */
+const SPACING_MS = 1_100;
 
 /** Jetton wallets read per adapter. An adapter normally owns one. */
 const MAX_WALLETS = 20;
@@ -45,6 +60,16 @@ export interface TonBalanceRow {
 /** The last thing the index said, so a failure can explain itself. */
 let lastFailure: string | undefined;
 
+/**
+ * A jetton's decimals and symbol, kept for the life of the process.
+ *
+ * They are a property of the token, not of the moment, and re-asking for
+ * them is what spends a rate limit that has to cover the balance itself.
+ */
+const masterCache = new Map<string, { decimals: number; symbol?: string }>();
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function getJson(url: string): Promise<any | undefined> {
   const headers: Record<string, string> = { Accept: "application/json" };
   // A free key raises the limit from roughly one request a second to
@@ -58,7 +83,11 @@ async function getJson(url: string): Promise<any | undefined> {
       if (response.ok) return await response.json();
       lastFailure =
         response.status === 429
-          ? `индекс TON ответил 429 — лимит запросов${env.tonApiKey ? "" : " (ключ TON_API_KEY не задан)"}`
+          ? `индекс TON ответил 429 — лимит запросов${
+              env.tonApiKey
+                ? ", попробуйте через минуту"
+                : ". Лечится бесплатным ключом: toncenter.com → API key, затем переменная TON_API_KEY"
+            }`
           : `индекс TON ответил HTTP ${response.status}`;
       // Only a refusal is worth repeating. A 404 will be a 404 next time.
       if (response.status !== 429 && response.status < 500) return undefined;
@@ -68,9 +97,7 @@ async function getJson(url: string): Promise<any | undefined> {
         (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 80)
       }`;
     }
-    if (attempt < ATTEMPTS - 1) {
-      await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS * (attempt + 1)));
-    }
+    if (attempt < ATTEMPTS - 1) await wait(BACKOFF_MS * (attempt + 1));
   }
   return undefined;
 }
@@ -173,16 +200,28 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
     // one wallet, and then there is nothing to choose; where it owns several,
     // the jetton's own symbol decides, because picking the largest balance
     // would answer a different question than the one asked.
-    const described = await Promise.all(
-      holdings.map(async (h) => {
-        for (const base of bases()) {
-          const meta = parseJettonMaster(await getJson(`${base}/jetton/masters?address=${encodeURIComponent(h.jetton)}&limit=1`));
-          if (meta) return { ...h, ...meta };
+    // One at a time, with a gap. Asked together these are several requests
+    // in the same instant, and the free tier allows about one a second - so
+    // the parallel version spent its whole allowance on being refused.
+    const known: Array<JettonHolding & { decimals: number; symbol?: string }> = [];
+    for (const h of holdings) {
+      const cached = masterCache.get(h.jetton);
+      if (cached) {
+        known.push({ ...h, ...cached });
+        continue;
+      }
+      for (const base of bases()) {
+        await wait(SPACING_MS);
+        const meta = parseJettonMaster(
+          await getJson(`${base}/jetton/masters?address=${encodeURIComponent(h.jetton)}&limit=1`)
+        );
+        if (meta) {
+          masterCache.set(h.jetton, meta);
+          known.push({ ...h, ...meta });
+          break;
         }
-        return undefined;
-      })
-    );
-    const known = described.filter((d): d is JettonHolding & { decimals: number; symbol?: string } => !!d);
+      }
+    }
 
     const matching =
       known.length === 1
