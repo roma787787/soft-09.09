@@ -147,6 +147,7 @@ import { SVM_CHAINS, resolveSvmChain } from "./svmChains";
 import { COSMOS_CHAINS, resolveCosmosChain } from "./cosmosChains";
 import { OTHER_CHAINS, resolveOtherChain } from "./otherChains";
 import { PORTAL_CHAINS, resolvePortalChain } from "./portalChains";
+import { TON_CHAIN } from "./tonChain";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -1890,6 +1891,10 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
   const portal = PORTAL_CHAINS.find((c) => c.key === chainKey);
   if (portal) return { label: portal.label, explorerAddressUrl: portal.explorerAddressUrl };
 
+  if (chainKey === TON_CHAIN.key) {
+    return { label: TON_CHAIN.label, explorerAddressUrl: TON_CHAIN.explorerAddressUrl };
+  }
+
   return undefined;
 }
 
@@ -1917,6 +1922,11 @@ export function resolveAnyChain(name: string): { key: string; label: string } | 
 
   const portal = resolvePortalChain(name);
   if (portal) return { key: portal.key, label: portal.label };
+
+  const wanted = name.trim().toLowerCase();
+  if (TON_CHAIN.key === wanted || (TON_CHAIN.aliases as readonly string[]).includes(wanted)) {
+    return { key: TON_CHAIN.key, label: TON_CHAIN.label };
+  }
 
   return undefined;
 }

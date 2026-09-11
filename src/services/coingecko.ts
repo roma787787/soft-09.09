@@ -8,6 +8,7 @@ import { SVM_CHAINS } from "../config/svmChains";
 import { COSMOS_CHAINS } from "../config/cosmosChains";
 import { OTHER_CHAINS } from "../config/otherChains";
 import { PORTAL_CHAINS } from "../config/portalChains";
+import { TON_CHAIN } from "../config/tonChain";
 
 export class TokenSourceNotConfiguredError extends Error {}
 export class TokenSourceRequestError extends Error {}
@@ -138,6 +139,12 @@ export function resolveNonEvmPlatform(
   for (const list of [SVM_CHAINS, COSMOS_CHAINS, OTHER_CHAINS, PORTAL_CHAINS]) {
     const hit = list.find((c) => matchesByName(candidates, c));
     if (hit) return hit.key;
+  }
+
+  // TON carries no chain table of its own - one chain, one bridge - so it
+  // is matched here directly rather than through a list of one.
+  if (matchesByName(candidates, { ...TON_CHAIN, aliases: [...TON_CHAIN.aliases], platformNames: [...TON_CHAIN.platformNames] })) {
+    return TON_CHAIN.key;
   }
 
   // And the EVM table last, for the chain that sits in it without EVM

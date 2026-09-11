@@ -27,6 +27,8 @@ import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
+import { toTonAddress } from "../src/config/tonChain";
+import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
@@ -53,6 +55,8 @@ import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
+import { toTonAddress } from "../src/config/tonChain";
+import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
@@ -387,9 +391,46 @@ check("and so do the chains that always did", resolveNonEvmPlatform(undefined, "
 // registry rather than from anything typed here.
 check("Near is read through Portal", resolveNonEvmPlatform(undefined, "near-protocol") === "near");
 check("and so is Aptos", resolveNonEvmPlatform(undefined, "aptos") === "aptos");
+// TON is read too: LayerZero lists four adapters there and all of them lock
+// what they carry, which is what this bot measures.
+check("TON resolves through its LayerZero adapters", resolveNonEvmPlatform(undefined, "ton") === "ton");
+
+// TON writes an address as workchain and hash together, and the registry
+// gives only the hash. Workchain 0 is the basechain, where ordinary
+// contracts live; -1 is the masterchain, which carries validators and
+// configuration, not jettons.
+check(
+  "a registry hash becomes a TON address",
+  toTonAddress("0x1ddf580052174ed1dd0d66c35bfdc1a5fcc69af4f4ae36154b13dcfc6c14a35f") ===
+    "0:1ddf580052174ed1dd0d66c35bfdc1a5fcc69af4f4ae36154b13dcfc6c14a35f"
+);
+check("an EVM address is not one", toTonAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7") === undefined);
+check("and neither is nonsense", toTonAddress("тьфу") === undefined);
+
+// A jetton balance lives in a wallet contract owned by the holder, not in
+// the holder itself, so what comes back is a list of wallets.
+const wallets = parseJettonWallets({
+  jetton_wallets: [
+    { address: "0:aaa", balance: "1500000", jetton: "0:master1", owner: "0:owner" },
+    { address: "0:bbb", balance: "не число", jetton: "0:master2" },
+    { address: "0:ccc", jetton: "0:master3" },
+  ],
+});
+check("a jetton holding is read", wallets.length === 1 && wallets[0].balance === 1_500_000n);
+check("a balance that is not digits is dropped", !wallets.some((w) => w.jetton === "0:master2"));
+check("and so is a wallet with no balance at all", !wallets.some((w) => w.jetton === "0:master3"));
+check("an unparseable answer is not a crash", parseJettonWallets("тьфу").length === 0);
+
+// TON's metadata standard stores decimals as a string, and lets a jetton
+// omit them - the standard's default is nine, and guessing eighteen would
+// report a billion times too little.
+check("decimals arrive as a string", parseJettonMaster({ jetton_masters: [{ jetton_content: { decimals: "6", symbol: "USD₮" } }] })?.decimals === 6);
+check("a jetton without them gets the standard's default", parseJettonMaster({ jetton_masters: [{ jetton_content: {} }] })?.decimals === 9);
+check("an absurd value is refused", parseJettonMaster({ jetton_masters: [{ jetton_content: { decimals: "999" } }] }) === undefined);
+check("and an empty answer is not a zero", parseJettonMaster({ jetton_masters: [] }) === undefined);
 check(
   "while a chain no registry describes still resolves to nothing",
-  ["tezos", "ton", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
+  ["tezos", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
 );
 // The custody address is derived, not written down - a chain Wormhole stops
 // naming a Token Bridge for drops out of the table instead of being read at

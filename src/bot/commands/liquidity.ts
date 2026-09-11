@@ -16,6 +16,9 @@ import { findSvmBalances } from "../../bridges/svm";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
+import { findTonBalances } from "../../bridges/ton";
+import type { NonEvmReadResult } from "../../bridges/types";
+import { TON_CHAIN } from "../../config/tonChain";
 import { getPortalChain } from "../../config/portalChains";
 import { BRIDGE_ORDER, type BridgeProtocol } from "../../bridges/types";
 import {
@@ -30,7 +33,7 @@ import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import type { Custodian } from "../../bridges/types";
 import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
-import { readChainSupplies, readCustodianBalances } from "../../services/balances";
+import { readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
 import { renderLiquidityReport } from "../render";
 
 function esc(s: string): string {
@@ -270,7 +273,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     .filter((p) => p.chainKey && !!getPortalChain(p.chainKey))
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
 
-  const [svmRead, cosmosRead, nativeRead, otherRead, portalRead] = await Promise.all([
+  const [svmRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
@@ -278,10 +281,20 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     !chainFilter || !!getPortalChain(chainFilter)
       ? findPortalNonEvmBalances(portalTokens)
       : empty,
+    !chainFilter || chainFilter === TON_CHAIN.key ? findTonBalances(symbol) : empty,
   ]);
 
-  const nonEvmReads = [svmRead, cosmosRead, nativeRead, otherRead, portalRead];
-  const nonEvmAll = nonEvmReads.flatMap((r) => r.rows);
+  // Typed as the rows a report renders, not as any one reader's own row:
+  // each family names the bridge it read, and they are different bridges.
+  const nonEvmReads: Array<NonEvmReadResult<BalanceRow>> = [
+    svmRead,
+    cosmosRead,
+    nativeRead,
+    otherRead,
+    portalRead,
+    tonRead,
+  ];
+  const nonEvmAll: BalanceRow[] = nonEvmReads.flatMap((r) => r.rows);
 
   // A chain that could not be reached must be named, not silently absent:
   // Radix's gateways are nine days behind, and a report that just omits the

@@ -248,6 +248,60 @@ export async function findLayerZeroRegistryDeployments(symbol: string): Promise<
   return found;
 }
 
+export interface NonEvmDeployment {
+  /** The registry's own name for the chain, unresolved. */
+  lzChainKey: string;
+  /** As written in the registry: not every chain uses hex addresses. */
+  address: string;
+  rawType: string;
+  locksCollateral: boolean;
+  viaAlias?: string;
+}
+
+/**
+ * Registry deployments on a chain the EVM path throws away.
+ *
+ * extractDeployments keeps only hex addresses on chains that resolve to EVM
+ * ones, which is right for what it feeds but means a TON or Sui deployment
+ * never surfaces. This returns them as written, for readers that know how to
+ * ask those chains - TON's adapters are 32-byte hashes, not EVM addresses,
+ * and its four deployments all lock collateral.
+ */
+export async function findRegistryDeploymentsOnChain(
+  symbol: string,
+  chainQuery: string
+): Promise<NonEvmDeployment[]> {
+  const registry = await fetchOftRegistry();
+  if (!registry) return [];
+
+  const wanted = symbol.toUpperCase();
+  const wantedChain = chainQuery.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const found: NonEvmDeployment[] = [];
+
+  const collect = (entries: unknown, viaAlias?: string) => {
+    if (!Array.isArray(entries)) return;
+    for (const entry of entries as Array<{ deployments?: Record<string, { address?: unknown; type?: unknown }> }>) {
+      for (const [lzChainKey, deployment] of Object.entries(entry?.deployments ?? {})) {
+        if (lzChainKey.toLowerCase().replace(/[^a-z0-9]/g, "") !== wantedChain) continue;
+        const address = deployment?.address;
+        if (typeof address !== "string" || !address) continue;
+        const rawType = String(deployment?.type ?? "");
+        found.push({
+          lzChainKey,
+          address,
+          rawType: rawType || "неизвестно",
+          locksCollateral: /adapter|lockbox|proxy/i.test(rawType),
+          viaAlias,
+        });
+      }
+    }
+  };
+
+  collect(registry[wanted] ?? registry[symbol]);
+  for (const key of aliasKeysFor(wanted, Object.keys(registry))) collect(registry[key], key);
+  return found;
+}
+
 /**
  * Registry keys that plausibly hold the same token under a different name.
  *

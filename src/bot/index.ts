@@ -17,6 +17,7 @@ import { registerSvmCommand } from "./commands/svm";
 import { registerCosmosCommand } from "./commands/cosmos";
 import { registerOtherCommand } from "./commands/other";
 import { registerPortalCommand } from "./commands/portal";
+import { registerTonCommand } from "./commands/ton";
 import { registerLzProbeCommand } from "./commands/lzprobe";
 
 export function createBot(): Telegraf {
@@ -44,6 +45,7 @@ export function createBot(): Telegraf {
   registerCosmosCommand(bot);
   registerOtherCommand(bot);
   registerPortalCommand(bot);
+  registerTonCommand(bot);
   registerLzProbeCommand(bot);
 
   bot.catch((err, ctx) => {

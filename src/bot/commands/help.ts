@@ -43,12 +43,13 @@ function helpText(): string {
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
 <code>/portal &lt;тикер&gt;</code> — то же для Near и Aptos, где единственный мост — Portal.
+<code>/ton &lt;тикер&gt;</code> — то же для TON, где единственный мост — LayerZero.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
 <code>/gecko</code> — работает ли ключ CoinGecko и сколько квоты осталось.
 <code>/lzprobe &lt;тикер|сеть&gt;</code> — сырой ответ реестра LayerZero: по тикеру или по сети.
 
-Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length + PORTAL_CHAINS.length} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
+Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length + PORTAL_CHAINS.length + 1} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
 
 <b>Откуда берутся адреса хранилищ:</b>
 • Wormhole — фиксированный Token Bridge на каждую сеть, зашит в бот
