@@ -214,13 +214,18 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
       holdings = parseJettonWallets(body);
       if (holdings.length > 0) break;
 
-      // A body that came back whole and still has no wallets in it is a
-      // different fact from a refusal, and the two were reported the same
-      // way. Naming what did arrive is the only thing that tells them
-      // apart - a key pointed at the wrong service answers 200 all day.
-      if (body !== undefined && !Array.isArray((body as { jetton_wallets?: unknown }).jetton_wallets)) {
-        lastFailure = `индекс ответил без поля jetton_wallets: ${describeBody(body)}`;
-      }
+      // Every way this can end has to say which way it was. A body that
+      // arrived whole and held no wallets is a different fact from a
+      // refusal, and an empty list is a different fact again - that one is
+      // the index saying the adapter owns nothing, which may be true.
+      // Reported identically, they are indistinguishable from each other
+      // and from a key pointed at the wrong service, which answers 200 all
+      // day long.
+      if (body === undefined) continue;
+      const listed = (body as { jetton_wallets?: unknown }).jetton_wallets;
+      lastFailure = Array.isArray(listed)
+        ? `индекс вернул пустой список кошельков для этого адреса`
+        : `индекс ответил без поля jetton_wallets: ${describeBody(body)}`;
     }
 
     if (holdings.length === 0) {

@@ -463,6 +463,14 @@ check("an unfamiliar shape lists its fields", describeBody({ ok: true, result: [
 check("an empty object says so", describeBody({}) === "пустой объект");
 check("and nothing at all says so", describeBody(undefined) === "пусто");
 check("an HTML page is not mistaken for data", describeBody("<!DOCTYPE html>").startsWith("<!DOCTYPE"));
+// An empty list is the index saying the adapter owns nothing, which may
+// simply be true - a third state, and it has to be distinguishable from
+// both a refusal and an answer nobody could parse.
+check("an empty wallet list parses to nothing held", parseJettonWallets({ jetton_wallets: [] }).length === 0);
+check(
+  "and so does a body with no such field, for a different reason",
+  parseJettonWallets({ ok: true }).length === 0
+);
 check(
   "while a chain no registry describes still resolves to nothing",
   ["tezos", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)
