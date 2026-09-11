@@ -1745,6 +1745,76 @@ const noSupplyOnly = renderLiquidityReport({
   supplyOnly: [],
 });
 check("and it is silent when there is nothing to report", !noSupplyOnly.includes("ни один отслеживаемый мост"));
+
+// The real answer to the customer's question, and it was in the bot all
+// along. PENGU's report said it had checked seven contracts and showed one.
+// The other six were on four chains that were read, came back empty, and
+// were never named - the blocks are built from rows that have a balance, so
+// a chain with nothing left in it produced no block, and the "пусто" line
+// only ever printed inside a block that already existed.
+const zeroRow = (chainKey: string, protocol: "wormhole" | "across") => ({
+  protocol,
+  chainKey,
+  custodyAddress: PORTAL_ETH,
+  tokenAddress: TOKEN,
+  amount: 0n,
+  decimals: 18,
+});
+const withEmptyChains = renderLiquidityReport({
+  symbol: "PENGU",
+  name: "Pudgy Penguins",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 2_067n * 10n ** 18n,
+      decimals: 18,
+    },
+    zeroRow("bsc", "wormhole"),
+    zeroRow("bsc", "across"),
+    zeroRow("robinhood", "across"),
+  ],
+  checkedCount: 4,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["abstract"],
+});
+check("a chain read and found empty is named", withEmptyChains.includes("Robinhood Chain"));
+check("with the bridge that was empty", /Robinhood Chain \(Across\)/.test(withEmptyChains));
+check("and several bridges are listed together", /BNB Chain \(Wormhole, Across\)/.test(withEmptyChains));
+check(
+  "and the reader is told the route exists but is empty",
+  withEmptyChains.includes("выводить оттуда нечего")
+);
+check(
+  "a chain that still holds something is not called empty",
+  !/Ethereum \(/.test(withEmptyChains)
+);
+// A minted-side chain has no custody contract by construction, and it was
+// mentioned only in reports that found nothing anywhere.
+check("an omnichain chain is named even when liquidity was found", withEmptyChains.includes("Abstract"));
+check("the report stays valid HTML", tagsBalanced(withEmptyChains));
+
+const nothingCalledEmpty = renderLiquidityReport({
+  symbol: "X",
+  name: "X",
+  balances: [
+    {
+      protocol: "hyperlane",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 1n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+});
+check("and nothing is claimed empty when nothing was", !nothingCalledEmpty.includes("хранилища пусты"));
 // Two-letter tickers must not count as variants of each other. "AAA" sorts
 // first, so it can only lose here if "OP" was wrongly treated as a variant
 // of "OPX" - which is the whole thing being guarded against.

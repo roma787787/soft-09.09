@@ -373,6 +373,43 @@ export function renderLiquidityReport(input: ReportInput): string {
         " LayerZero: они не подтвердили, что держат именно этот токен. Подробности: <code>/lzmesh</code>."
     );
   }
+
+  // Chains whose every contract answered zero.
+  //
+  // They vanished: the blocks are built from the rows that have a balance, so
+  // a chain with nothing left in it produced no block, and the "пусто" line
+  // only ever printed inside a block that already existed. A PENGU report
+  // said it had checked seven contracts and showed one - the other six were
+  // on four chains that were read, came back empty, and were never named.
+  // Asked plainly by the customer: does this say whether there are tokens on
+  // Robinhood Chain or not? It did not, and it had the answer.
+  //
+  // For a report about whether funds can be withdrawn, this is the most
+  // useful sentence available: the route is there, and it is empty.
+  const emptyOnly = [...emptyByChain.entries()].filter(([chainKey]) => !byChain.has(chainKey));
+  if (emptyOnly.length > 0) {
+    const described = emptyOnly.map(
+      ([chainKey, protocols]) =>
+        `${esc(chainName(chainKey))} (${esc(
+          [...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")
+        )})`
+    );
+    notes.push(
+      `Проверено, хранилища пусты: ${described.join(", ")}. ` +
+        "Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего."
+    );
+  }
+
+  // And the chains where a custody contract cannot exist at all. Said here
+  // as well as in the empty report, because a token can be locked on one
+  // chain and minted on another, and the minted side was silently missing
+  // from every report that found liquidity anywhere.
+  if (nativeOftChains.length > 0) {
+    notes.push(
+      `Омничейн-выпуск LayerZero (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
+        "Там хранилища нет по устройству моста: при переводе токен сжигается в одной сети и чеканится в другой."
+    );
+  }
   const closingNotes = [
     ...supplyOnlyLines(input.supplyOnly),
     `Всего проверено контрактов: ${checkedCount}.`,
