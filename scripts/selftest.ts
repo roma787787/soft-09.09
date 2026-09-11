@@ -23,6 +23,7 @@ import {
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
 import { orderEndpoints } from "../src/services/rpcHealth";
+import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -45,7 +46,7 @@ import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
-import { EXTRA_RPC_URLS } from "../src/config/rpcs.generated";
+import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -111,7 +112,7 @@ check(
 );
 check(
   "no fallback needs an API key it does not have",
-  Object.values(EXTRA_RPC_URLS).every((urls) => urls.every((u) => !/\$\{|API_KEY/i.test(u)))
+  Object.values(EXTRA_RPC_URLS_BY_CHAIN_ID).every((urls) => urls.every((u) => !/\$\{|API_KEY/i.test(u)))
 );
 // A chain may ask for fewer parallel reads, but never for none: a limit of
 // zero would loop forever without reading anything.
@@ -1728,6 +1729,30 @@ check("a chain with supply but no custody is named", withSupplyOnly.includes("Ro
 check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
+// The alternates table is keyed by chain id, not by the bot's name for a
+// chain. It discovers chains at runtime, and a chain it was never told
+// about has no such name - so keying by name handed every discovered chain
+// an empty list, which is how ninety-one chains came to rely on one node.
+check("the alternates table is keyed by chain id", Object.keys(EXTRA_RPC_URLS_BY_CHAIN_ID).every((k) => /^\d+$/.test(k)));
+check(
+  "and it covers chains the curated table never listed",
+  Object.keys(EXTRA_RPC_URLS_BY_CHAIN_ID).length > CHAINS.length
+);
+check(
+  "a discovered tier-3 chain now has alternates",
+  (EXTRA_RPC_URLS_BY_CHAIN_ID[4689] ?? []).length > 1 && (EXTRA_RPC_URLS_BY_CHAIN_ID[50] ?? []).length > 1
+);
+check(
+  "and no entry carries a placeholder for a key",
+  Object.values(EXTRA_RPC_URLS_BY_CHAIN_ID).every((urls) =>
+    urls.every((u) => u.startsWith("https://") && !/\$\{|API_KEY/i.test(u))
+  )
+);
+check(
+  "nor the same node twice",
+  Object.values(EXTRA_RPC_URLS_BY_CHAIN_ID).every((urls) => new Set(urls).size === urls.length)
+);
+
 // Endpoint order decides how long a read waits before it succeeds. viem's
 // fallback walks the list and pays a full timeout for each node that does
 // not answer, so a dead node in first place is a tax on every read of that

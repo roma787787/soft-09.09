@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { CHAINS } from "./chains";
-import { EXTRA_RPC_URLS } from "./rpcs.generated";
+import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "./rpcs.generated";
 
 /**
  * Reads an env var, trimming surrounding whitespace. Values are frequently
@@ -85,7 +85,10 @@ export function rpcUrlsFor(chainKey: string): string[] {
   // of them and stopped holding at a hundred and fifty: a single refusal
   // takes a whole chain out of the report, and a missing chain reads as "no
   // liquidity here". The generated list adds public alternates behind it.
-  const extras = EXTRA_RPC_URLS[chainKey] ?? [];
+  // Looked up by chain id, not by name. A chain the bot discovered at
+  // runtime has no name in a file generated at build time, and that is
+  // exactly the set of chains most short of alternates.
+  const extras = EXTRA_RPC_URLS_BY_CHAIN_ID[chain.viemChain.id] ?? [];
   const configured = read(chain.rpcEnvVar);
   const urls = [...chain.defaultRpcUrls, ...extras];
   return configured ? [configured, ...urls] : urls;

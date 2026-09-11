@@ -18,6 +18,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHAINS } from "../src/config/chains";
+import * as viemChains from "viem/chains";
 
 const PACKAGE = "chainlist-rpcs";
 const OUT = "src/config/rpcs.generated.ts";
@@ -46,8 +47,23 @@ const HYPERLANE_METADATA = "../node_modules/@hyperlane-xyz/registry/dist/chainMe
 
 interface HyperlaneChain {
   chainId?: number | string;
+  protocol?: string;
   isTestnet?: boolean;
   rpcUrls?: Array<{ http?: unknown }>;
+}
+
+/**
+ * A chain id an EVM chain could actually have.
+ *
+ * Not every registry entry is EVM, and the non-EVM ones do not use this
+ * number space at all: Hyperlane files Aleo under chain id 0 and Paradex
+ * under one so large it comes out of JSON as 8.4e66. Both were landing in
+ * the generated table, where nothing could ever match them - dead weight,
+ * and a key that is not an integer in a file that claims to be keyed by
+ * chain id.
+ */
+function isEvmChainId(id: number): boolean {
+  return Number.isSafeInteger(id) && id > 0;
 }
 
 function hyperlaneRpcs(): Map<number, string[]> {
@@ -56,9 +72,9 @@ function hyperlaneRpcs(): Map<number, string[]> {
   const metadata = module.chainMetadata ?? module.default ?? module;
   const found = new Map<number, string[]>();
   for (const chain of Object.values(metadata) as HyperlaneChain[]) {
-    if (chain?.isTestnet) continue;
+    if (chain?.isTestnet || chain?.protocol !== "ethereum") continue;
     const id = Number(chain?.chainId);
-    if (!Number.isInteger(id)) continue;
+    if (!isEvmChainId(id)) continue;
     const urls = (chain.rpcUrls ?? []).map((r) => r?.http).filter(usable);
     if (urls.length > 0) found.set(id, urls);
   }
@@ -140,14 +156,27 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
   const wanted = new Map<number, string>();
   for (const chain of CHAINS) wanted.set(chain.viemChain.id, chain.key);
 
-  const registry = await fetchRegistry(CHAINS.map((c) => c.viemChain.id));
+  // Every chain id the bot could end up holding, not just the ones the table
+  // carries today. It discovers chains at runtime, and a discovered chain
+  // used to get no alternates at all: this file was keyed by the bot's own
+  // chain names, and a chain it had not been told about has no such name.
+  // Ninety-one chains were down to a single working node because of it.
+  const universe = new Set<number>(CHAINS.map((c) => c.viemChain.id).filter(isEvmChainId));
+  for (const candidate of Object.values(viemChains as Record<string, unknown>)) {
+    const chain = candidate as { id?: number; testnet?: boolean };
+    if (typeof chain?.id === "number" && !chain.testnet && isEvmChainId(chain.id)) universe.add(chain.id);
+  }
+  for (const id of hyperlaneRpcs().keys()) universe.add(id);
+
+  const ids = [...universe].sort((a, b) => a - b);
+  const registry = await fetchRegistry(ids);
   const hyperlane = hyperlaneRpcs();
 
-  const rows: Array<[number, string, string[]]> = [];
-  let fromRegistryOnly = 0;
-  for (const chain of CHAINS) {
-    const entry = extraRpcs[String(chain.viemChain.id)];
+  const rows: Array<[number, string[]]> = [];
+  for (const id of ids) {
+    const entry = extraRpcs[String(id)];
     const rpcs = Array.isArray(entry?.rpcs) ? entry.rpcs : [];
+    const chain = CHAINS.find((c) => c.viemChain.id === id);
 
     // Ordered by how much each source has to lose from a dead entry.
     // chainlist ranks its own entries by observed health; Hyperlane has to
@@ -159,11 +188,11 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
     // when only six are read.
     const candidates = [
       ...rpcs.map((rpc: unknown) => (typeof rpc === "string" ? rpc : (rpc as { url?: unknown })?.url)),
-      ...(hyperlane.get(chain.viemChain.id) ?? []),
-      ...(registry.get(chain.viemChain.id) ?? []),
+      ...(hyperlane.get(id) ?? []),
+      ...(registry.get(id) ?? []),
     ];
 
-    const seen = new Set(chain.defaultRpcUrls.map(canonicalUrl));
+    const seen = new Set((chain?.defaultRpcUrls ?? []).map(canonicalUrl));
     const urls: string[] = [];
     for (const candidate of candidates) {
       if (!usable(candidate)) continue;
@@ -174,19 +203,22 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
       if (urls.length >= PER_CHAIN) break;
     }
 
-    if (urls.length > 0) rows.push([chain.viemChain.id, chain.key, urls]);
-    else if ((registry.get(chain.viemChain.id) ?? []).length > 0) fromRegistryOnly++;
+    if (urls.length > 0) rows.push([id, urls]);
   }
 
   const body = rows
     .sort((a, b) => a[0] - b[0])
-    .map(([, key, urls]) => `  ${JSON.stringify(key)}: [${urls.map((u) => JSON.stringify(u)).join(", ")}],`)
+    .map(([id, urls]) => `  ${id}: [${urls.map((u) => JSON.stringify(u)).join(", ")}],`)
     .join("\n");
 
   fs.writeFileSync(
     OUT,
     `/**
- * Extra public endpoints per chain, tried after the one viem carries.
+ * Extra public endpoints per chain id, tried after the one viem carries.
+ *
+ * Keyed by chain id, not by the bot's own name for a chain: it discovers
+ * chains at runtime, and a chain it was never told about has no such name -
+ * so keying by name gave every discovered chain an empty list.
  *
  * GENERATED FILE. Do not edit by hand: run \\\`npm run sync:rpcs\\\`.
  *
@@ -203,7 +235,7 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
  * Hyperlane had two that answer - and a chain whose single entry is dead has
  * no endpoints at all.
  */
-export const EXTRA_RPC_URLS: Record<string, string[]> = {
+export const EXTRA_RPC_URLS_BY_CHAIN_ID: Record<number, string[]> = {
 ${body}
 };
 `,
@@ -211,8 +243,9 @@ ${body}
   );
 
   fs.rmSync(tmp, { recursive: true, force: true });
-  const total = rows.reduce((n, r) => n + r[2].length, 0);
-  const alone = CHAINS.filter((c) => !rows.some((r) => r[1] === c.key)).length;
+  const total = rows.reduce((n, r) => n + r[1].length, 0);
+  const covered = new Set(rows.map((r) => r[0]));
+  const ourChainsCovered = CHAINS.filter((c) => covered.has(c.viemChain.id)).length;
   console.log(`${OUT}: ${rows.length} сетей, ${total} эндпоинтов`);
-  console.log(`без запасных узлов остались: ${alone} ${fromRegistryOnly ? `(из них ${fromRegistryOnly} — реестр знает только то, что уже есть у viem)` : ""}`);
+  console.log(`из них в сегодняшней таблице бота: ${ourChainsCovered} из ${CHAINS.length}`);
 })();

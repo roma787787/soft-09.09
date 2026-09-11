@@ -4,7 +4,7 @@ import { hasCustomRpc, rpcUrlsFor } from "../../config/env";
 import { MAX_ENDPOINTS_PER_CHAIN } from "../../services/rpcClient";
 import { plural, capToTelegramLimit } from "../render";
 import { mapWithConcurrency } from "../../services/concurrency";
-import { healthSummary } from "../../services/rpcHealth";
+import { healthSummary, orderedRpcUrls } from "../../services/rpcHealth";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -133,7 +133,11 @@ async function probeNode(url: string): Promise<NodeHealth> {
 
 async function checkChain(chainKey: string, label: string): Promise<ChainHealth> {
   const custom = hasCustomRpc(chainKey);
-  const urls = rpcUrlsFor(chainKey)
+  // The order the reader will use, not the order the registries gave. A
+  // diagnostic that probes a different set of nodes than the reports do is
+  // worse than none: it named a dead endpoint as the chain's failure while
+  // the bot had already stopped asking that one first.
+  const urls = orderedRpcUrls(chainKey)
     .filter((u) => u.startsWith("http"))
     .slice(0, MAX_NODES_PROBED);
   if (urls.length === 0) {
