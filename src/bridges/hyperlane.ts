@@ -34,6 +34,29 @@ export function loadHyperlaneRegistry(): Record<string, WarpRouteConfig> {
   return loadRegistry();
 }
 
+/** How many the last load left out, so /sources can say so. */
+let skippedRoutes = 0;
+
+/**
+ * Whether a route id names a real deployment rather than a test one.
+ *
+ * Judged on the deployment half of the id, never the ticker. The registry
+ * files a route as "<TICKER>/<deployment>", and a token can legitimately be
+ * called REZSTAGING - dropping it because its own name contains "staging"
+ * would hide the very route someone asking for that ticker wants.
+ */
+export function isProductionRoute(routeId: string): boolean {
+  const slash = routeId.indexOf("/");
+  const deployment = slash === -1 ? routeId : routeId.slice(slash + 1);
+  return !/testnet|staging|sandbox|sepolia|holesky|goerli|devnet/i.test(deployment);
+}
+
+/** Routes left out as test deployments, for the coverage report. */
+export function hyperlaneSkippedRoutes(): number {
+  loadRegistry();
+  return skippedRoutes;
+}
+
 function loadRegistry(): Record<string, WarpRouteConfig> {
   if (cache) return cache;
   if (loadFailed) return {};
@@ -49,8 +72,20 @@ function loadRegistry(): Record<string, WarpRouteConfig> {
     );
     const raw = fs.readFileSync(file, "utf8");
     const json = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
-    cache = JSON.parse(json) as Record<string, WarpRouteConfig>;
-    console.log(`[hyperlane] загружено маршрутов: ${Object.keys(cache).length}`);
+    const all = JSON.parse(json) as Record<string, WarpRouteConfig>;
+
+    // Dropped once, here, rather than at each of the six places routes are
+    // walked. The registry ships the team's test deployments beside the real
+    // ones and does not flag them, so "USDT/moonpay-staging: 1 USDT" was
+    // printed on Katana as liquidity - real tokens on a route nobody bridges
+    // through, which is the same lie a testnet in the chain table tells, one
+    // level down.
+    cache = Object.fromEntries(Object.entries(all).filter(([routeId]) => isProductionRoute(routeId)));
+    skippedRoutes = Object.keys(all).length - Object.keys(cache).length;
+    console.log(
+      `[hyperlane] загружено маршрутов: ${Object.keys(cache).length}` +
+        `${skippedRoutes > 0 ? ` (пропущено тестовых и staging: ${skippedRoutes})` : ""}`
+    );
     return cache;
   } catch (err) {
     loadFailed = true;

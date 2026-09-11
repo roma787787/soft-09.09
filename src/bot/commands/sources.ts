@@ -7,7 +7,7 @@ import { PORTAL_CHAINS } from "../../config/portalChains";
 import { PORTAL_COSMOS_CHAINS, portalCosmosUnreachable } from "../../config/portalCosmosChains";
 import { TON_CHAIN } from "../../config/tonChain";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
-import { hyperlaneRouteCount } from "../../bridges/hyperlane";
+import { hyperlaneRouteCount, hyperlaneSkippedRoutes } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
 import { vaultCoverage } from "../../bridges/vaults";
 import { ccipChainCount } from "../../bridges/ccip";
@@ -57,7 +57,10 @@ export function registerSourcesCommand(bot: Telegraf) {
     );
 
     lines.push(
-      `<b>Hyperlane</b> — ${hyperlaneRouteCount()} ${plural(hyperlaneRouteCount(), "маршрут", "маршрута", "маршрутов")} в реестре.`,
+      `<b>Hyperlane</b> — ${hyperlaneRouteCount()} ${plural(hyperlaneRouteCount(), "маршрут", "маршрута", "маршрутов")} в реестре.` +
+        (hyperlaneSkippedRoutes() > 0
+          ? ` Ещё ${hyperlaneSkippedRoutes()} не читается — это тестовые и staging-деплои самой команды, реестр их не помечает.`
+          : ""),
       "Ищется по тикеру; показываются только collateral-маршруты, синтетические ничего не держат.",
       "На Solana признак другой — поле standard, а не наличие collateral: там оно есть и у синтетических.",
       ""

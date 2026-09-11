@@ -74,7 +74,13 @@ import {
 import { describeError, groupByReason, mostActionable, splitFailures } from "../src/bot/commands/diag";
 import { deploymentsOnChain } from "../src/bot/commands/lzprobe";
 import { formatAmount } from "../src/services/balances";
-import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
+import {
+  findHyperlaneCustodians,
+  hyperlaneRouteCount,
+  hyperlaneSkippedRoutes,
+  isProductionRoute,
+  loadHyperlaneRegistry,
+} from "../src/bridges/hyperlane";
 import { svmEscrows } from "../src/bridges/svm";
 import { resolveCustodians } from "../src/bridges";
 import {
@@ -1956,6 +1962,36 @@ check("and never as a vault standing empty", !/хранилища пусты[^\n
 // a unique key nobody can see is half a fix.
 check("a suffixed key carries a qualified label", qualifiedLabel("Injective", "injectiveevm", "injective") === "Injective (EVM)");
 check("and an untouched key is left alone", qualifiedLabel("Base", "base", "base") === "Base");
+
+// -----------------------------------------------------------------------------
+// Hyperlane ships the team's own test deployments beside the real ones and
+// flags neither. Four of them run on mainnets - oUSDT/staging across
+// seventeen of them, three moonpay-staging routes across six - so their
+// contracts were read and printed as liquidity: "USDT/moonpay-staging:
+// 1 USDT" on Katana, real tokens on a route nobody bridges through. That is
+// the lie a testnet in the chain table tells, one level down.
+// -----------------------------------------------------------------------------
+
+check("a staging deployment is not production", isProductionRoute("USDT/moonpay-staging") === false);
+check("nor is one simply called staging", isProductionRoute("oUSDT/staging") === false);
+check("nor a testnet route", isProductionRoute("USDT/aleotestnet") === false);
+check("nor one on a public testnet by name", isProductionRoute("USDC/predicate-sepolia-basesepolia") === false);
+// Judged on the deployment half, never the ticker: a token may legitimately
+// be called REZSTAGING, and dropping it because of its own name would hide
+// the one route somebody asking for that ticker wants.
+check("a ticker containing the word is not a staging route", isProductionRoute("REZSTAGING/base-ethereum-unichain") === true);
+// The registry's own naming says the distinction is real.
+check("and the production twin is kept", isProductionRoute("oUSDT/production") === true);
+check("as are ordinary routes", isProductionRoute("USDT/krown") && isProductionRoute("USDT/eclipsemainnet"));
+check("a route id with no deployment part is still judged", isProductionRoute("sepolia") === false);
+
+// The real registry, so a rename upstream shows up here rather than in a
+// report. Silently dropping every route would look exactly like a clean one.
+check("the real registry still has routes after filtering", hyperlaneRouteCount() > 250, `${hyperlaneRouteCount()}`);
+check("and the test ones were actually found and dropped", hyperlaneSkippedRoutes() > 20, `${hyperlaneSkippedRoutes()}`);
+const liveRoutes = Object.keys(loadHyperlaneRegistry());
+check("no staging route survives into the registry the bot reads", !liveRoutes.some((id) => !isProductionRoute(id)));
+check("while the routes the report is built from are still there", liveRoutes.includes("oUSDT/production"));
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
