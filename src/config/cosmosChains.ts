@@ -33,6 +33,11 @@ const EXTRAS: Record<string, { aliases?: string[]; cmc?: string[]; restUrls?: st
   injective: { aliases: ["inj"], cmc: ["Injective"] },
   neutron: { aliases: ["ntrn"], cmc: ["Neutron"] },
   osmosis: { aliases: ["osmo"], cmc: ["Osmosis"] },
+  // Sei is here for Wormhole, not Hyperlane, and the price API lists it
+  // twice: once as the Cosmos chain and once as the EVM one. Only the first
+  // reaches this table - the EVM side is matched by chain id like any other
+  // EVM network - but both spellings are carried so neither is lost.
+  sei: { aliases: ["sei"], cmc: ["Sei", "Sei Network", "Sei V2"] },
   stride: { aliases: ["strd"] },
   terraclassic: { aliases: ["lunc", "terra"], cmc: ["Terra Classic"] },
   cosmoshub: { aliases: ["cosmos", "atom"], cmc: ["Cosmos"] },

@@ -4,6 +4,7 @@ import { SVM_CHAINS } from "../../config/svmChains";
 import { COSMOS_CHAINS } from "../../config/cosmosChains";
 import { OTHER_CHAINS } from "../../config/otherChains";
 import { PORTAL_CHAINS } from "../../config/portalChains";
+import { PORTAL_COSMOS_CHAINS, portalCosmosUnreachable } from "../../config/portalCosmosChains";
 import { TON_CHAIN } from "../../config/tonChain";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount } from "../../bridges/hyperlane";
@@ -37,10 +38,21 @@ export function registerSourcesCommand(bot: Telegraf) {
     lines.push("");
 
     const wormholeChains = Object.keys(PORTAL_TOKEN_BRIDGE_BY_CHAIN).length;
+    const unreachable = portalCosmosUnreachable();
     lines.push(
       `<b>Wormhole</b> — Token Bridge в ${wormholeChains} из ${CHAINS.length} сетей EVM, плюс Solana.`,
       "Адреса из официального реестра Wormhole, держит любой токен, который через него проходил.",
       `На Near и Aptos это единственный мост, который бот умеет читать: ни warp-маршрутов, ни пулов там нет.`,
+      ...(PORTAL_COSMOS_CHAINS.length > 0
+        ? [
+            `В Cosmos читается в ${PORTAL_COSMOS_CHAINS.length} ${plural(PORTAL_COSMOS_CHAINS.length, "сети", "сетях", "сетях")}: ` +
+              `${PORTAL_COSMOS_CHAINS.map((c) => c.wormholeChain).join(", ")}.`,
+          ]
+        : []),
+      // Named rather than left out of both lists. A chain Wormhole is on and
+      // the bot cannot reach is a gap in coverage, and a gap nobody can see
+      // is indistinguishable from a bridge that holds nothing.
+      ...(unreachable.length > 0 ? [`Не читается: ${unreachable.join(", ")} — нет публичного узла.`] : []),
       ""
     );
 

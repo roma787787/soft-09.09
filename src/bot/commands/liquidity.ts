@@ -17,6 +17,8 @@ import { findLayerZeroAptosBalances } from "../../bridges/lzAptos";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
+import { findPortalCosmosBalances } from "../../bridges/portalCosmos";
+import { portalCosmosChain } from "../../config/portalCosmosChains";
 import { findTonBalances } from "../../bridges/ton";
 import type { NonEvmReadResult } from "../../bridges/types";
 import { TON_CHAIN } from "../../config/tonChain";
@@ -322,7 +324,24 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // token to ask about, and the price API is what answers it.
   const portalTokenByChain = new Map(portalTokens.map((p) => [p.chainKey, p.tokenAddress]));
 
-  const [svmRead, lzSvmRead, lzAptosRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
+  // Wormhole on Cosmos asks the same question Near and Aptos do - which of
+  // that chain's own assets the Token Bridge is holding - and the price
+  // API's listing for the chain is again what names the asset.
+  const portalCosmosTokens = token.otherPlatforms
+    .filter((p) => p.chainKey && !!portalCosmosChain(p.chainKey))
+    .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
+
+  const [
+    svmRead,
+    lzSvmRead,
+    lzAptosRead,
+    cosmosRead,
+    nativeRead,
+    otherRead,
+    portalRead,
+    portalCosmosRead,
+    tonRead,
+  ] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
     // The registry names both the mint and the escrow account, so this needs
     // nothing from CoinGecko - and works on an SVM chain it never listed.
@@ -337,6 +356,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
     !chainFilter || !!getPortalChain(chainFilter)
       ? findPortalNonEvmBalances(portalTokens)
+      : empty,
+    !chainFilter || !!portalCosmosChain(chainFilter)
+      ? findPortalCosmosBalances(portalCosmosTokens)
       : empty,
     !chainFilter || chainFilter === TON_CHAIN.key
       ? findTonBalances(symbol, token.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress)
@@ -353,6 +375,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     nativeRead,
     otherRead,
     portalRead,
+    portalCosmosRead,
     tonRead,
   ];
   const nonEvmAll: BalanceRow[] = nonEvmReads.flatMap((r) => r.rows);

@@ -100,7 +100,7 @@ export interface CosmosBalanceRow {
 }
 
 /** Reads one address's balance of one denom over the chain's REST API. */
-async function readBankBalance(chainKey: string, address: string, denom: string): Promise<bigint | undefined> {
+export async function readBankBalance(chainKey: string, address: string, denom: string): Promise<bigint | undefined> {
   const chain = getCosmosChain(chainKey);
   if (!chain) return undefined;
 

@@ -44,6 +44,12 @@ import {
   symbolsAgree,
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
+import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
+import {
+  PORTAL_COSMOS_CHAINS,
+  portalCosmosChain,
+  portalCosmosUnreachable,
+} from "../src/config/portalCosmosChains";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -76,18 +82,6 @@ import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
-import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
-import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
-import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
-import {
-  baseTicker,
-  describeBody,
-  parseJettonMaster,
-  parseJettonWallets,
-  symbolsAgree,
-} from "../src/bridges/ton";
-import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -1741,6 +1735,64 @@ check(
   adapterOut.find((d) => d.chainKey === "polygon")?.locksCollateral === false
 );
 check("a missing ticker yields nothing rather than throwing", extractDeployments(undefined).length === 0);
+
+// -----------------------------------------------------------------------------
+// Wormhole on Cosmos. The bot read the Token Bridge everywhere it exists
+// except here, and the gap was structural: the Cosmos chain table came from
+// Hyperlane's registry alone, so a chain only Wormhole is on had no endpoint
+// and its bridge could not be queried at all.
+// -----------------------------------------------------------------------------
+
+// Addresses from the SDK, never transcribed - a redeployment arrives with an
+// upgrade instead of going unnoticed.
+check("the Token Bridge is found on Injective", portalCosmosChain("injective")?.tokenBridge.startsWith("inj1") === true);
+check("and on Sei, which Hyperlane's registry does not describe", portalCosmosChain("sei")?.tokenBridge.startsWith("sei1") === true);
+check("a chain with no Wormhole deployment is not claimed", portalCosmosChain("osmosis") === undefined);
+check(
+  "every entry carries a bech32 contract",
+  PORTAL_COSMOS_CHAINS.every((c) => /^[a-z]+1[02-9ac-hj-np-z]{6,}$/.test(c.tokenBridge))
+);
+// A chain Wormhole is on that the bot cannot reach is a gap, and a gap
+// nobody can see is indistinguishable from a bridge that holds nothing.
+check("and the ones with no endpoint are named rather than dropped", portalCosmosUnreachable().includes("Wormchain"));
+
+// A CW20 has its own ledger and has to be asked; the decimals come from the
+// same contract, and a balance without them cannot be printed at all - a
+// number at the wrong scale reads as real and is off by orders of magnitude.
+check(
+  "a CW20 answer yields both halves",
+  parseCw20({ data: { balance: "12345" } }, { data: { decimals: 6, symbol: "USDT" } })?.amount === 12345n
+);
+check(
+  "at the decimals the contract itself reports",
+  parseCw20({ data: { balance: "1" } }, { data: { decimals: 8 } })?.decimals === 8
+);
+check("a balance with no decimals is not a row", parseCw20({ data: { balance: "1" } }, {}) === undefined);
+check("nor are decimals with no balance", parseCw20({}, { data: { decimals: 6 } }) === undefined);
+check(
+  "a non-numeric balance is refused",
+  parseCw20({ data: { balance: "lots" } }, { data: { decimals: 6 } }) === undefined
+);
+check("zero is a balance like any other", parseCw20({ data: { balance: "0" } }, { data: { decimals: 6 } })?.amount === 0n);
+check("an unreachable node yields nothing rather than throwing", parseCw20(undefined, undefined) === undefined);
+
+// Bank denoms publish their decimals per denom rather than per contract.
+check(
+  "the display unit's exponent is the denom's decimals",
+  parseDenomDecimals({
+    metadata: { display: "sei", denom_units: [{ denom: "usei", exponent: 0 }, { denom: "sei", exponent: 6 }] },
+  }) === 6
+);
+// Some chains publish the units without naming a display unit; the base unit
+// is zero by construction, so the largest exponent is the whole coin.
+check(
+  "with no display unit named, the largest exponent is taken",
+  parseDenomDecimals({
+    metadata: { denom_units: [{ denom: "uatom", exponent: 0 }, { denom: "atom", exponent: 6 }] },
+  }) === 6
+);
+check("a denom with no metadata is left unread, not guessed at", parseDenomDecimals({}) === undefined);
+check("and neither is nothing at all", parseDenomDecimals(undefined) === undefined);
 
 // A MintBurnOFTAdapter is an adapter by name and a minter by behaviour. It
 // was read as a vault, found to hold nothing, and reported as a bridge

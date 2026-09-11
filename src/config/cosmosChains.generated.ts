@@ -98,6 +98,15 @@ export const GENERATED_COSMOS_CHAINS: GeneratedCosmosChain[] = [
     nativeDecimals: 6,
   },
   {
+    key: "sei",
+    label: "Sei",
+    protocol: "cosmos",
+    restUrls: ["https://rest.sei-apis.com", "https://rest.lavenderfive.com:443/sei", "https://sei-api.polkachu.com", "https://api-sei.stingray.plus", "https://lcd-sei.whispernode.com:443", "https://sei.api.kjnodes.com", "https://sei-rest.publicnode.com", "https://sei.api.pocket.network"],
+    explorer: "https://seitrace.com",
+    nativeDenom: "usei",
+    nativeDecimals: 6,
+  },
+  {
     key: "stride",
     label: "Stride",
     protocol: "cosmos",
