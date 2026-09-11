@@ -56,7 +56,7 @@ export function registerTonCommand(bot: Telegraf) {
       return;
     }
 
-    const { rows, failures, attempts } = await findTonBalances(symbol);
+    const { rows, failures, attempts, reasons } = await findTonBalances(symbol);
     lines.push("", `<b>Чтение</b>: спрошено ${attempts[TON_CHAIN.key] ?? 0}`);
     for (const row of rows) {
       lines.push(
@@ -68,9 +68,14 @@ export function registerTonCommand(bot: Telegraf) {
     if (failed > 0) {
       // Named as unread rather than left out: an adapter nobody managed to
       // ask holds an unknown amount, and silence would read as zero.
+      // The reader's own words, not a sentence written here. This command
+      // exists to show what happened, and it was replacing that with a
+      // guess - while the reason sat unread in the result it had just been
+      // handed.
+      const reason = reasons?.[TON_CHAIN.key];
       lines.push(
-        `❌ ${failed} ${failed === 1 ? "адаптер" : "адаптеров"} прочитать не удалось — ` +
-          "индекс не назвал ни одного джеттон-кошелька под этим адресом."
+        `❌ ${failed} ${failed === 1 ? "адаптер" : "адаптеров"} прочитать не удалось` +
+          (reason ? `\n  ${esc(reason)}` : " — причину читалка не назвала.")
       );
     }
 
