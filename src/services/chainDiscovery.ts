@@ -231,17 +231,31 @@ async function registryFacts(chainId: number): Promise<ChainFacts | undefined> {
  * a refusal costs a request exactly once.
  */
 export async function registryRefusal(chainId: number): Promise<string | undefined> {
-  // A registry that says outright which it is outranks everything below.
-  // Both directions: viem and Hyperlane each carry a testnet flag and set
-  // it deliberately, so their word settles the question either way.
-  if (viemById.has(chainId) || hyperlaneById.has(chainId)) return undefined;
-
+  // viem and Hyperlane each carry a testnet flag and set it deliberately, so
+  // their word settles that question in both directions.
+  const describedAsMainnet = viemById.has(chainId) || hyperlaneById.has(chainId);
   const flagged = testnetIds.get(chainId);
-  if (flagged) return flagged;
+  if (flagged && !describedAsMainnet) return flagged;
+
+  // But only that question. "Testnet or mainnet" and "live or shut down" are
+  // different things to know, and the first answer was silencing the second:
+  // Horizen EON has sunset and the canonical registry says so, while viem
+  // still describes it as a mainnet - which it was. A chain nobody can bridge
+  // to any more has balances that read as available liquidity, so the
+  // deprecation flag applies whoever else describes the chain.
+  const entry = await registryEntry(chainId);
+  if (entry && Number(entry.chainId) === chainId && entry.status === "deprecated") {
+    return "реестр помечает её устаревшей";
+  }
+
+  // The weaker hints below only get a say when nothing authoritative has
+  // described the chain at all. Read as verdicts they threw fourteen live
+  // mainnets out of the table in one scan.
+  if (describedAsMainnet) return undefined;
 
   // A registry that will not answer refuses nothing: the candidate goes on
   // to the probe, which is the check that actually decides.
-  return refusalFromRegistryEntry(await registryEntry(chainId), chainId);
+  return refusalFromRegistryEntry(entry, chainId);
 }
 
 /**
@@ -262,6 +276,9 @@ export function refusalFromRegistryEntry(
   chainId: number
 ): string | undefined {
   if (!entry || Number(entry.chainId) !== chainId) return undefined;
+  // Also checked by the caller ahead of the authoritative registries, since
+  // this one applies whoever else describes the chain. Kept here so the pure
+  // function answers the whole question when asked it directly.
   if (entry.status === "deprecated") return "реестр помечает её устаревшей";
 
   // What the registry's own authors wrote in the name. No flag field exists

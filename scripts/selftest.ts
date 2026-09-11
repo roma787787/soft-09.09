@@ -1992,6 +1992,20 @@ async function asyncChecks(): Promise<void> {
     check(`and its mainnets are let through: ${name}`, (await registryRefusal(id)) === undefined);
   }
 
+  // "Testnet or mainnet" and "live or shut down" are different things to
+  // know, and the first answer was silencing the second: Horizen EON has
+  // sunset and the canonical registry says so, while viem still describes it
+  // as a mainnet - which it was. A chain nobody can bridge to any more has
+  // balances that read as available liquidity.
+  check(
+    "a sunset chain is refused even though viem calls it a mainnet",
+    /устаревш/.test((await registryRefusal(7332)) ?? "")
+  );
+  // The one the canonical registry catches on its own: no flag anywhere, an
+  // empty faucet list, and "testnet" written in the name by its authors.
+  check("and a testnet named as one in the registry", (await registryRefusal(9070)) !== undefined);
+  check("while the mainnet beside it goes through", (await registryRefusal(9069)) === undefined);
+
   // A limit larger than the list must not spawn workers with nothing to do.
   const few = await mapWithConcurrency([1, 2], 99, async (n) => n + 1);
   check("a limit above the list length is harmless", few.join(",") === "2,3");
