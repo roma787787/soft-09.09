@@ -337,17 +337,43 @@ export function registerDiagCommand(bot: Telegraf) {
       // Naming the variables outright: deriving SWELL_RPC_URL from
       // "Swellchain" is a small step at a desk and an annoying one on a
       // phone, which is where this bot is actually operated from.
-      const names = failed
-        .map((h) => CHAINS.find((c) => c.key === h.chainKey)?.rpcEnvVar)
-        .filter((v): v is string => !!v);
-      // Capped, because seventy variable names is not a list anyone acts on
-      // - it is the rest of the report pushed out of the message.
-      const vars = names.slice(0, 8).map((v) => `<code>${esc(v)}</code>`).join(", ");
-      const rest = names.length > 8 ? ` и ещё ${names.length - 8}` : "";
-      footer +=
-        `\n\nСети с ❌ сейчас не проверяются командой /info. ` +
-        `Публичные ноды часто отказывают серверам хостинга. ` +
-        `Лечится своим RPC — пропиши его в ${vars}${rest}.`;
+      // Split by what the failure means, because the two halves need
+      // different things. A server that answered and refused is alive: a key
+      // opens it, and every one of those is a job worth doing. A name that
+      // does not resolve, a certificate for another host, a node that says
+      // nothing - no key fixes any of that; the endpoint itself has to be
+      // replaced, and no registry has another one to offer.
+      //
+      // Dogechain has nine endpoints and all nine refuse. That is not a
+      // chain short of nodes, and telling the reader to go find more would
+      // waste their evening.
+      const refusing = failed.filter((h) => /^HTTP \d/.test(h.error ?? ""));
+      const broken = failed.filter((h) => !/^HTTP \d/.test(h.error ?? ""));
+      const varsOf = (rows: ChainHealth[]) =>
+        rows
+          .map((h) => CHAINS.find((c) => c.key === h.chainKey)?.rpcEnvVar)
+          .filter((v): v is string => !!v);
+
+      footer += "\n\nСети с ❌ сейчас не проверяются командой /info.";
+
+      if (refusing.length > 0) {
+        const names = varsOf(refusing);
+        // Capped, because a dozen variable names is not a list anyone acts
+        // on - it is the rest of the report pushed out of the message.
+        const vars = names.slice(0, 8).map((v) => `<code>${esc(v)}</code>`).join(", ");
+        const rest = names.length > 8 ? ` и ещё ${names.length - 8}` : "";
+        footer +=
+          `\n\n🔑 ${refusing.length} ${plural(refusing.length, "сеть жива", "сети живы", "сетей живы")}, ` +
+          `но их ноды отказывают этому серверу. Открывается своим RPC: ${vars}${rest}.`;
+      }
+
+      if (broken.length > 0) {
+        footer +=
+          `\n\n🔧 У ${broken.length} ${plural(broken.length, "сети", "сетей", "сетей")} ` +
+          `сломан сам узел — имя не резолвится, сертификат не тот или ответа нет вовсе: ` +
+          `${esc(broken.map((h) => h.label).join(", "))}. ` +
+          `Ключ тут не поможет, нужен другой адрес ноды.`;
+      }
     }
 
     // Measured, not counted from the config. A chain can list twelve nodes

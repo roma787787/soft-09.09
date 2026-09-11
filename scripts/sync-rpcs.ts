@@ -82,11 +82,19 @@ function hyperlaneRpcs(): Map<number, string[]> {
 }
 
 /**
- * Endpoints kept per chain. The reader uses the first six, counting the one
- * viem carries; eight leaves room for the dead ones to be skipped past
- * without the list turning into a queue of timeouts.
+ * Endpoints kept per chain.
+ *
+ * Eight used to be a compromise: the reader uses six, and a longer list was
+ * just a longer queue of timeouts to wait through. It is not a compromise
+ * any more. The endpoints are measured at runtime and the six the reader
+ * uses are the six that answered fastest, so a larger pool costs a slightly
+ * longer measurement and buys a better six.
+ *
+ * Eight was throwing away 599 endpoints, and a fifth of what it kept came
+ * from one aggregator that refuses this host outright - so the chains that
+ * needed alternates most were the ones whose alternates were being dropped.
  */
-const PER_CHAIN = 8;
+const PER_CHAIN = 16;
 
 /** Registry lookups in flight. Polite to GitHub, still under a minute. */
 const REGISTRY_CONCURRENCY = 12;
@@ -173,6 +181,7 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
   const hyperlane = hyperlaneRpcs();
 
   const rows: Array<[number, string[]]> = [];
+  let truncated = 0;
   for (const id of ids) {
     const entry = extraRpcs[String(id)];
     const rpcs = Array.isArray(entry?.rpcs) ? entry.rpcs : [];
@@ -204,6 +213,20 @@ const modulePath = path.join(tmp, "package/constants/extraRpcs.js");
     }
 
     if (urls.length > 0) rows.push([id, urls]);
+
+    // How much the cap is costing. Kept as a number the run prints rather
+    // than a guess: raising it is only worth the file size if candidates are
+    // actually being thrown away.
+    let usableCandidates = 0;
+    const counted = new Set<string>();
+    for (const candidate of candidates) {
+      if (!usable(candidate)) continue;
+      const url = canonicalUrl(candidate);
+      if (counted.has(url)) continue;
+      counted.add(url);
+      usableCandidates++;
+    }
+    if (usableCandidates > urls.length) truncated += usableCandidates - urls.length;
   }
 
   const body = rows
@@ -248,4 +271,5 @@ ${body}
   const ourChainsCovered = CHAINS.filter((c) => covered.has(c.viemChain.id)).length;
   console.log(`${OUT}: ${rows.length} сетей, ${total} эндпоинтов`);
   console.log(`из них в сегодняшней таблице бота: ${ourChainsCovered} из ${CHAINS.length}`);
+  console.log(`отрезано лимитом PER_CHAIN=${PER_CHAIN}: ${truncated} узлов`);
 })();
