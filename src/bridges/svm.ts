@@ -1,8 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
 import { contracts } from "@wormhole-foundation/sdk-base";
 import { withSvmClient } from "../services/svmClient";
-import { getSvmChain } from "../config/svmChains";
+import { getSvmChain, type SvmChainDef } from "../config/svmChains";
 import { loadHyperlaneRegistry } from "./hyperlane";
+import { findRegistryDeploymentsOnChain } from "./layerzero";
 import type { NonEvmReadResult } from "./types";
 
 /**
@@ -254,7 +255,7 @@ export function findSolanaHyperlaneRoutes(symbol: string): SolanaRoute[] {
 
 
 export interface SvmBalanceRow {
-  protocol: "hyperlane" | "wormhole";
+  protocol: "hyperlane" | "wormhole" | "layerzero";
   chainKey: string;
   custodyAddress: string;
   tokenAddress: string;
@@ -363,4 +364,131 @@ export async function findSvmBalances(
   );
 
   return { rows: perChain.flat(), attempts, failures };
+}
+
+/**
+ * What LayerZero locks on an SVM chain.
+ *
+ * This is where an omnichain token anchored on Solana keeps everything it
+ * has ever sent to EVM. The EVM side of such a deployment mints and burns,
+ * which the bot reads correctly and then reports as "no custody by design" -
+ * true of each EVM chain on its own, and badly misleading as the whole
+ * answer, because the collateral behind all of them sits in one Solana
+ * account nothing was asking about. PENGU is exactly that shape: five EVM
+ * chains all minting, and a report whose only row was a 2 000-token
+ * Hyperlane route.
+ *
+ * The escrow is not derivable from the mint - it is created as its own
+ * account and the OFT store is derived from it, not the other way round - so
+ * it is found by asking what the deployment owns. That is also why the mint
+ * has to be known: an owner can hold any number of token accounts, and only
+ * the mint says which one answers the question that was asked.
+ */
+export async function findLayerZeroSvmBalances(
+  symbol: string,
+  mintByChain: Map<string, string>
+): Promise<NonEvmReadResult<SvmBalanceRow>> {
+  const attempts: Record<string, number> = {};
+  const failures: Record<string, number> = {};
+  const reasons: Record<string, string> = {};
+  const rows: SvmBalanceRow[] = [];
+
+  for (const [chainKey, mint] of mintByChain) {
+    const chain = getSvmChain(chainKey);
+    if (!chain) continue;
+
+    const deployments = (await svmRegistryDeployments(symbol, chain)).filter((d) => d.locksCollateral);
+    if (deployments.length === 0) continue;
+
+    attempts[chainKey] = (attempts[chainKey] ?? 0) + deployments.length;
+
+    for (const deployment of deployments) {
+      let owner: PublicKey;
+      let mintKey: PublicKey;
+      try {
+        owner = new PublicKey(deployment.address);
+        mintKey = new PublicKey(mint);
+      } catch {
+        failures[chainKey] = (failures[chainKey] ?? 0) + 1;
+        reasons[chainKey] = `адрес из реестра не похож на адрес ${chain.label}: ${deployment.address.slice(0, 20)}…`;
+        continue;
+      }
+
+      try {
+        const found = await escrowsOf(chainKey, owner, mintKey, mint);
+        for (const row of found) {
+          // Two registry entries can point at one escrow, and these rows go
+          // straight into the report without passing the custodian dedupe -
+          // a repeated account would read as twice the liquidity there is.
+          if (rows.some((r) => r.custodyAddress === row.custodyAddress)) continue;
+          rows.push({ ...row, protocol: "layerzero", chainKey, tokenAddress: mint, note: deployment.rawType });
+        }
+      } catch (err) {
+        failures[chainKey] = (failures[chainKey] ?? 0) + 1;
+        reasons[chainKey] = err instanceof Error ? err.message.split("\n")[0].slice(0, 90) : String(err).slice(0, 90);
+      }
+    }
+  }
+
+  return { rows, attempts, failures, reasons };
+}
+
+/**
+ * The registry's entries for an SVM chain. LayerZero names Solana "solana"
+ * where the warp-route registry this bot keys chains by calls it
+ * "solanamainnet", so every name the chain answers to is tried rather than
+ * betting on one spelling.
+ */
+async function svmRegistryDeployments(symbol: string, chain: SvmChainDef) {
+  const seen = new Set<string>();
+  const out: Awaited<ReturnType<typeof findRegistryDeploymentsOnChain>> = [];
+  for (const name of [chain.key, ...chain.aliases]) {
+    for (const deployment of await findRegistryDeploymentsOnChain(symbol, name)) {
+      if (seen.has(deployment.address)) continue;
+      seen.add(deployment.address);
+      out.push(deployment);
+    }
+  }
+  return out;
+}
+
+/**
+ * The token accounts holding this mint for a deployment.
+ *
+ * Asked of the chain rather than derived, and filtered by mint, because both
+ * shapes the registry publishes have to work: the address is usually the
+ * store that owns the escrow, and is sometimes the escrow account itself.
+ * Anything that is not a token account for this exact mint produces no row,
+ * so a wrong address costs a call and says nothing.
+ */
+async function escrowsOf(
+  chainKey: string,
+  owner: PublicKey,
+  mintKey: PublicKey,
+  mint: string
+): Promise<Array<{ custodyAddress: string; amount: bigint; decimals: number }>> {
+  const owned = await withSvmClient(chainKey, (c) =>
+    c.getParsedTokenAccountsByOwner(owner, { mint: mintKey })
+  );
+
+  const rows = owned.value
+    .map(({ pubkey, account }) => ({ pubkey, info: (account.data as any)?.parsed?.info }))
+    .filter(({ info }) => info && info.mint === mint)
+    .map(({ pubkey, info }) => ({
+      custodyAddress: pubkey.toBase58(),
+      amount: BigInt(info.tokenAmount?.amount ?? "0"),
+      decimals: Number(info.tokenAmount?.decimals ?? 0),
+    }));
+  if (rows.length > 0) return rows;
+
+  const itself = await withSvmClient(chainKey, (c) => c.getParsedAccountInfo(owner));
+  const info = (itself.value?.data as any)?.parsed?.info;
+  if (!info || info.mint !== mint) return [];
+  return [
+    {
+      custodyAddress: owner.toBase58(),
+      amount: BigInt(info.tokenAmount?.amount ?? "0"),
+      decimals: Number(info.tokenAmount?.decimals ?? 0),
+    },
+  ];
 }

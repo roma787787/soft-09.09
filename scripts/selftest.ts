@@ -1317,6 +1317,23 @@ check("a native OFT is explained, not called unbridged", !oftReport.includes("н
 check("a native OFT report says there is no custody contract", oftReport.includes("нет контракта-хранилища"));
 check("a native OFT report names the chains", oftReport.includes("BNB Chain") && oftReport.includes("Ethereum"));
 
+// PENGU, exactly: five EVM chains all minting, and every token behind them
+// locked in one Solana account. Saying only "nothing is held on those five"
+// reads as "this token has no liquidity", which is the opposite of true.
+const anchored = renderLiquidityReport({
+  symbol: "PENGU",
+  name: "Pudgy Penguins",
+  balances: [fakeBalance("solanamainnet", "layerzero", 41_000_000_000000n)],
+  checkedCount: 6,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["bsc", "ethereum"],
+});
+check("a minting OFT report points at where the collateral is", anchored.includes("Заблокированный запас LayerZero"));
+check("and names the chain holding it", /Заблокированный запас LayerZero[^\n]*Solana/.test(anchored));
+// With nothing found, there is no anchor to name and no claim to make.
+check("no anchor is claimed when none was found", !oftReport.includes("Заблокированный запас"));
+
 const syntheticReport = renderLiquidityReport({
   symbol: "XYZ",
   name: "Example",

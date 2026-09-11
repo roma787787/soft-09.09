@@ -469,9 +469,23 @@ export function renderLiquidityReport(input: ReportInput): string {
     // Both facts are true and they are about different bridges: PENGU is
     // minted by LayerZero there, and Across happens to hold none of it.
     const alsoEmpty = nativeOftChains.some((c) => emptyByChain.has(c) && !byChain.has(c));
+    // Where the collateral for all that minting actually is. Saying only
+    // "nothing is held here" about five chains at once reads as "this token
+    // has no liquidity anywhere", when the whole of it sits in one account on
+    // the chain the deployment is anchored to.
+    const anchors = [
+      ...new Set(
+        balances
+          .filter((b) => b.protocol === "layerzero" && b.amount > 0n && !nativeOftChains.includes(b.chainKey))
+          .map((b) => b.chainKey)
+      ),
+    ];
     notes.push(
       `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
         "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой." +
+        (anchors.length > 0
+          ? ` Заблокированный запас LayerZero лежит в других сетях: ${esc(anchors.map(chainName).join(", "))} — строками выше.`
+          : "") +
         (alsoEmpty ? " Остальные мосты на этих сетях проверены отдельно — строкой выше." : "")
     );
   }

@@ -12,7 +12,7 @@ import { resolveCustodians, dedupeCustodians, tokenByChainFrom } from "../../bri
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians, stargateCoverage } from "../../bridges/stargate";
-import { findSvmBalances } from "../../bridges/svm";
+import { findSvmBalances, findLayerZeroSvmBalances } from "../../bridges/svm";
 import { findCosmosBalances, findNativeModuleBalances } from "../../bridges/cosmos";
 import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
@@ -290,8 +290,19 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     .filter((p) => p.chainKey && !!getPortalChain(p.chainKey))
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
 
-  const [svmRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
+  // An omnichain token anchored on Solana keeps the collateral for every EVM
+  // chain it reaches in one account there, so the mint per SVM chain is what
+  // turns "LayerZero mints on all five chains" into an amount.
+  const svmMintByChain = new Map<string, string>();
+  for (const p of token.otherPlatforms) {
+    if (p.chainKey && getSvmChain(p.chainKey) && !svmMintByChain.has(p.chainKey)) {
+      svmMintByChain.set(p.chainKey, p.tokenAddress);
+    }
+  }
+
+  const [svmRead, lzSvmRead, cosmosRead, nativeRead, otherRead, portalRead, tonRead] = await Promise.all([
     !chainFilter || !!getSvmChain(chainFilter) ? findSvmBalances(symbol, solanaMint) : empty,
+    !chainFilter || !!getSvmChain(chainFilter) ? findLayerZeroSvmBalances(symbol, svmMintByChain) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
@@ -307,6 +318,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // each family names the bridge it read, and they are different bridges.
   const nonEvmReads: Array<NonEvmReadResult<BalanceRow>> = [
     svmRead,
+    lzSvmRead,
     cosmosRead,
     nativeRead,
     otherRead,
