@@ -42,6 +42,9 @@ export interface TonBalanceRow {
   decimals: number;
 }
 
+/** The last thing the index said, so a failure can explain itself. */
+let lastFailure: string | undefined;
+
 async function getJson(url: string): Promise<any | undefined> {
   const headers: Record<string, string> = { Accept: "application/json" };
   // A free key raises the limit from roughly one request a second to
@@ -53,10 +56,17 @@ async function getJson(url: string): Promise<any | undefined> {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (response.ok) return await response.json();
+      lastFailure =
+        response.status === 429
+          ? `индекс TON ответил 429 — лимит запросов${env.tonApiKey ? "" : " (ключ TON_API_KEY не задан)"}`
+          : `индекс TON ответил HTTP ${response.status}`;
       // Only a refusal is worth repeating. A 404 will be a 404 next time.
       if (response.status !== 429 && response.status < 500) return undefined;
-    } catch {
+    } catch (err) {
       // A timeout is worth one more try for the same reason a 429 is.
+      lastFailure = `запрос к индексу TON не прошёл: ${
+        (err instanceof Error ? err.message : String(err)).split("\n")[0].slice(0, 80)
+      }`;
     }
     if (attempt < ATTEMPTS - 1) {
       await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS * (attempt + 1)));
@@ -123,6 +133,8 @@ function bases(): string[] {
 export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<TonBalanceRow>> {
   const attempts: Record<string, number> = {};
   const failures: Record<string, number> = {};
+  const reasons: Record<string, string> = {};
+  lastFailure = undefined;
 
   const deployments = (await findRegistryDeploymentsOnChain(symbol, TON_CHAIN.key)).filter(
     (d) => d.locksCollateral
@@ -195,5 +207,6 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
     }
   }
 
-  return { rows, attempts, failures };
+  if (failures[TON_CHAIN.key] && lastFailure) reasons[TON_CHAIN.key] = lastFailure;
+  return { rows, attempts, failures, reasons };
 }

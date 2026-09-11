@@ -450,6 +450,7 @@ check("and an empty answer is not a zero", parseJettonMaster({ jetton_masters: [
 // the one API listed behind it as a fallback was a different API whose paths
 // all 404: a second chance that could never be taken.
 check("TON has one API base, not a fallback that cannot answer", TON_CHAIN.apiUrls.length === 1);
+
 check("and it is the index whose shape the parser reads", TON_CHAIN.apiUrls[0].includes("toncenter.com/api/v3"));
 check(
   "while a chain no registry describes still resolves to nothing",
@@ -1800,6 +1801,54 @@ check(
   `${visibleLength(manyLines)} visible chars`
 );
 check("and stays valid HTML", tagsBalanced(manyLines));
+
+// "TON did not answer" and "TON's index refused on a rate limit" send the
+// reader to different places, and only one of them is something they can act
+// on. The non-EVM readers returned a count and nothing else, so both
+// produced the same line.
+const withReason = renderLiquidityReport({
+  symbol: "USDE",
+  name: "Ethena USDe",
+  balances: [
+    {
+      protocol: "layerzero",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 5n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 2,
+  failuresByChain: { ton: 1 },
+  attemptsByChain: { ton: 1 },
+  failureReasons: { ton: "индекс TON ответил 429 — лимит запросов" },
+});
+check("an unanswered chain carries its reason", withReason.includes("429 — лимит запросов"));
+check("and is still named", withReason.includes("TON"));
+
+const withoutReason = renderLiquidityReport({
+  symbol: "USDE",
+  name: "Ethena USDe",
+  balances: [
+    {
+      protocol: "layerzero",
+      chainKey: "ethereum",
+      custodyAddress: PORTAL_ETH,
+      tokenAddress: TOKEN,
+      amount: 5n,
+      decimals: 18,
+    },
+  ],
+  checkedCount: 2,
+  failuresByChain: { ton: 1 },
+  attemptsByChain: { ton: 1 },
+});
+check("a reader with no reason to give still names the chain", withoutReason.includes("Не ответили совсем"));
+check(
+  "and does not invent one",
+  (withoutReason.split("\n").find((l) => l.includes("Не ответили совсем")) ?? "").includes(" — ") === false
+);
 
 // The address scan builds one enormous line - every chain name it checked,
 // comma-separated - and at two hundred and twenty-nine chains that line is

@@ -112,6 +112,14 @@ export interface ReportInput {
   /** Contracts that reverted rather than answering with a balance. */
   notReadableByChain?: Record<string, number>;
   /**
+   * Why a chain could not be read, where the reader knows.
+   *
+   * "TON did not answer" and "TON's index refused on a rate limit" send the
+   * reader to different places, and only one of them is a problem they can
+   * do anything about.
+   */
+  failureReasons?: Record<string, string>;
+  /**
    * Chains where the token exists but no tracked bridge holds any of it.
    *
    * The customer's question, verbatim: does the report say whether there are
@@ -379,7 +387,14 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
   }
   if (unreachable.length > 0) {
-    notes.push(`⚠️ Не ответили совсем: ${esc(unreachable.join(", "))}. Этих сетей в отчёте нет.`);
+    const explained = unreachable
+      .map((name) => {
+        const chainKey = Object.keys(input.failureReasons ?? {}).find((k) => chainName(k) === name);
+        const reason = chainKey ? input.failureReasons?.[chainKey] : undefined;
+        return reason ? `${name} — ${reason}` : name;
+      })
+      .join("; ");
+    notes.push(`⚠️ Не ответили совсем: ${esc(explained)}. Этих сетей в отчёте нет.`);
   }
   if (partial.length > 0) {
     notes.push(

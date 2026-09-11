@@ -78,4 +78,13 @@ export interface NonEvmReadResult<Row> {
   attempts: Record<string, number>;
   /** Reads that failed to reach the chain, per chain. */
   failures: Record<string, number>;
+  /**
+   * Why, per chain, when the reader knows.
+   *
+   * A count alone says a chain did not answer and nothing else, so an index
+   * refusing on a rate limit and an index that has never heard of the
+   * contract produce the same line - and they need opposite responses. The
+   * EVM side has /diag for this; the non-EVM readers had nowhere to put it.
+   */
+  reasons?: Record<string, string>;
 }

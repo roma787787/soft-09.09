@@ -301,7 +301,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // row says "this bridge holds nothing" about a bridge nobody could ask.
   const nonEvmAttempts: Record<string, number> = {};
   const nonEvmFailures: Record<string, number> = {};
+  const nonEvmReasons: Record<string, string> = {};
   for (const read of nonEvmReads) {
+    for (const [chainKey, reason] of Object.entries(read.reasons ?? {})) {
+      nonEvmReasons[chainKey] = reason;
+    }
     for (const [chainKey, n] of Object.entries(read.attempts)) {
       nonEvmAttempts[chainKey] = (nonEvmAttempts[chainKey] ?? 0) + n;
     }
@@ -392,6 +396,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     failuresByChain: { ...failuresByChain, ...nonEvmFailures },
     attemptsByChain: { ...attemptsByChain, ...nonEvmAttempts },
     notReadableByChain,
+    failureReasons: nonEvmReasons,
     nativeOftChains: [...nativeOftChains],
     mismatchedAdapters,
     syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
