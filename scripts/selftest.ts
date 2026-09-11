@@ -27,6 +27,7 @@ import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
+import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -51,6 +52,7 @@ import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
+import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -393,6 +395,29 @@ check(
 // an address nobody vouches for.
 check("every Portal chain has a custody address", PORTAL_CHAINS.every((c) => !!portalCustodyAddress(c.key)));
 check("and they are distinct chains", new Set(PORTAL_CHAINS.map((c) => c.key)).size === PORTAL_CHAINS.length);
+
+// Aptos carries two token standards, and which one an address belongs to is
+// a guess from its shape: a coin type is written 0xaddr::module::Name, a
+// fungible asset is a bare object address. The likely shape is tried first
+// and the other one after, because the guess is the only thing standing
+// between a real balance and a row reported as unreadable - and Aptos pairs
+// many coins with a fungible asset, so the two are not always alternatives.
+const coinFirst = aptosCalls("0xf22::asset::USDC", "0xcustody");
+const fungibleFirst = aptosCalls("0x357b0b74bc833e95", "0xcustody");
+check("both shapes are always tried", coinFirst.length === 2 && fungibleFirst.length === 2);
+check(
+  "a coin type asks coin::balance first",
+  (coinFirst[0].balance as { function: string }).function === "0x1::coin::balance"
+);
+check(
+  "a bare address asks the fungible store first",
+  (fungibleFirst[0].balance as { function: string }).function === "0x1::primary_fungible_store::balance"
+);
+check(
+  "and each falls back to the other",
+  (coinFirst[1].balance as { function: string }).function ===
+    (fungibleFirst[0].balance as { function: string }).function
+);
 
 // /gecko answers "is the key working" with a request rather than a guess,
 // and the plan's own numbers are what it reports back.

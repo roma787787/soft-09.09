@@ -118,13 +118,38 @@ async function aptosView(urls: string[], payload: unknown): Promise<unknown[] | 
 }
 
 /**
- * Aptos carries two token standards and they are read differently.
+ * The two shapes an Aptos balance can be asked for.
  *
  * A coin type is written `0xaddr::module::Name`; a fungible asset is a bare
- * object address with no `::` in it. Guessing wrong is not dangerous - the
- * view call simply fails - but asking the right one first saves a round trip
- * on every read.
+ * object address with no `::` in it. Both shapes are built, and the one the
+ * address looks like is tried first - but if it fails the other is tried
+ * too, because the guess is the only thing standing between a real balance
+ * and a row reported as unreadable. Aptos also pairs many coins with a
+ * fungible asset, so the two are not always alternatives.
+ *
+ * A wrong shape costs one request and returns nothing; it cannot return a
+ * wrong number, which is the only outcome that would matter.
  */
+export function aptosCalls(token: string, custody: string): Array<{ balance: unknown; decimals: unknown }> {
+  const asCoin = {
+    balance: { function: "0x1::coin::balance", type_arguments: [token], arguments: [custody] },
+    decimals: { function: "0x1::coin::decimals", type_arguments: [token], arguments: [] },
+  };
+  const asFungible = {
+    balance: {
+      function: "0x1::primary_fungible_store::balance",
+      type_arguments: ["0x1::object::ObjectCore"],
+      arguments: [custody, token],
+    },
+    decimals: {
+      function: "0x1::fungible_asset::decimals",
+      type_arguments: ["0x1::object::ObjectCore"],
+      arguments: [token],
+    },
+  };
+  return token.includes("::") ? [asCoin, asFungible] : [asFungible, asCoin];
+}
+
 async function readAptos(
   chainKey: string,
   token: string,
@@ -133,32 +158,24 @@ async function readAptos(
   const chain = getPortalChain(chainKey);
   if (!chain) return undefined;
   const urls = endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls);
-  const isCoin = token.includes("::");
 
-  const balanceCall = isCoin
-    ? { function: "0x1::coin::balance", type_arguments: [token], arguments: [custody] }
-    : {
-        function: "0x1::primary_fungible_store::balance",
-        type_arguments: ["0x1::object::ObjectCore"],
-        arguments: [custody, token],
-      };
-  const decimalsCall = isCoin
-    ? { function: "0x1::coin::decimals", type_arguments: [token], arguments: [] }
-    : { function: "0x1::fungible_asset::decimals", type_arguments: ["0x1::object::ObjectCore"], arguments: [token] };
-
-  const [balance, decimals] = await Promise.all([
-    aptosView(urls, balanceCall),
-    aptosView(urls, decimalsCall),
-  ]);
-
-  const rawAmount = balance?.[0];
-  const rawDecimals = decimals?.[0];
-  if (rawAmount === undefined || rawDecimals === undefined) return undefined;
-  try {
-    return { amount: BigInt(String(rawAmount)), decimals: Number(rawDecimals) };
-  } catch {
-    return undefined;
+  for (const call of aptosCalls(token, custody)) {
+    const [balance, decimals] = await Promise.all([
+      aptosView(urls, call.balance),
+      aptosView(urls, call.decimals),
+    ]);
+    const rawAmount = balance?.[0];
+    const rawDecimals = decimals?.[0];
+    if (rawAmount === undefined || rawDecimals === undefined) continue;
+    try {
+      return { amount: BigInt(String(rawAmount)), decimals: Number(rawDecimals) };
+    } catch {
+      // A number the chain answered with but nobody can parse is not a
+      // balance; the other shape may still give one.
+      continue;
+    }
   }
+  return undefined;
 }
 
 /* -------------------------------------------------------------------- */
