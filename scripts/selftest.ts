@@ -29,7 +29,7 @@ import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
-import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
+import { describeBody, parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
@@ -58,7 +58,7 @@ import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
-import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
+import { describeBody, parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
@@ -452,6 +452,17 @@ check("and an empty answer is not a zero", parseJettonMaster({ jetton_masters: [
 check("TON has one API base, not a fallback that cannot answer", TON_CHAIN.apiUrls.length === 1);
 
 check("and it is the index whose shape the parser reads", TON_CHAIN.apiUrls[0].includes("toncenter.com/api/v3"));
+
+// A body that arrived whole and still has no wallets in it is a different
+// fact from a refusal, and the two were reported identically - which is how
+// a key pointed at the wrong service looks exactly like a chain holding
+// nothing. Naming what did arrive is the only thing that tells them apart.
+check("an error object names itself", describeBody({ error: "invalid api key" }).includes("invalid api key"));
+check("a detail field counts as one too", describeBody({ detail: "Unauthorized" }).includes("Unauthorized"));
+check("an unfamiliar shape lists its fields", describeBody({ ok: true, result: [] }) === "поля: ok, result");
+check("an empty object says so", describeBody({}) === "пустой объект");
+check("and nothing at all says so", describeBody(undefined) === "пусто");
+check("an HTML page is not mistaken for data", describeBody("<!DOCTYPE html>").startsWith("<!DOCTYPE"));
 check(
   "while a chain no registry describes still resolves to nothing",
   ["tezos", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)

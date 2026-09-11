@@ -115,6 +115,22 @@ interface JettonHolding {
   wallet: string;
 }
 
+/**
+ * A body in a few words, for a failure message.
+ *
+ * Enough to recognise an error object, a login page or an empty answer, and
+ * short enough to sit in a chat message beside the chain it explains.
+ */
+export function describeBody(body: unknown): string {
+  if (body === null || body === undefined) return "пусто";
+  if (typeof body !== "object") return String(body).slice(0, 80);
+  const keys = Object.keys(body as Record<string, unknown>);
+  if (keys.length === 0) return "пустой объект";
+  const error = (body as { error?: unknown; detail?: unknown }).error ?? (body as { detail?: unknown }).detail;
+  if (error !== undefined) return `ошибка «${String(error).slice(0, 80)}»`;
+  return `поля: ${keys.slice(0, 6).join(", ")}`;
+}
+
 /** Parsed apart from the fetch, so the response shape is covered by a test. */
 export function parseJettonWallets(body: unknown): JettonHolding[] {
   const wallets = (body as { jetton_wallets?: unknown })?.jetton_wallets;
@@ -149,6 +165,11 @@ export function parseJettonMaster(body: unknown): { decimals: number; symbol?: s
   const decimals = raw === undefined || raw === null ? 9 : Number(raw);
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return undefined;
   return { decimals, symbol: typeof content?.symbol === "string" ? content.symbol : undefined };
+}
+
+/** The index actually in use, for a diagnostic that has to name it. */
+export function tonApiBase(): string {
+  return bases()[0] ?? "нет адреса";
 }
 
 function bases(): string[] {
@@ -188,11 +209,18 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
 
     let holdings: JettonHolding[] = [];
     for (const base of bases()) {
-      const body = await getJson(
-        `${base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}&limit=${MAX_WALLETS}`
-      );
+      const url = `${base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}&limit=${MAX_WALLETS}`;
+      const body = await getJson(url);
       holdings = parseJettonWallets(body);
       if (holdings.length > 0) break;
+
+      // A body that came back whole and still has no wallets in it is a
+      // different fact from a refusal, and the two were reported the same
+      // way. Naming what did arrive is the only thing that tells them
+      // apart - a key pointed at the wrong service answers 200 all day.
+      if (body !== undefined && !Array.isArray((body as { jetton_wallets?: unknown }).jetton_wallets)) {
+        lastFailure = `индекс ответил без поля jetton_wallets: ${describeBody(body)}`;
+      }
     }
 
     if (holdings.length === 0) {

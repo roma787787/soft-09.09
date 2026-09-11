@@ -1,7 +1,8 @@
 import type { Telegraf, Context } from "telegraf";
 import { TON_CHAIN, toTonAddress } from "../../config/tonChain";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
-import { findTonBalances } from "../../bridges/ton";
+import { findTonBalances, tonApiBase } from "../../bridges/ton";
+import { env } from "../../config/env";
 import { formatAmount } from "../../services/balances";
 import { capToTelegramLimit } from "../render";
 
@@ -29,7 +30,14 @@ export function registerTonCommand(bot: Telegraf) {
     }
 
     await ctx.sendChatAction("typing");
-    const lines: string[] = [`<b>TON — ${esc(symbol)}</b>`, ""];
+    const lines: string[] = [
+      `<b>TON — ${esc(symbol)}</b>`,
+      // The address being asked, and whether a key is in play. A key pointed
+      // at the wrong service, or an override pointed at the wrong host,
+      // looks exactly like a chain holding nothing.
+      `Индекс: <code>${esc(tonApiBase())}</code>, ключ ${env.tonApiKey ? "задан" : "не задан"}`,
+      "",
+    ];
 
     const deployments = await findRegistryDeploymentsOnChain(symbol, TON_CHAIN.key);
     lines.push(`<b>Реестр LayerZero</b>: деплоев на TON — ${deployments.length}`);
