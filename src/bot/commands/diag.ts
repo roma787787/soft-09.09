@@ -131,6 +131,30 @@ async function probeNode(url: string): Promise<NodeHealth> {
   }
 }
 
+/**
+ * Of several failures, the one worth acting on.
+ *
+ * The report used to show whichever came first in the list, and the first
+ * endpoint is often a hostname that died a year ago - so Kroma and Aleph
+ * Zero were reported as ENOTFOUND while their other nodes were alive and
+ * refusing this host's IP. Those are opposite diagnoses: a dead name cannot
+ * be fixed by anyone, and a refusal is fixed by a private RPC, which is
+ * exactly what the report's own footer offers.
+ *
+ * So a server that answered and said no outranks a name that no longer
+ * resolves, which outranks a node that said nothing at all.
+ */
+export function mostActionable(reasons: string[]): string {
+  if (reasons.length === 0) return "нет ответа";
+  const rank = (reason: string): number => {
+    if (/^HTTP \d|certificate|altnames|is not valid JSON|not available/i.test(reason)) return 0;
+    if (/ECONNRESET|ECONNREFUSED|socket|TLS/i.test(reason)) return 1;
+    if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(reason)) return 2;
+    return 3;
+  };
+  return [...reasons].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))[0];
+}
+
 async function checkChain(chainKey: string, label: string): Promise<ChainHealth> {
   const custom = hasCustomRpc(chainKey);
   // The order the reader will use, not the order the registries gave. A
@@ -147,17 +171,19 @@ async function checkChain(chainKey: string, label: string): Promise<ChainHealth>
   const nodes = await Promise.all(urls.map(probeNode));
   const alive = nodes.filter((n) => n.ok);
   if (alive.length === 0) {
-    // The shortest of the failures, because "нет ответа за 6 с" repeated six
-    // times says less than the one node that bothered to explain itself.
-    const explained = nodes.find((n) => n.error && !n.error.startsWith("нет ответа"));
-    const raw = (explained ?? nodes[0]).error ?? "нет ответа";
+    const reasons = [...new Set(nodes.map((n) => n.error).filter((e): e is string => !!e))];
+    const raw = mostActionable(reasons);
+    const others = reasons.length - 1;
+    const trimmed = raw.length > 80 ? `${raw.slice(0, 80)}…` : raw;
     return {
       chainKey,
       label,
       ok: false,
       alive: 0,
       asked: nodes.length,
-      error: raw.length > 80 ? `${raw.slice(0, 80)}…` : raw,
+      // The other reasons are counted, not listed: they would give every
+      // chain a reason of its own and the grouping would stop grouping.
+      error: others > 0 ? `${trimmed} (+${others} ${others === 1 ? "другая" : "других"})` : trimmed,
       custom,
     };
   }

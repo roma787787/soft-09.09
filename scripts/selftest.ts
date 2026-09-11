@@ -31,7 +31,7 @@ import {
   mergeFacts,
   type DiscoveryReport,
 } from "../src/services/chainDiscovery";
-import { describeError } from "../src/bot/commands/diag";
+import { describeError, mostActionable } from "../src/bot/commands/diag";
 import { formatAmount } from "../src/services/balances";
 import { findHyperlaneCustodians } from "../src/bridges/hyperlane";
 import { resolveCustodians } from "../src/bridges";
@@ -1729,6 +1729,34 @@ check("a chain with supply but no custody is named", withSupplyOnly.includes("Ro
 check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
+// When several of a chain's nodes fail differently, the report used to name
+// whichever came first - and the first endpoint is often a hostname that
+// died a year ago. Kroma and Aleph Zero were reported as ENOTFOUND while
+// their other nodes were alive and refusing this host's IP. Opposite
+// diagnoses: a dead name cannot be fixed by anyone, a refusal is fixed by
+// the private RPC the report's own footer offers.
+check(
+  "a server that said no outranks a name that is gone",
+  mostActionable(["getaddrinfo ENOTFOUND api.kroma.network (ENOTFOUND)", "HTTP 403"]) === "HTTP 403"
+);
+check(
+  "a certificate problem is actionable too",
+  mostActionable([
+    "getaddrinfo ENOTFOUND rpc.example.invalid",
+    "Hostname/IP does not match certificate's altnames",
+  ]).startsWith("Hostname/IP")
+);
+check(
+  "a dead name still outranks silence",
+  mostActionable(["нет ответа за 6 с", "getaddrinfo ENOTFOUND rpc.example.invalid"]).includes("ENOTFOUND")
+);
+check(
+  "a reset connection sits between them",
+  mostActionable(["getaddrinfo ENOTFOUND x", "read ECONNRESET (ECONNRESET)"]).includes("ECONNRESET")
+);
+check("one reason is itself", mostActionable(["HTTP 429"]) === "HTTP 429");
+check("and no reason at all is not a crash", mostActionable([]) === "нет ответа");
+
 // The alternates table is keyed by chain id, not by the bot's name for a
 // chain. It discovers chains at runtime, and a chain it was never told
 // about has no such name - so keying by name handed every discovered chain
