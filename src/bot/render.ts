@@ -83,6 +83,29 @@ export function capToTelegramLimit(text: string): string {
 const MAX_PARTS = 6;
 
 /**
+ * The report's own blocks, each ending with the blank line that follows it.
+ *
+ * Breaking between any two lines put a message boundary through the middle
+ * of a chain: the next message opened with a bare " - Hyperlane (Warp
+ * Route): 46 489 USDC", with no way to tell which network it belonged to,
+ * and Telegram strips the leading spaces so it did not even read as a
+ * continuation. A chain is one thing and has to arrive as one.
+ */
+function sectionsOf(text: string): string[][] {
+  const sections: string[][] = [];
+  let current: string[] = [];
+  for (const line of text.split("\n")) {
+    current.push(line);
+    if (line === "") {
+      sections.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) sections.push(current);
+  return sections;
+}
+
+/**
  * Splits a report across messages instead of cutting it short.
  *
  * Telegram limits one message, not one reply, and the limit was being paid
@@ -99,26 +122,31 @@ export function splitForTelegram(text: string): string[] {
   let current: string[] = [];
   let used = 0;
 
-  for (const line of text.split("\n")) {
-    const cost = visibleLength(line) + 1;
-    // A single line longer than a whole message has no boundary to break on,
-    // so it is capped on its own rather than dragging a part over the limit.
+  const flush = () => {
+    if (current.length > 0) parts.push(current.join("\n"));
+    current = [];
+    used = 0;
+  };
+
+  for (const section of sectionsOf(text)) {
+    const cost = visibleLength(section.join("\n")) + 1;
+    // A section longer than a whole message has no boundary of its own, so
+    // it falls back to breaking between its lines.
     if (cost > MAX_MESSAGE_CHARS) {
-      if (current.length > 0) parts.push(current.join("\n"));
-      parts.push(capToTelegramLimit(line));
-      current = [];
-      used = 0;
+      flush();
+      for (const line of section) {
+        const lineCost = visibleLength(line) + 1;
+        if (used + lineCost > MAX_MESSAGE_CHARS && current.length > 0) flush();
+        current.push(line);
+        used += lineCost;
+      }
       continue;
     }
-    if (used + cost > MAX_MESSAGE_CHARS && current.length > 0) {
-      parts.push(current.join("\n"));
-      current = [];
-      used = 0;
-    }
-    current.push(line);
+    if (used + cost > MAX_MESSAGE_CHARS) flush();
+    current.push(...section);
     used += cost;
   }
-  if (current.length > 0) parts.push(current.join("\n"));
+  flush();
   if (parts.length === 0) return [text];
   if (parts.length <= MAX_PARTS) return parts;
 

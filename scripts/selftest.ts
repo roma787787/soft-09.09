@@ -1950,6 +1950,22 @@ check("every part is valid HTML on its own", wideParts.every(tagsBalanced));
 // A short report is still one message; splitting is not a new default shape.
 check("a report that fits stays a single message", splitForTelegram(smallReport).length === 1);
 
+// Breaking between any two lines put a message boundary through the middle
+// of a chain: the next message opened with a bare " - Hyperlane (Warp
+// Route): 46 489 USDC" and no way to tell which network it belonged to.
+// Telegram strips the leading spaces too, so it did not even read as a
+// continuation. A chain is one thing and has to arrive as one.
+check(
+  "no part opens on an orphaned row",
+  wideParts.every((p) => !/^\s*[-·]/.test(p)),
+  wideParts.map((p) => p.split("\n")[0].slice(0, 40)).join(" | ")
+);
+check(
+  "every part after the first opens on a chain or a note",
+  wideParts.slice(1).every((p) => /^(Сеть:|<b>|[А-ЯЁ⚠️ℹ️])/.test(p.trimStart())),
+  wideParts.slice(1).map((p) => p.trimStart().slice(0, 30)).join(" | ")
+);
+
 // Telegram parses the whole message as HTML and refuses an unbalanced one,
 // so a cut through a tag fails to send - the exact outcome the cap prevents.
 function tagsBalanced(html: string): boolean {
