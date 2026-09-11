@@ -1,8 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { TON_CHAIN, toTonAddress } from "../../config/tonChain";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
-import { findTonBalances, tonApiBase } from "../../bridges/ton";
-import { lookupToken } from "../../services/coingecko";
+import { findTonBalances, jettonAddressFor, tonApiBase } from "../../bridges/ton";
 import { env } from "../../config/env";
 import { formatAmount } from "../../services/balances";
 import { capToTelegramLimit } from "../render";
@@ -60,12 +59,11 @@ export function registerTonCommand(bot: Telegraf) {
     // The jetton's own address, when the price API knows it. Without it the
     // reader has to guess by symbol among whatever the adapter has been
     // sent, and on TON that is mostly spam.
-    const token = await lookupToken(symbol);
-    const knownJetton = token?.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress;
+    const knownJetton = await jettonAddressFor(symbol);
     lines.push(
       knownJetton
         ? `Адрес джеттона у CoinGecko: <code>${esc(knownJetton)}</code>`
-        : "CoinGecko не знает адрес этого токена на TON — придётся искать по символу.",
+        : "Адреса на TON не знает ни этот тикер, ни тот, от которого он произошёл — придётся искать по символу.",
       ""
     );
 

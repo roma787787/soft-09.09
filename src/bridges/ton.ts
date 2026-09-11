@@ -1,6 +1,7 @@
 import { TON_CHAIN, toTonAddress } from "../config/tonChain";
 import { endpointsWithOverride, env } from "../config/env";
 import { findRegistryDeploymentsOnChain } from "./layerzero";
+import { lookupToken } from "../services/coingecko";
 import type { NonEvmReadResult } from "./types";
 
 /**
@@ -116,6 +117,39 @@ interface JettonHolding {
 }
 
 /**
+ * The ticker a bridged token was named after.
+ *
+ * A bridged deployment is routinely listed under its own ticker with a digit
+ * on the end - USDT0 for USDT - and the price API knows the original on TON
+ * while knowing nothing about the derivative. The same relationship the
+ * LayerZero registry lookup already relies on, applied to the other source.
+ */
+export function baseTicker(symbol: string): string | undefined {
+  const upper = symbol.toUpperCase();
+  const base = upper.replace(/[0-9]+$/, "");
+  return base.length >= 3 && base !== upper ? base : undefined;
+}
+
+/**
+ * The jetton this ticker means on TON, asked of the price API.
+ *
+ * Tried for the derivative first and then for what it was named after,
+ * because an address is worth two requests: without one the reader is left
+ * sorting through whatever the adapter has been sent, and on TON that is
+ * mostly spam.
+ */
+export async function jettonAddressFor(symbol: string): Promise<string | undefined> {
+  const direct = await lookupToken(symbol).catch(() => undefined);
+  const onTon = direct?.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress;
+  if (onTon) return onTon;
+
+  const base = baseTicker(symbol);
+  if (!base) return undefined;
+  const original = await lookupToken(base).catch(() => undefined);
+  return original?.otherPlatforms.find((p) => p.chainKey === TON_CHAIN.key)?.tokenAddress;
+}
+
+/**
  * Two ticker spellings, compared the way a person would.
  *
  * Tether writes the jetton's symbol with a tugrik - USD₮ - and stripping
@@ -225,6 +259,10 @@ export async function findTonBalances(
   );
   if (deployments.length === 0) return { rows: [], attempts, failures };
 
+  // Only now, because it costs a request and is worth nothing unless there
+  // is an adapter to point it at.
+  const jetton = knownJetton ?? (await jettonAddressFor(symbol));
+
   attempts[TON_CHAIN.key] = deployments.length;
   const wanted = symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
@@ -246,7 +284,7 @@ export async function findTonBalances(
       // Listing everything and guessing by symbol was answering a question
       // about spam. The address of the jetton is published - the price API
       // lists it for TON - and an address cannot be spoofed by naming.
-      const filter = knownJetton ? `&jetton_address=${encodeURIComponent(knownJetton)}` : "";
+      const filter = jetton ? `&jetton_address=${encodeURIComponent(jetton)}` : "";
       const url = `${base}/jetton/wallets?owner_address=${encodeURIComponent(owner)}${filter}&limit=${MAX_WALLETS}`;
       const body = await getJson(url);
       holdings = parseJettonWallets(body);
@@ -262,7 +300,7 @@ export async function findTonBalances(
       if (body === undefined) continue;
       const listed = (body as { jetton_wallets?: unknown }).jetton_wallets;
       lastFailure = Array.isArray(listed)
-        ? knownJetton
+        ? jetton
           ? `у адаптера нет кошелька этого джеттона — он ничего не держит`
           : `индекс вернул пустой список кошельков для этого адреса`
         : `индекс ответил без поля jetton_wallets: ${describeBody(body)}`;
@@ -314,7 +352,7 @@ export async function findTonBalances(
     // With the jetton named, the index already returned only its wallet and
     // there is nothing left to choose. Without it, the symbol is all there
     // is - and on a chain where anyone can mint a name, that is a guess.
-    const matching = knownJetton || known.length === 1 ? known : known.filter((k) => symbolsAgree(k.symbol, wanted));
+    const matching = jetton || known.length === 1 ? known : known.filter((k) => symbolsAgree(k.symbol, wanted));
 
     if (matching.length === 0) {
       failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;

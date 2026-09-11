@@ -30,7 +30,13 @@ import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains"
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
-import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
+import {
+  baseTicker,
+  describeBody,
+  parseJettonMaster,
+  parseJettonWallets,
+  symbolsAgree,
+} from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
@@ -62,7 +68,13 @@ import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains"
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
-import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
+import {
+  baseTicker,
+  describeBody,
+  parseJettonMaster,
+  parseJettonWallets,
+  symbolsAgree,
+} from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
@@ -475,6 +487,16 @@ check("an HTML page is not mistaken for data", describeBody("<!DOCTYPE html>").s
 // "USDT0". The wallets were found and then thrown away by the very filter
 // meant to pick them. The EVM side has replaced that character for months;
 // this reader had not.
+// A bridged deployment is routinely listed under its own ticker with a
+// digit on the end - USDT0 for USDT - and the price API knows the original
+// on TON while knowing nothing about the derivative. Without an address the
+// reader is left sorting through whatever the adapter has been sent, and on
+// TON that is eight spam jettons.
+check("a derivative ticker names what it came from", baseTicker("USDT0") === "USDT");
+check("and so does another", baseTicker("XAUT0") === "XAUT");
+check("a ticker with no digit has no original", baseTicker("USDC") === undefined);
+check("and one that would be left too short has none either", baseTicker("X0") === undefined);
+
 check("the tugrik does not hide a match", symbolsAgree("USD₮", "USDT0"));
 check("nor against the plain ticker", symbolsAgree("USD₮", "USDT"));
 check("a case difference is not a difference", symbolsAgree("USDe", "USDE"));
