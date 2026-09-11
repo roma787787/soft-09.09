@@ -27,7 +27,7 @@ import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
-import { toTonAddress } from "../src/config/tonChain";
+import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
 import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
@@ -56,7 +56,7 @@ import { validateAddress } from "../src/protocols/addresses/validate";
 import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
-import { toTonAddress } from "../src/config/tonChain";
+import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
 import { parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
@@ -442,6 +442,15 @@ check("decimals arrive as a string", parseJettonMaster({ jetton_masters: [{ jett
 check("a jetton without them gets the standard's default", parseJettonMaster({ jetton_masters: [{ jetton_content: {} }] })?.decimals === 9);
 check("an absurd value is refused", parseJettonMaster({ jetton_masters: [{ jetton_content: { decimals: "999" } }] }) === undefined);
 check("and an empty answer is not a zero", parseJettonMaster({ jetton_masters: [] }) === undefined);
+
+// The index is asked once per adapter and again per jetton, while the report
+// is doing everything else at once, and it allows about one request a second
+// without a key. /ton read an adapter seconds before /info reported the same
+// chain as unanswered - so a refusal here is routine, not exceptional, and
+// the one API listed behind it as a fallback was a different API whose paths
+// all 404: a second chance that could never be taken.
+check("TON has one API base, not a fallback that cannot answer", TON_CHAIN.apiUrls.length === 1);
+check("and it is the index whose shape the parser reads", TON_CHAIN.apiUrls[0].includes("toncenter.com/api/v3"));
 check(
   "while a chain no registry describes still resolves to nothing",
   ["tezos", "algorand-ecosystem"].every((p) => resolveNonEvmPlatform(undefined, p) === undefined)

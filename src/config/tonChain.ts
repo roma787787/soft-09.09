@@ -14,11 +14,18 @@ export const TON_CHAIN = {
   label: "TON",
   rpcEnvVar: "TON_API_URL",
   /**
-   * Toncenter's v3 API. A jetton balance is one GET here; asking the chain
-   * directly would mean encoding a get-method call into a cell, which is a
-   * great deal of machinery for a number the index already has.
+   * Toncenter's v3 API, and only it. A jetton balance is one GET here;
+   * asking the chain directly would mean encoding a get-method call into a
+   * cell, which is a great deal of machinery for a number the index already
+   * publishes.
+   *
+   * One entry on purpose. tonapi.io was listed behind it as a fallback and
+   * could never have worked: it is a different API with different paths, so
+   * every request to it was a 404 dressed up as a second chance. A fallback
+   * that cannot answer is worse than none - it hides the fact that there
+   * isn't one.
    */
-  apiUrls: ["https://toncenter.com/api/v3", "https://tonapi.io/v2"],
+  apiUrls: ["https://toncenter.com/api/v3"],
   explorerAddressUrl: (address: string) => `https://tonviewer.com/${address}`,
   aliases: ["ton", "toncoin"],
   platformNames: ["TON", "Toncoin", "The Open Network"],

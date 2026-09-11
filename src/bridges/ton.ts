@@ -1,5 +1,5 @@
 import { TON_CHAIN, toTonAddress } from "../config/tonChain";
-import { endpointsWithOverride } from "../config/env";
+import { endpointsWithOverride, env } from "../config/env";
 import { findRegistryDeploymentsOnChain } from "./layerzero";
 import type { NonEvmReadResult } from "./types";
 
@@ -17,6 +17,18 @@ import type { NonEvmReadResult } from "./types";
 
 const TIMEOUT_MS = 12_000;
 
+/**
+ * Attempts per request, and how long to wait between them.
+ *
+ * The index allows about one request a second without a key, and a report
+ * asks it several times in a row while doing everything else at once - so a
+ * refusal here is routine rather than exceptional. /ton read this adapter
+ * seconds before /info reported the chain as unanswered, which is the whole
+ * problem in one sentence.
+ */
+const ATTEMPTS = 3;
+const BACKOFF_MS = 700;
+
 /** Jetton wallets read per adapter. An adapter normally owns one. */
 const MAX_WALLETS = 20;
 
@@ -31,16 +43,26 @@ export interface TonBalanceRow {
 }
 
 async function getJson(url: string): Promise<any | undefined> {
-  try {
-    const response = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!response.ok) return undefined;
-    return await response.json();
-  } catch {
-    return undefined;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  // A free key raises the limit from roughly one request a second to
+  // something a report can live with. Optional, because the index answers
+  // without one and a bot nobody has configured should still work.
+  if (env.tonApiKey) headers["X-API-Key"] = env.tonApiKey;
+
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (response.ok) return await response.json();
+      // Only a refusal is worth repeating. A 404 will be a 404 next time.
+      if (response.status !== 429 && response.status < 500) return undefined;
+    } catch {
+      // A timeout is worth one more try for the same reason a 429 is.
+    }
+    if (attempt < ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS * (attempt + 1)));
+    }
   }
+  return undefined;
 }
 
 interface JettonHolding {

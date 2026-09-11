@@ -65,6 +65,12 @@ export const env = {
    * bot answering exactly as before because it was still the build from
    * before.
    */
+  /**
+   * Optional. The jetton index answers without it at about one request a
+   * second, which a report shares with everything else it is doing.
+   */
+  tonApiKey: read("TON_API_KEY"),
+
   commitSha: read("RAILWAY_GIT_COMMIT_SHA") || read("GIT_COMMIT_SHA") || "",
   gitBranch: read("RAILWAY_GIT_BRANCH") || "",
   layerZeroScanApi: read("LAYERZERO_SCAN_API") || "https://scan.layerzero-api.com/v1",
