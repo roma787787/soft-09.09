@@ -181,25 +181,72 @@ export interface AptosResource {
  * object is asked what it is made of, and the answer names the account to
  * read.
  */
-export async function aptosResources(chainKey: string, address: string): Promise<AptosResource[]> {
+async function fetchResources(chainKey: string, address: string): Promise<unknown[]> {
   const chain = getPortalChain(chainKey);
   if (!chain) return [];
 
   for (const url of endpointsWithOverride(chain.rpcEnvVar, chain.rpcUrls)) {
     const body = await getJson(`${url.replace(/\/+$/, "")}/accounts/${address}/resources`);
-    if (!Array.isArray(body)) continue;
-
-    return body.slice(0, 12).map((raw) => {
-      const data = (raw as { data?: unknown })?.data;
-      const fields = data && typeof data === "object" ? Object.keys(data as object) : [];
-      return {
-        type: String((raw as { type?: unknown })?.type ?? "?"),
-        fields,
-        addresses: addressesIn(data),
-      };
-    });
+    if (Array.isArray(body)) return body;
   }
   return [];
+}
+
+export async function aptosResources(chainKey: string, address: string): Promise<AptosResource[]> {
+  return (await fetchResources(chainKey, address)).slice(0, 12).map((raw) => {
+    const data = (raw as { data?: unknown })?.data;
+    const fields = data && typeof data === "object" ? Object.keys(data as object) : [];
+    return {
+      type: String((raw as { type?: unknown })?.type ?? "?"),
+      fields,
+      addresses: addressesIn(data),
+    };
+  });
+}
+
+export interface AptosOftShape {
+  /** Mints its own supply, so no object holds anything by design. */
+  mints: boolean;
+  /** The object holding the locked collateral, when it locks one. */
+  escrow?: string;
+  /** The module that settled it, so the report can say what decided. */
+  module: string;
+}
+
+/**
+ * Whether a LayerZero deployment on Aptos locks or mints, and where.
+ *
+ * The registry's `type` cannot answer this: USDe's Aptos entry is filed as
+ * OFT_ADAPTER and the object carries `oft_fa::OftImpl` with a mint_ref and a
+ * burn_ref, which is a deployment that mints its own supply and holds
+ * nothing. The module the object actually carries is the fact, and it also
+ * names the escrow - `oft_adapter_fa::OftImpl` keeps an extend ref to the
+ * object the collateral sits in, which is the only way to learn that
+ * address: a secondary fungible store cannot be derived from its owner and
+ * the asset the way a primary one can.
+ */
+export async function aptosOftShape(chainKey: string, address: string): Promise<AptosOftShape | undefined> {
+  return shapeOfResources(await fetchResources(chainKey, address));
+}
+
+/** Pure half, so the shape that decides this is covered without a live call. */
+export function shapeOfResources(resources: unknown[]): AptosOftShape | undefined {
+  for (const raw of resources) {
+    const type = String((raw as { type?: unknown })?.type ?? "");
+    const data = (raw as { data?: unknown })?.data as Record<string, unknown> | undefined;
+
+    if (/::oft_adapter[a-z0-9_]*::/i.test(type)) {
+      const ref = data?.escrow_extend_ref as { self?: unknown } | undefined;
+      const escrow = typeof ref?.self === "string" ? ref.self : undefined;
+      return { mints: false, escrow, module: type };
+    }
+    // A mint ref is the deployment saying outright that it makes its own
+    // supply; there is no escrow to look for and no balance to report.
+    if (data && "mint_ref" in data && /::oft[a-z0-9_]*::/i.test(type)) {
+      return { mints: true, module: type };
+    }
+  }
+  return undefined;
 }
 
 /**

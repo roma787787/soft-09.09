@@ -260,6 +260,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
   found.push(...mesh.custodians);
   for (const chainKey of mesh.nativeChains) nativeOftChains.add(chainKey);
+  // Aptos decides this from the module the object carries rather than from
+  // the registry's type field, which calls USDe's minting deployment there
+  // an adapter.
 
   // Shared vaults answer for any token at all - one contract per chain holds
   // everything that bridge carries - so they are asked regardless of whether
@@ -304,7 +307,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     // that chain had was Wormhole's.
     !chainFilter || !!getPortalChain(chainFilter)
       ? findLayerZeroAptosBalances(symbol, portalTokenByChain)
-      : empty,
+      : { ...empty, mints: false },
     !chainFilter || !!getCosmosChain(chainFilter) ? findCosmosBalances(symbol) : empty,
     !chainFilter || !!getCosmosChain(chainFilter) ? findNativeModuleBalances(symbol) : empty,
     !chainFilter || !!getOtherChain(chainFilter) ? findOtherBalances(symbol) : empty,
@@ -347,6 +350,8 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       nonEvmFailures[chainKey] = (nonEvmFailures[chainKey] ?? 0) + n;
     }
   }
+  if (lzAptosRead.mints) nativeOftChains.add("aptos");
+
   const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
   const solanaHasSomething = solanaRows.length > 0 || Object.keys(nonEvmFailures).length > 0;
 

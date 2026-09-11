@@ -1,6 +1,6 @@
 import { getPortalChain } from "../config/portalChains";
 import { findRegistryDeploymentsOnChain, type NonEvmDeployment } from "./layerzero";
-import { readAptos } from "./portalNonEvm";
+import { readAptos, aptosOftShape } from "./portalNonEvm";
 import type { NonEvmReadResult } from "./types";
 
 /**
@@ -31,10 +31,19 @@ export interface AptosBalanceRow {
   decimals: number;
 }
 
+export interface AptosReadResult extends NonEvmReadResult<AptosBalanceRow> {
+  /**
+   * True when a deployment there mints its own supply. The report says that
+   * of a chain rather than showing an empty vault, and the two are entirely
+   * different answers to "can I withdraw here".
+   */
+  mints?: boolean;
+}
+
 export async function findLayerZeroAptosBalances(
   symbol: string,
   tokenByChain: Map<string, string>
-): Promise<NonEvmReadResult<AptosBalanceRow>> {
+): Promise<AptosReadResult> {
   const attempts: Record<string, number> = {};
   const failures: Record<string, number> = {};
   const reasons: Record<string, string> = {};
@@ -59,29 +68,52 @@ export async function findLayerZeroAptosBalances(
 
   attempts[APTOS] = deployments.length;
   const rows: AptosBalanceRow[] = [];
+  let mints = false;
 
   for (const deployment of dedupe(deployments)) {
-    const held = await readAptos(APTOS, token, deployment.address);
+    const shape = await aptosOftShape(APTOS, deployment.address);
+    if (!shape) {
+      failures[APTOS] = (failures[APTOS] ?? 0) + 1;
+      reasons[APTOS] = "объект адаптера не отдал ресурсы — определить, блокирует он или чеканит, нечем";
+      continue;
+    }
+
+    // Minting deployments hold nothing by design, which is a different
+    // answer from an empty vault and must not be reported as one. The
+    // registry files USDe's Aptos entry as an adapter and the object says
+    // otherwise; the object is the one that is right.
+    if (shape.mints) {
+      mints = true;
+      continue;
+    }
+    if (!shape.escrow) {
+      failures[APTOS] = (failures[APTOS] ?? 0) + 1;
+      reasons[APTOS] = `${shape.module} не назвал объект эскроу`;
+      continue;
+    }
+
+    // Read against the escrow, not the adapter: the adapter's own store is
+    // empty on every deployment here, which is exactly why this chain
+    // reported nothing.
+    const held = await readAptos(APTOS, token, shape.escrow);
     if (!held) {
       failures[APTOS] = (failures[APTOS] ?? 0) + 1;
-      reasons[APTOS] = "адаптер не отдал баланс ни по одному из стандартов токенов Aptos";
+      reasons[APTOS] = "эскроу не отдал баланс ни по одному из стандартов токенов Aptos";
       continue;
     }
 
     rows.push({
       protocol: "layerzero",
       chainKey: APTOS,
-      custodyAddress: deployment.address,
+      custodyAddress: shape.escrow,
       tokenAddress: token,
-      // The registry's own wording, so a native adapter is not silently
-      // filed as an ordinary one: it locks the chain's own coin.
-      note: deployment.rawType,
+      note: "эскроу OFT",
       amount: held.amount,
       decimals: held.decimals,
     });
   }
 
-  return { rows, attempts, failures, reasons };
+  return { rows, attempts, failures, reasons, mints };
 }
 
 /**

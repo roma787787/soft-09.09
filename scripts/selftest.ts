@@ -31,7 +31,7 @@ import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
-import { aptosCalls } from "../src/bridges/portalNonEvm";
+import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
   factsFromRegistryEntry,
@@ -62,7 +62,7 @@ import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
-import { aptosCalls } from "../src/bridges/portalNonEvm";
+import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
@@ -1507,6 +1507,30 @@ check(
     ?.locksCollateral === true
 );
 check("the EVM reader still drops it, as it must", extractDeployments(aptosRegistry).length === 0);
+
+// The registry's type field cannot decide this one. Both Aptos deployments
+// are filed as adapters; the objects say otherwise, and the objects are
+// right. APT's carries oft_adapter_fa with an extend ref to the escrow -
+// which held 2 939 APT nobody could see - while USDe's carries oft_fa with
+// a mint ref, so it makes its own supply and its zero is the true answer.
+const aptAdapter = [
+  { type: "0xa84::oft_store::OftStore", data: { shared_decimals: 6 } },
+  {
+    type: "0xa84::oft_adapter_fa::OftImpl",
+    data: { escrow_extend_ref: { self: "0x40e701f7542e15cc594ec406c5f54a08ce114d2fe6f5c5d46d20dd5179dc048e" }, metadata: { inner: "0xa" } },
+  },
+];
+const usdeMinter = [
+  { type: "0x967::oft_fa::OftImpl", data: { mint_ref: { metadata: { inner: "0xf37" } }, burn_ref: {}, metadata: { inner: "0xf37" } } },
+];
+check("an adapter object is read as locking", shapeOfResources(aptAdapter)?.mints === false);
+check(
+  "and it names the escrow, which no derivation could",
+  shapeOfResources(aptAdapter)?.escrow === "0x40e701f7542e15cc594ec406c5f54a08ce114d2fe6f5c5d46d20dd5179dc048e"
+);
+check("a mint ref means the deployment makes its own supply", shapeOfResources(usdeMinter)?.mints === true);
+check("and a minting deployment names no escrow", shapeOfResources(usdeMinter)?.escrow === undefined);
+check("an object with neither is not guessed at", shapeOfResources([{ type: "0x1::coin::CoinStore", data: {} }]) === undefined);
 
 const penguEscrows = svmEscrows(penguSolana);
 check("the escrow is paired with the mint it holds", penguEscrows.length === 1);
