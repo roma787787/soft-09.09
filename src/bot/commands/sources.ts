@@ -10,6 +10,7 @@ import { vaultCoverage } from "../../bridges/vaults";
 import { ccipChainCount } from "../../bridges/ccip";
 import { stargateCoverage } from "../../bridges/stargate";
 import { BRIDGE_SHORT_LABELS } from "../../bridges/types";
+import { env } from "../../config/env";
 import { plural } from "../render";
 
 /**
@@ -69,7 +70,14 @@ export function registerSourcesCommand(bot: Telegraf) {
       `<b>CCIP / Transporter</b> — роутер известен в ${ccipChainCount()} из ${CHAINS.length} сетей.`,
       "Пул под конкретный токен находится опросом контрактов, списка токенов не нужно. Проверить цепочку: <code>/ccip ethereum</code>.",
       "",
-      "Реестр LayerZero подтягивается на лету, остальные — вместе со сборкой бота."
+      "Реестр LayerZero подтягивается на лету, остальные — вместе со сборкой бота.",
+      "",
+      // Which build is answering. Without it, a fix that did not work and a
+      // fix that did not deploy produce the same evidence: the bot replying
+      // exactly as it did before.
+      env.commitSha
+        ? `Сборка: <code>${env.commitSha.slice(0, 7)}</code>${env.gitBranch ? ` (${env.gitBranch})` : ""}.`
+        : "Сборка: коммит не передан хостингом — какая версия запущена, отсюда не видно."
     );
 
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML", link_preview_options: { is_disabled: true } });

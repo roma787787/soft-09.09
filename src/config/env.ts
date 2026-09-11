@@ -55,6 +55,18 @@ export const env = {
   // else's bots. A free Demo key makes the limit ours alone.
   coingeckoApiKey: read("COINGECKO_API_KEY"),
   coingeckoApiBase: read("COINGECKO_API_BASE") || "https://api.coingecko.com",
+
+  /**
+   * Which build is running.
+   *
+   * Railway puts the deployed commit in the environment, and without it
+   * there is no way to tell a fix that did not work from a fix that did not
+   * deploy - a distinction that cost a round trip more than once, with the
+   * bot answering exactly as before because it was still the build from
+   * before.
+   */
+  commitSha: read("RAILWAY_GIT_COMMIT_SHA") || read("GIT_COMMIT_SHA") || "",
+  gitBranch: read("RAILWAY_GIT_BRANCH") || "",
   layerZeroScanApi: read("LAYERZERO_SCAN_API") || "https://scan.layerzero-api.com/v1",
   wormholescanApi: read("WORMHOLESCAN_API") || "https://api.wormholescan.io",
   circleIrisApi: read("CIRCLE_IRIS_API") || "https://iris-api.circle.com/v2",

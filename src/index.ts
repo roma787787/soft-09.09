@@ -9,6 +9,7 @@ import "./services/db"; // ensure schema is created on boot
 async function main() {
   console.log(`[startup] configured chains: ${CHAINS.map((c) => c.key).join(", ")}`);
   console.log(`[startup] db: ${env.dbPath}`);
+  console.log(`[startup] сборка: ${env.commitSha ? env.commitSha.slice(0, 7) : "коммит не передан"}${env.gitBranch ? ` (${env.gitBranch})` : ""}`);
   console.log(`[startup] libuv threadpool requested: ${requestedThreadpoolSize} (DNS lookups queue here)`);
 
   const bot = createBot();
