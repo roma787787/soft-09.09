@@ -332,7 +332,16 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // much of it exists there turns the silence into an answer.
   const withCustody = new Set(scoped.map((c) => c.chainKey));
   const supplyTargets = token.platforms
-    .filter((p) => p.chainKey && !withCustody.has(p.chainKey) && !nativeOftChains.has(p.chainKey))
+    .filter(
+      (p) =>
+        p.chainKey &&
+        // A report narrowed to one chain must not start explaining the
+        // others: /info USDC base would have listed the supply on every
+        // chain it did not ask about.
+        (!chainFilter || p.chainKey === chainFilter) &&
+        !withCustody.has(p.chainKey) &&
+        !nativeOftChains.has(p.chainKey)
+    )
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
   const supplyOnly = supplyTargets.length > 0 ? await readChainSupplies(supplyTargets) : [];
 

@@ -322,8 +322,13 @@ function chainDefFor(platform: AssetPlatform, facts: ChainFacts, rpcUrl: string)
     // but there is no sense making every read pay for a node that just
     // failed its only test.
     defaultRpcUrls: [rpcUrl, ...facts.rpcUrls.filter((u) => u !== rpcUrl)],
-    explorerTxUrl: (hash) => (explorer ? `${explorer}/tx/${hash}` : hash),
-    explorerAddressUrl: (address) => (explorer ? `${explorer}/address/${address}` : address),
+    // Empty when the chain has no known explorer, never the bare hash. The
+    // bare value went straight into an href, and "0xdAC17…" is not a URL:
+    // Telegram rejects the message rather than rendering a dead link, so one
+    // chain without an explorer would have taken down whole reports. Every
+    // caller already treats an empty string as "no link".
+    explorerTxUrl: (hash) => (explorer ? `${explorer}/tx/${hash}` : ""),
+    explorerAddressUrl: (address) => (explorer ? `${explorer}/address/${address}` : ""),
     aliases: [...new Set([key, platform.id.toLowerCase(), label.toLowerCase().replace(/\s+/g, "")])],
     platformNames: [platform.name],
   };

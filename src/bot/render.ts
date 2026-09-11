@@ -119,7 +119,7 @@ export interface ReportInput {
    * contract produced no row and no mention, so "checked, no bridge there"
    * looked exactly like "not checked".
    */
-  supplyOnly?: Array<{ chainKey: string; amount?: bigint; decimals?: number }>;
+  supplyOnly?: Array<{ chainKey: string; amount?: bigint; decimals?: number; unreadable?: boolean }>;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinGecko listed that this bot supports. */
@@ -173,7 +173,12 @@ function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
 
   const described = supplyOnly.map((s) => {
     const name = esc(chainName(s.chainKey));
-    if (s.amount === undefined || s.decimals === undefined) return `${name} (узел не ответил)`;
+    if (s.amount === undefined || s.decimals === undefined) {
+      // Which of the two, because the report blames one of them out loud and
+      // the fixes are different: a node needs an RPC, a contract needs
+      // nothing at all.
+      return s.unreadable ? `${name} (контракт не отдаёт выпуск)` : `${name} (узел не ответил)`;
+    }
     if (s.amount === 0n) return `${name} (выпуска нет)`;
     return `${name} — выпущено ${esc(formatAmount(s.amount, s.decimals))}`;
   });

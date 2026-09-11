@@ -61,6 +61,8 @@ export interface ChainSupply {
   /** Undefined when the chain or the contract would not answer. */
   amount?: bigint;
   decimals?: number;
+  /** The contract refused, as opposed to the node being unreachable. */
+  unreadable?: boolean;
 }
 
 /**
@@ -93,11 +95,16 @@ export async function readChainSupplies(
           readDecimals(chainKey, tokenAddress),
         ]);
         return { chainKey, tokenAddress, amount, decimals };
-      } catch {
-        // A node that will not answer is reported as unknown rather than as
-        // zero: zero would read as "the token is not there", which is the
-        // very confusion this exists to remove.
-        return { chainKey, tokenAddress };
+      } catch (err) {
+        // Unknown rather than zero: zero would read as "the token is not
+        // there", which is the very confusion this exists to remove.
+        //
+        // And the two reasons are kept apart, because the report blames one
+        // of them out loud. A node that would not answer is a connection
+        // problem the reader can fix with an RPC; a contract that refuses
+        // totalSupply is not a node problem at all, and saying so would send
+        // them chasing the wrong thing.
+        return { chainKey, tokenAddress, unreadable: !isTransportError(err) };
       }
     })
   );

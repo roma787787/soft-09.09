@@ -84,11 +84,21 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
       }
 
       const label = row.label || row.protocol || "контракт моста";
+      // Linked only when there is somewhere to link to. A chain the bot
+      // discovered may have no explorer, and an href that is not a URL makes
+      // Telegram refuse the whole alert - the one message that exists to be
+      // delivered the moment it is written.
+      const addressLine = addrUrl
+        ? `<a href="${addrUrl}">${escapeHtml(row.address)}</a>`
+        : `<code>${escapeHtml(row.address)}</code>`;
+      const txLine = txUrl
+        ? `<a href="${txUrl}">транзакция ↗</a> · блок ${log.blockNumber}`
+        : `транзакция <code>${escapeHtml(log.transactionHash ?? "?")}</code> · блок ${log.blockNumber}`;
       const text =
         `🔔 <b>${escapeHtml(chain.label)}</b> — ${escapeHtml(label)}\n` +
-        `<a href="${addrUrl}">${escapeHtml(row.address)}</a>\n\n` +
+        `${addressLine}\n\n` +
         `${body}\n\n` +
-        `<a href="${txUrl}">транзакция ↗</a> · блок ${log.blockNumber}`;
+        `${txLine}`;
 
       try {
         await bot.telegram.sendMessage(row.chat_id, text, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
@@ -103,7 +113,8 @@ async function pollOne(bot: Telegraf, row: TrackedRow, currentBlock: bigint): Pr
         await bot.telegram.sendMessage(
           row.chat_id,
           `… и ещё ${overflow} событий этого контракта в блоках ${fromBlock}–${toBlock}. ` +
-            `Показаны первые ${MAX_ALERTS_PER_POLL}.\n<a href="${addrUrl}">Все события в эксплорере ↗</a>`,
+            `Показаны первые ${MAX_ALERTS_PER_POLL}.` +
+            (addrUrl ? `\n<a href="${addrUrl}">Все события в эксплорере ↗</a>` : ""),
           { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
         );
       } catch (err) {

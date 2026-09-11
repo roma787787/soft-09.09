@@ -1728,6 +1728,18 @@ check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupp
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
 check(
+  "a contract that refuses is not blamed on the node",
+  renderLiquidityReport({
+    symbol: "X",
+    name: "X",
+    balances: [],
+    checkedCount: 0,
+    failuresByChain: {},
+    attemptsByChain: {},
+    supplyOnly: [{ chainKey: "bsc", unreadable: true }],
+  }).includes("контракт не отдаёт выпуск")
+);
+check(
   "and the reader is told it cannot be withdrawn that way",
   withSupplyOnly.includes("вывести его через мосты из этого отчёта нельзя")
 );
