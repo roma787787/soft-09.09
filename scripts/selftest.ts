@@ -88,7 +88,7 @@ import {
   explainMissing,
   normaliseLzKey,
 } from "../src/bridges/lzMetadata";
-import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
+import { resolveRegistryDeployments, stargateNote } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
@@ -1512,13 +1512,40 @@ const asked = renderLiquidityReport({
     notFoundNotes: { stargate: "пулы только под USDC, USDT." },
   },
 });
-check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, но хранилищ"));
+check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, но своих хранилищ"));
 check("and lists them by name", asked.includes("Stargate") && asked.includes("CCIP"));
 check("it does not list a bridge that did contribute", !/хранилищ[^\n]*Hyperlane/.test(asked));
 check("a known reason for the gap is printed", asked.includes("пулы только под USDC, USDT."));
+
+// The complaint verbatim: "it does not parse all the bridges, Stargate is
+// there and it only shows Hyperlane". Stargate's site does carry PENGU - and
+// Stargate's published deployments contain no PENGU contract at all, because
+// it routes the token through the token's own LayerZero adapter, which is
+// the row already in the report holding two and a half billion of it. The
+// number was never missing; it was unlabelled, and the note said only that
+// Stargate's own pools cover other assets.
+const penguLike = [
+  fakeBalance("solanamainnet", "layerzero", 2_537_536_755_001500n),
+  fakeBalance("solanamainnet", "hyperlane", 2_067_538600n),
+];
+const pointed = stargateNote(penguLike);
+check("the note says Stargate does carry the token", /возит/.test(pointed), pointed);
+check("and points at the row that holds the number", /строка LayerZero/.test(pointed));
+check("naming the chain it is on", /Solana/.test(pointed), pointed);
+// The opposite misreading is worse: a reader must not go looking for a
+// second pile of Stargate liquidity that does not exist.
+check("and saying it is the same money, not more of it", /те же деньги/.test(pointed));
+// With no LayerZero row there is nothing to point at, and the note must not
+// claim there is.
+check(
+  "with nothing to point at it stays general",
+  !/строка LayerZero/.test(stargateNote([fakeBalance("ethereum", "hyperlane", 1n)]))
+);
+check("a LayerZero row holding zero is not pointed at either", !/строка LayerZero/.test(stargateNote([fakeBalance("ethereum", "layerzero", 0n)])));
+check("and the assets Stargate does have pools for are still named", /USDC/.test(stargateNote([])));
 // Without the caller vouching for what it asked, the report must not invent
 // a list of bridges it cannot stand behind.
-check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но хранилищ"));
+check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но своих хранилищ"));
 
 // --- The registry's Solana shape, verbatim from /lzprobe PENGU --------------
 //

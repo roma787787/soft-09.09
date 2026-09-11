@@ -271,8 +271,12 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
   const checked = new Set(scope.checkedProtocols ?? []);
   const notFound = BRIDGE_ORDER.filter((p) => checked.has(p) && (scope.byProtocol[p] ?? 0) === 0);
   if (notFound.length > 0) {
+    // "Своих" carries the whole sentence. Without it the line says the bridge
+    // does not carry the token, and for a token Stargate moves through its
+    // LayerZero contract that is simply false - which is exactly how a
+    // correct report got read as a missing one.
     lines.push(
-      `Проверены, но хранилищ под этот тикер не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+      `Проверены, но своих хранилищ под этот тикер не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
     );
     for (const p of notFound) {
       const note = scope.notFoundNotes?.[p];

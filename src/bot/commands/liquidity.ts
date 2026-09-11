@@ -38,7 +38,7 @@ import { lastDiscovery } from "../../services/chainDiscovery";
 import type { Custodian } from "../../bridges/types";
 import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
-import { readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
+import { formatAmount, readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
 import { renderLiquidityReport, splitForTelegram } from "../render";
 
 function esc(s: string): string {
@@ -201,11 +201,36 @@ function countByProtocol(
  * this" are different statements, and the report kept getting read as broken
  * for telling them apart silently.
  */
-function stargateNote(): string {
+/**
+ * What to say about Stargate when it has no pool of its own for a ticker.
+ *
+ * "Checked, nothing found" was read as "Stargate does not carry this token",
+ * and for PENGU that reading is wrong in a way that matters: stargate.finance
+ * does carry it, through the token's own LayerZero contract - which is the
+ * row already in the report, holding two and a half billion of it. The
+ * customer saw PENGU on Stargate's site, saw Stargate in the not-found list,
+ * and concluded the bot was missing a bridge.
+ *
+ * So where a LayerZero row exists, it is named outright, with the chain and
+ * the amount, and said to be the same money rather than more of it. Pointing
+ * at the row is the whole job: the number was never missing, only unlabelled.
+ */
+export function stargateNote(balances: BalanceRow[] = []): string {
   const assets = stargateCoverage().assets.join(", ");
+  const own = `своих пулов у Stargate под этот тикер нет — они есть только под ${assets}.`;
+
+  const viaLayerZero = balances.filter((b) => b.protocol === "layerzero" && b.amount > 0n);
+  if (viaLayerZero.length === 0) {
+    return `${own} Остальные токены его сайт возит контрактами LayerZero самого токена — они идут строкой LayerZero.`;
+  }
+
+  // The biggest row, because that is the one a person is deciding against.
+  const biggest = viaLayerZero.reduce((max, b) => (b.amount > max.amount ? b : max));
+  const where = chainMeta(biggest.chainKey)?.label ?? biggest.chainKey;
   return (
-    `собственные пулы у Stargate есть только под ${assets}. ` +
-    "Остальные токены его сайт возит контрактами LayerZero самого токена — они идут строкой LayerZero."
+    `${own} Но токен он возит — контрактом LayerZero самого токена, и это уже в отчёте: ` +
+    `строка LayerZero, ${formatAmount(biggest.amount, biggest.decimals)} в сети ${where}. ` +
+    "Отдельной ликвидности у Stargate тут не существует: это те же деньги, а не ещё одни."
   );
 }
 
@@ -515,7 +540,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // this one; until the scan lands, the list is not something to make
       // claims from.
       chainListIncomplete: !lastDiscovery(),
-      notFoundNotes: { stargate: stargateNote() },
+      notFoundNotes: { stargate: stargateNote([...balances, ...solanaRows]) },
     },
   });
 }
