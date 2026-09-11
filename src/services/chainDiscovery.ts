@@ -4,6 +4,7 @@ import type { Chain } from "viem";
 import * as viemChains from "viem/chains";
 import { type ChainDef, CHAINS, getChainByChainId, registerChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
+import { lzChainCandidates, type LzChainCandidate } from "../bridges/lzMetadata";
 import { env } from "../config/env";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -59,8 +60,10 @@ export interface RejectedChain {
 
 export interface DiscoveryReport {
   at: Date;
-  /** Networks CoinGecko listed with an EVM chain id. */
+  /** Distinct EVM networks the sources named between them. */
   listed: number;
+  /** Of those, how many only the bridge registry named. */
+  fromBridges: number;
   /** Of those, the ones the bot already had. */
   known: number;
   added: DiscoveredChain[];
@@ -370,8 +373,83 @@ export async function discoverChains(): Promise<DiscoveryReport> {
 
 let scanInFlight: Promise<DiscoveryReport> | undefined;
 
+/** What a candidate needs to be probed and, if it answers, registered. */
+interface Candidate {
+  /** Stable across restarts: it becomes the chain key /track stores. */
+  slug: string;
+  chainId: number;
+  name: string;
+  /** Only the bridge registry carries these; merged behind the others. */
+  facts?: ChainFacts;
+  fromBridgeOnly: boolean;
+}
+
+/**
+ * Everything both sources name, one entry per chain id.
+ *
+ * The price API goes first and keeps its slug where both name a chain: that
+ * slug is already in the database behind every /track subscription, and a
+ * key that changed the day a second source was added would orphan them all.
+ */
+export function mergeCandidates(
+  platforms: Iterable<AssetPlatform>,
+  bridgeChains: Iterable<LzChainCandidate>
+): Candidate[] {
+  const byId = new Map<number, Candidate>();
+
+  for (const platform of platforms) {
+    if (platform.chainId === undefined) continue;
+    if (!byId.has(platform.chainId)) {
+      byId.set(platform.chainId, {
+        slug: platform.id,
+        chainId: platform.chainId,
+        name: platform.name || platform.id,
+        fromBridgeOnly: false,
+      });
+    }
+  }
+
+  for (const chain of bridgeChains) {
+    const seen = byId.get(chain.chainId);
+    if (seen) {
+      // Known to both: keep the established slug, take the endpoints. A
+      // chain refused for "no public nodes" can be carried by the ones the
+      // bridge publishes for itself.
+      seen.facts = factsFromBridge(chain);
+      continue;
+    }
+    byId.set(chain.chainId, {
+      slug: chain.slug,
+      chainId: chain.chainId,
+      name: chain.name,
+      facts: factsFromBridge(chain),
+      fromBridgeOnly: true,
+    });
+  }
+
+  return [...byId.values()];
+}
+
+function factsFromBridge(chain: LzChainCandidate): ChainFacts | undefined {
+  if (chain.rpcUrls.length === 0 && !chain.nativeCurrency) return undefined;
+  return {
+    name: chain.name,
+    nativeCurrency: chain.nativeCurrency ?? { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: chain.rpcUrls,
+    explorerUrl: chain.explorerUrl,
+  };
+}
+
 async function runDiscovery(): Promise<DiscoveryReport> {
-  const report: DiscoveryReport = { at: new Date(), listed: 0, known: 0, added: [], rejected: [], duplicates: 0 };
+  const report: DiscoveryReport = {
+    at: new Date(),
+    listed: 0,
+    fromBridges: 0,
+    known: 0,
+    added: [],
+    rejected: [],
+    duplicates: 0,
+  };
 
   let platforms: Map<string, AssetPlatform>;
   try {
@@ -382,35 +460,46 @@ async function runDiscovery(): Promise<DiscoveryReport> {
     return report;
   }
 
-  const candidates: AssetPlatform[] = [];
-  for (const platform of platforms.values()) {
-    if (platform.chainId === undefined) continue;
+  // The second source, and the reason Sanko, Glue and Apex Fusion Nexus were
+  // missing: the price API lists the chains worth pricing tokens on, and
+  // those three carry Stargate pools while nobody prices anything on them.
+  // A failure here costs those chains, never the scan.
+  let bridgeChains: LzChainCandidate[] = [];
+  try {
+    bridgeChains = await lzChainCandidates();
+  } catch (err) {
+    console.error("[chains] не удалось получить список сетей моста:", err);
+  }
+
+  const candidates: Candidate[] = [];
+  for (const candidate of mergeCandidates(platforms.values(), bridgeChains)) {
     report.listed++;
-    if (getChainByChainId(platform.chainId)) {
+    if (candidate.fromBridgeOnly) report.fromBridges++;
+    if (getChainByChainId(candidate.chainId)) {
       report.known++;
       continue;
     }
-    candidates.push(platform);
+    candidates.push(candidate);
   }
 
-  const results = await mapWithConcurrency(candidates, PROBE_CONCURRENCY, async (platform) => {
-    const facts = await mergedFacts(platform.chainId!);
+  const results = await mapWithConcurrency(candidates, PROBE_CONCURRENCY, async (candidate) => {
+    const facts = mergeFacts(await mergedFacts(candidate.chainId), candidate.facts);
     if (!facts) {
       return {
-        label: platform.name,
-        chainId: platform.chainId!,
+        label: candidate.name,
+        chainId: candidate.chainId,
         reason: "ни один реестр её не описывает",
       } as RejectedChain;
     }
     if (facts.rpcUrls.length === 0) {
-      return { label: platform.name, chainId: platform.chainId!, reason: "нет публичных узлов" } as RejectedChain;
+      return { label: candidate.name, chainId: candidate.chainId, reason: "нет публичных узлов" } as RejectedChain;
     }
-    const url = await firstWorkingEndpoint(facts.rpcUrls, platform.chainId!);
+    const url = await firstWorkingEndpoint(facts.rpcUrls, candidate.chainId);
     return url
-      ? { platform, facts, url }
+      ? { candidate, facts, url }
       : ({
-          label: platform.name,
-          chainId: platform.chainId!,
+          label: candidate.name,
+          chainId: candidate.chainId,
           reason: `ни один из ${Math.min(facts.rpcUrls.length, MAX_ENDPOINTS)} узлов не отозвался`,
         } as RejectedChain);
   });
@@ -422,22 +511,23 @@ async function runDiscovery(): Promise<DiscoveryReport> {
       report.rejected.push(result);
       continue;
     }
-    const def = chainDefFor(result.platform, result.facts, result.url);
+    const { candidate, facts, url } = result;
+    const def = chainDefFor({ id: candidate.slug, chainId: candidate.chainId, name: candidate.name }, facts, url);
     if (registerChain(def)) {
       report.added.push({
         key: def.key,
         label: def.label,
         chainId: def.viemChain.id,
-        rpcUrl: result.url,
+        rpcUrl: url,
       });
       found.push({
-        slug: result.platform.id,
-        chainId: result.platform.chainId!,
-        name: result.platform.name || result.facts.name,
-        nativeCurrency: result.facts.nativeCurrency,
-        rpcUrls: result.facts.rpcUrls,
-        explorerUrl: result.facts.explorerUrl,
-        rpcUrl: result.url,
+        slug: candidate.slug,
+        chainId: candidate.chainId,
+        name: candidate.name || facts.name,
+        nativeCurrency: facts.nativeCurrency,
+        rpcUrls: facts.rpcUrls,
+        explorerUrl: facts.explorerUrl,
+        rpcUrl: url,
       });
     } else {
       report.duplicates++;

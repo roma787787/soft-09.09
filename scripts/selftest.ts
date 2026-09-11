@@ -48,6 +48,7 @@ import {
   factsFor,
   factsFromRegistryEntry,
   keyForSlug,
+  mergeCandidates,
   mergeFacts,
   defFromDiscovered,
   type DiscoveryReport,
@@ -63,7 +64,13 @@ import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians } from "../src/bridges";
-import { extractEids, lastMetadataChainCount, explainMissing, normaliseLzKey } from "../src/bridges/lzMetadata";
+import {
+  candidatesFrom,
+  extractEids,
+  lastMetadataChainCount,
+  explainMissing,
+  normaliseLzKey,
+} from "../src/bridges/lzMetadata";
 import { resolveRegistryDeployments } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
@@ -262,6 +269,76 @@ check(
   "an entry with no usable eid is skipped, not guessed at",
   extractEids({ ethereum: { chainDetails: { nativeChainId: 1 }, deployments: [] } }).size === 0
 );
+
+// -----------------------------------------------------------------------------
+// The same payload, read for a different question: which chains exist at all.
+// Discovery used to take its candidates from the price API alone, and the
+// price API lists the chains worth pricing tokens on. Sanko, Glue and Apex
+// Fusion Nexus are none of them and all three carry Stargate pools, which is
+// exactly what this bot is asked about.
+// -----------------------------------------------------------------------------
+
+const lzPayload = {
+  "sanko-mainnet": {
+    chainDetails: {
+      chainType: "evm",
+      nativeChainId: 1996,
+      name: "Sanko",
+      nativeCurrency: { name: "DMT", symbol: "DMT", decimals: 18 },
+    },
+    deployments: [{ eid: 30278 }],
+    rpcs: [{ url: "https://mainnet.sanko.xyz" }],
+    blockExplorers: [{ url: "https://explorer.sanko.xyz/" }],
+  },
+  "sanko-testnet": {
+    chainDetails: { chainType: "evm", nativeChainId: 1992, name: "Sanko Testnet" },
+    deployments: [{ eid: 40278 }],
+    rpcs: [{ url: "https://sanko-arb-sepolia.rpc.caldera.xyz/http" }],
+  },
+  "solana-mainnet": {
+    chainDetails: { chainType: "solana", nativeChainId: 101, name: "Solana" },
+    deployments: [{ eid: 30168 }],
+  },
+  "nodeploy-mainnet": {
+    chainDetails: { chainType: "evm", nativeChainId: 777777, name: "Described, not bridged" },
+  },
+};
+
+const lzCandidates = candidatesFrom(lzPayload);
+check("a bridged EVM mainnet becomes a candidate", lzCandidates.length === 1, lzCandidates.map((c) => c.slug).join(","));
+check("keyed by the bridge's own name, minus the suffix", lzCandidates[0]?.slug === "sanko");
+check("with the chain id both sides agree on", lzCandidates[0]?.chainId === 1996);
+check("and the endpoints the bridge publishes", lzCandidates[0]?.rpcUrls.join(",") === "https://mainnet.sanko.xyz");
+check("the explorer loses its trailing slash", lzCandidates[0]?.explorerUrl === "https://explorer.sanko.xyz");
+check("the native coin is taken from the payload, not assumed", lzCandidates[0]?.nativeCurrency?.symbol === "DMT");
+// Play money under a real chain's name is worse than a missing chain.
+check("a testnet is refused however it is labelled", !lzCandidates.some((c) => c.chainId === 1992));
+// Non-EVM chains have their own readers; an RPC url and a chain id are not
+// how they are reached, and Solana's "101" collides with a real EVM id.
+check("a non-EVM chain is not discovery's to add", !lzCandidates.some((c) => c.chainId === 101));
+// A described network is not a bridge on it.
+check("an entry with no deployments is a description, not a chain to add", !lzCandidates.some((c) => c.chainId === 777777));
+check("a malformed payload yields no candidates rather than throwing", candidatesFrom("nonsense").length === 0);
+check("so does an empty one", candidatesFrom({}).length === 0 && candidatesFrom(null).length === 0);
+
+// One entry per chain id, and the richer description wins - not whichever
+// happened to be enumerated last.
+const twice = candidatesFrom({
+  "dup-a-mainnet": { chainDetails: { chainType: "evm", nativeChainId: 5000, name: "Dup" }, deployments: [{ eid: 30181 }], rpcs: [{ url: "https://one.example" }, { url: "https://two.example" }] },
+  "dup-b-mainnet": { chainDetails: { chainType: "evm", nativeChainId: 5000, name: "Dup" }, deployments: [{ eid: 30181 }], rpcs: [{ url: "https://one.example" }] },
+});
+check("a chain listed twice is one candidate", twice.length === 1);
+check("and keeps the fuller endpoint list", twice[0]?.rpcUrls.length === 2);
+
+// Endpoints that need a key the bot does not have are not endpoints.
+const templated = candidatesFrom({
+  "keyed-mainnet": {
+    chainDetails: { chainType: "evm", nativeChainId: 4242, name: "Keyed" },
+    deployments: [{ eid: 30242 }],
+    rpcs: [{ url: "https://rpc.example/v1/${API_KEY}" }, { url: "https://open.example" }],
+  },
+});
+check("a templated endpoint is dropped", templated[0]?.rpcUrls.join(",") === "https://open.example");
 
 // A chain absent from the payload and a chain present under a name we do not
 // match are different problems with different fixes, so the count of what
@@ -2877,6 +2954,7 @@ check("and neither side is nothing", mergeFacts(undefined, undefined) === undefi
 const balanced: DiscoveryReport = {
   at: new Date(),
   listed: 275,
+  fromBridges: 9,
   known: 120,
   added: [{ key: "a", label: "A", chainId: 1, rpcUrl: "https://a.example" }],
   rejected: [{ label: "B", chainId: 2, reason: "нет узлов" }],
@@ -2887,6 +2965,48 @@ check(
   balanced.known + balanced.added.length + balanced.rejected.length + balanced.duplicates ===
     balanced.listed
 );
+
+// Two sources, one candidate list. The price API names the chains worth
+// pricing tokens on and the bridge registry names the chains it is deployed
+// on; only the second knew about Sanko, Glue and Apex Fusion Nexus, and all
+// three carry Stargate pools.
+const bridgeOnly = {
+  slug: "sanko",
+  chainId: 1996,
+  name: "Sanko",
+  nativeCurrency: { name: "DMT", symbol: "DMT", decimals: 18 },
+  rpcUrls: ["https://mainnet.sanko.xyz"],
+  explorerUrl: "https://explorer.sanko.xyz",
+};
+const bothKnow = {
+  slug: "base-lz-spelling",
+  chainId: 8453,
+  name: "Base, as the bridge spells it",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: ["https://from-the-bridge.example"],
+  explorerUrl: undefined,
+};
+const candidates = mergeCandidates(
+  [{ id: "base", chainId: 8453, name: "Base" }],
+  [bridgeOnly, bothKnow]
+);
+check("a chain only the bridge names is still a candidate", candidates.some((c) => c.chainId === 1996));
+check("and is counted as coming from there", candidates.find((c) => c.chainId === 1996)?.fromBridgeOnly === true);
+check("with the endpoints the bridge published", candidates.find((c) => c.chainId === 1996)?.facts?.rpcUrls.length === 1);
+check("a chain both name appears once", candidates.filter((c) => c.chainId === 8453).length === 1);
+// The slug becomes the chain key, and that key is already in the database
+// behind every /track subscription. Letting a second source rename it would
+// orphan them all.
+check("and keeps the slug it already had", candidates.find((c) => c.chainId === 8453)?.slug === "base");
+check("but takes the bridge's endpoints too", candidates.find((c) => c.chainId === 8453)?.facts?.rpcUrls.length === 1);
+check("without being counted as a bridge-only find", candidates.find((c) => c.chainId === 8453)?.fromBridgeOnly === false);
+// A platform the price API lists without an EVM chain id is not something a
+// chain id can be probed for.
+check(
+  "a platform with no chain id is not a candidate",
+  mergeCandidates([{ id: "ton", chainId: undefined, name: "TON" }], []).length === 0
+);
+check("either source alone works", mergeCandidates([], [bridgeOnly]).length === 1 && mergeCandidates([{ id: "base", chainId: 8453, name: "Base" }], []).length === 1);
 
 
 // -----------------------------------------------------------------------------

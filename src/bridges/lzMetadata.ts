@@ -49,6 +49,25 @@ interface RawEntry {
 }
 
 /**
+ * A chain LayerZero says it is deployed on, described well enough to add.
+ *
+ * Discovery used to take its candidates from the price API alone, and the
+ * price API lists the chains that have tokens worth pricing. Sanko, Glue and
+ * Apex Fusion Nexus are none of them - and all three carry Stargate pools,
+ * which is precisely the thing this bot is for. A chain a bridge it reads is
+ * deployed on belongs in the table whether or not anyone prices it.
+ */
+export interface LzChainCandidate {
+  /** LayerZero's own name for the chain, folded: stable across restarts. */
+  slug: string;
+  chainId: number;
+  name: string;
+  nativeCurrency?: { name: string; symbol: string; decimals: number };
+  rpcUrls: string[];
+  explorerUrl?: string;
+}
+
+/**
  * A light index of the last payload, kept so a chain that did not match can
  * be explained rather than merely counted. "38 of 42" says nothing about the
  * other four: absent from the source, listed under a name we do not
@@ -65,6 +84,99 @@ let lastEntries: RawEntry[] = [];
  */
 export function lastMetadataChainCount(): number {
   return lastSeen;
+}
+
+/** Every EVM mainnet the last payload described, whether the bot has it. */
+let lastCandidates: LzChainCandidate[] = [];
+
+/**
+ * The chains LayerZero is deployed on, for discovery to consider adding.
+ *
+ * Shares the one cached fetch with the eid lookup - the payload is the same
+ * payload, and a scan must not cost a second download of it.
+ */
+export async function lzChainCandidates(): Promise<LzChainCandidate[]> {
+  await fetchLzEidsFromMetadata();
+  return lastCandidates;
+}
+
+/** Names LayerZero gives a network that is not the real one. */
+const NOT_MAINNET = /testnet|sandbox|devnet|staging|local/i;
+
+/**
+ * Pure half, so the shape is covered by a test rather than only by a live
+ * call - and it is worth covering, because everything read here is optional.
+ * A payload that dropped `rpcs` would otherwise quietly stop discovering
+ * chains, and "found nothing new" is exactly what a working scan says too.
+ */
+export function candidatesFrom(payload: unknown): LzChainCandidate[] {
+  if (!payload || typeof payload !== "object") return [];
+
+  const byId = new Map<number, LzChainCandidate>();
+  for (const [rawKey, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const entry = value as Record<string, any>;
+    const details = (entry.chainDetails ?? {}) as Record<string, any>;
+
+    // Only where LayerZero is actually deployed. An entry without one is a
+    // description of a network, not a bridge on it, and adding it would put
+    // a chain in the table that no bridge the bot reads can reach.
+    if (deploymentsOf(entry).length === 0) continue;
+
+    // Play money under a real chain's name is the one outcome worse than a
+    // missing chain, so every hint of a testnet is refused: the declared
+    // environment, the chain type, and the name itself.
+    const environment = String(details.environment ?? entry.environment ?? "");
+    if (environment && environment.toLowerCase() !== "mainnet") continue;
+    if (NOT_MAINNET.test(rawKey) || NOT_MAINNET.test(String(details.name ?? ""))) continue;
+
+    // Non-EVM chains are reached by their own readers, not by an RPC url and
+    // a chain id, so they are not discovery's to add. Where the type is not
+    // stated, a plausible EVM chain id is the same evidence.
+    const chainType = String(details.chainType ?? entry.chainType ?? "").toLowerCase();
+    if (chainType && chainType !== "evm") continue;
+
+    const chainId = Number(details.nativeChainId ?? entry.nativeChainId);
+    if (!Number.isSafeInteger(chainId) || chainId <= 0) continue;
+
+    const slug = normaliseLzKey(rawKey);
+    if (!slug) continue;
+
+    const token = details.nativeCurrency ?? entry.nativeCurrency;
+    const candidate: LzChainCandidate = {
+      slug,
+      chainId,
+      name: String(details.name ?? entry.name ?? rawKey),
+      nativeCurrency:
+        token && typeof token === "object" && typeof token.symbol === "string"
+          ? {
+              name: String(token.name ?? token.symbol),
+              symbol: String(token.symbol),
+              decimals: Number.isInteger(token.decimals) ? token.decimals : 18,
+            }
+          : undefined,
+      rpcUrls: urlsOf(entry.rpcs).filter((u) => !/\$\{|API_KEY/i.test(u)),
+      explorerUrl: urlsOf(entry.blockExplorers)[0],
+    };
+
+    // One entry per chain id. LayerZero lists a chain more than once when it
+    // has several deployments, and the richer description wins rather than
+    // whichever happened to come last.
+    const seen = byId.get(chainId);
+    if (!seen || seen.rpcUrls.length < candidate.rpcUrls.length) byId.set(chainId, candidate);
+  }
+
+  return [...byId.values()];
+}
+
+/** `[{ url }]` in the payload, and defensive about it not being that. */
+function urlsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const urls = value
+    .map((item) => (typeof item === "string" ? item : (item as { url?: unknown })?.url))
+    .filter((u): u is string => typeof u === "string" && u.startsWith("https://"))
+    .map((u) => u.replace(/\/+$/, ""));
+  return [...new Set(urls)];
 }
 
 let cache: { at: number; data: Map<string, number> } | undefined;
@@ -145,6 +257,7 @@ export function extractEids(payload: unknown): Map<string, number> {
   lastSeen = Object.keys(payload as Record<string, unknown>).length;
   lastEntries = [];
   keyIndex = new Map();
+  lastCandidates = candidatesFrom(payload);
 
   const byNativeId = new Map<number, string>();
   for (const chain of CHAINS) byNativeId.set(chain.viemChain.id, chain.key);

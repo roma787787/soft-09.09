@@ -44,11 +44,18 @@ export function registerChainsCommand(bot: Telegraf) {
     const accounted =
       report.known + report.added.length + report.rejected.length + report.duplicates;
     lines.push(
-      `CoinGecko перечисляет ${report.listed} EVM-сетей: ${report.known} уже были, ` +
+      `Источники называют ${report.listed} EVM-сетей: ${report.known} уже были, ` +
         `${report.added.length} ${plural(report.added.length, "добавлена", "добавлено", "добавлено")}, ` +
         `${report.rejected.length} не подошли` +
         `${report.duplicates > 0 ? `, ${report.duplicates} уже успели добавиться` : ""}.`
     );
+    // Counted separately because it answers a different question. The price
+    // API lists the chains worth pricing tokens on; Sanko, Glue and Apex
+    // Fusion Nexus carry Stargate pools and interest nobody as a venue for
+    // quotes, so only the bridge registry ever names them.
+    if (report.fromBridges > 0) {
+      lines.push(`Из них ${report.fromBridges} знает только реестр моста, а CoinGecko — нет.`);
+    }
     if (accounted !== report.listed) {
       lines.push(`⚠️ Сходится ${accounted} из ${report.listed} — где-то теряются сети, это баг.`);
     }
