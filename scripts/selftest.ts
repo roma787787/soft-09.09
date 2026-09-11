@@ -1457,6 +1457,17 @@ check("and it lands on our own chain key", viaMetadata[0]?.chainKey === "linea")
 check("a name the index does not know is still dropped, not guessed", extractDeployments(renamedChains, () => undefined).length === 0);
 check("the key is folded so a -mainnet suffix does not miss", normaliseLzKey("Plume-Phoenix_Mainnet") === "plumephoenix");
 
+// A chain id is only unique among EVM chains. Aptos numbers its own mainnet
+// 1 - the number Ethereum uses - so matching on it alone filed Aptos under
+// Ethereum and reported it as a chain the bot reads, which is worse than
+// leaving it in the gap list. The eid is what tells the two apart.
+const collidingIds = extractEids({
+  ethereum: { nativeChainId: 1, deployments: [{ eid: 30101 }] },
+  aptos: { nativeChainId: 1, deployments: [{ eid: 30108 }] },
+});
+check("the chain that owns the id keeps its eid", collidingIds.get("ethereum") === 30101);
+check("a foreign chain reusing the id does not take it over", collidingIds.size === 1);
+
 const penguSolana = extractNonEvmDeployments(penguRegistry, "solana");
 check("the Solana deployment is found", penguSolana.length === 1);
 check(

@@ -7,6 +7,7 @@ import {
   type RegistryChainUse,
 } from "../../bridges/layerzero";
 import { getChain } from "../../config/chains";
+import { lzChainKeyIndex, normaliseLzKey } from "../../bridges/lzMetadata";
 import { resolveSvmChain } from "../../config/svmChains";
 import { resolveCosmosChain } from "../../config/cosmosChains";
 import { resolveOtherChain } from "../../config/otherChains";
@@ -117,14 +118,20 @@ export function registerLzGapsCommand(bot: Telegraf) {
       ""
     );
 
-    // Sorted so the first line is the one worth writing a reader for.
+    // Sorted so the first line is the one worth writing a reader for, and
+    // each says why it is a gap: a chain nobody could name and a chain with
+    // no reader need opposite fixes, and "not read" says neither.
+    const index = await lzChainKeyIndex();
     for (const gap of gaps.slice(0, 25)) {
       const mark = gap.locking > 0 ? "❗" : "·";
       const detail = gap.locking > 0 ? `${gap.locking} с залогом из ${gap.deployments}` : `${gap.deployments}, все чеканят`;
-      lines.push(
-        `${mark} <b>${esc(gap.label)}</b> — ${detail}` +
-          (gap.reader === "сеть неизвестна" ? " <i>(сети нет в боте)</i>" : "")
-      );
+      const why =
+        gap.reader !== "сеть неизвестна"
+          ? "ридера LayerZero под это семейство сетей нет"
+          : index.has(normaliseLzKey(gap.lzChainKey))
+            ? "имя сопоставлено, но сети нет в боте"
+            : "этого имени нет в метаданных LayerZero — сопоставить не с чем";
+      lines.push(`${mark} <b>${esc(gap.label)}</b> — ${detail}\n   <i>${esc(why)}</i>`);
     }
     if (gaps.length > 25) lines.push(`… и ещё ${gaps.length - 25}.`);
 

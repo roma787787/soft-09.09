@@ -1,4 +1,22 @@
-import { CHAINS, resolveChain } from "../config/chains";
+import { CHAINS, resolveChain, getChainByChainId } from "../config/chains";
+import { LZ_V2_EID_BY_CHAIN } from "../protocols/addresses/layerzero";
+
+/**
+ * Chain ids for names the OFT registry uses and the chain metadata does not
+ * publish, so the id lookup has nothing to match on.
+ *
+ * Not a general alias table and not the mechanism: the metadata's own chain
+ * ids resolve 66 of 75 chains and keep resolving new ones by themselves.
+ * These are the leftovers, where the registry files a chain under a name
+ * that appears nowhere else - Linea as "zkconsensys" was losing all
+ * twenty-two of its deployments to it. Each entry is a chain id, never a
+ * chain key, so it can only ever name a chain the bot already has, and it
+ * stops mattering on its own the day the metadata publishes the name.
+ */
+const REGISTRY_CHAIN_IDS: Record<string, number> = {
+  zkconsensys: 59144, // Linea
+  zkpolygon: 1101, // Polygon zkEVM
+};
 
 /**
  * LayerZero's chain metadata, used to learn the eid of a chain the bot
@@ -78,7 +96,14 @@ let keyIndex = new Map<string, string>();
  */
 export async function lzChainKeyIndex(): Promise<Map<string, string>> {
   await fetchLzEidsFromMetadata();
-  return keyIndex;
+
+  // The written-down ids fill in behind the metadata, never over it.
+  const index = new Map(keyIndex);
+  for (const [name, chainId] of Object.entries(REGISTRY_CHAIN_IDS)) {
+    const chain = getChainByChainId(chainId);
+    if (chain && !index.has(name)) index.set(name, chain.key);
+  }
+  return index;
 }
 
 export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
@@ -136,6 +161,16 @@ export function extractEids(payload: unknown): Map<string, number> {
       (Number.isFinite(nativeId) ? byNativeId.get(nativeId) : undefined) ?? resolveChain(rawKey)?.key;
     if (!chainKey) continue;
 
+    const eid = pickV2Eid(entry);
+
+    // A chain id is only unique among EVM chains. Aptos numbers its own
+    // mainnet 1 - the number Ethereum uses - so matching on it alone filed
+    // Aptos under Ethereum and reported it as a chain the bot reads. Where
+    // the eid is known independently, the entry has to agree with it; a
+    // different eid means a different chain reusing the number.
+    const knownEid = LZ_V2_EID_BY_CHAIN[chainKey];
+    if (knownEid !== undefined && eid !== undefined && eid !== knownEid) continue;
+
     // Recorded even when this chain's eid is already known from another
     // entry: the name is what the OFT registry keys its deployments by, and
     // a name left out of the index is a chain whose deployments keep being
@@ -143,7 +178,6 @@ export function extractEids(payload: unknown): Map<string, number> {
     keyIndex.set(normaliseLzKey(rawKey), chainKey);
     if (found.has(chainKey)) continue;
 
-    const eid = pickV2Eid(entry);
     if (eid !== undefined) found.set(chainKey, eid);
   }
 
