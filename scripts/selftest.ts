@@ -29,7 +29,7 @@ import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
-import { describeBody, parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
+import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
   factsFor,
@@ -58,7 +58,7 @@ import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
 import { entriesForSymbol } from "../src/bridges/layerzero";
-import { describeBody, parseJettonMaster, parseJettonWallets } from "../src/bridges/ton";
+import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
@@ -466,6 +466,21 @@ check("an HTML page is not mistaken for data", describeBody("<!DOCTYPE html>").s
 // An empty list is the index saying the adapter owns nothing, which may
 // simply be true - a third state, and it has to be distinguishable from
 // both a refusal and an answer nobody could parse.
+// Tether writes the jetton's symbol with a tugrik - USD₮ - and stripping
+// everything but letters and digits leaves "USD", which does not begin with
+// "USDT0". The wallets were found and then thrown away by the very filter
+// meant to pick them. The EVM side has replaced that character for months;
+// this reader had not.
+check("the tugrik does not hide a match", symbolsAgree("USD₮", "USDT0"));
+check("nor against the plain ticker", symbolsAgree("USD₮", "USDT"));
+check("a case difference is not a difference", symbolsAgree("USDe", "USDE"));
+check("an exact match is a match", symbolsAgree("ENA", "ENA"));
+// Either may be a prefix of the other, because a bridged token is routinely
+// listed under a longer name than the jetton it locks.
+check("but two different tokens do not agree", !symbolsAgree("USDC", "USDT0"));
+check("and a two-letter prefix is not agreement", !symbolsAgree("OP", "OPX"));
+check("a jetton with no symbol agrees with nothing", !symbolsAgree(undefined, "USDT"));
+
 check("an empty wallet list parses to nothing held", parseJettonWallets({ jetton_wallets: [] }).length === 0);
 check(
   "and so does a body with no such field, for a different reason",

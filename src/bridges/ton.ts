@@ -116,6 +116,32 @@ interface JettonHolding {
 }
 
 /**
+ * Two ticker spellings, compared the way a person would.
+ *
+ * Tether writes the jetton's symbol with a tugrik - USD₮ - and stripping
+ * everything but letters and digits leaves "USD", which does not begin with
+ * "USDT0". So the wallets were found and then thrown away by the filter
+ * meant to pick them. The EVM side already replaces that character; this
+ * reader did not.
+ *
+ * Either may be a prefix of the other, because a bridged token is routinely
+ * listed under a longer name than the jetton it locks - USDT0 against USD₮ -
+ * and three characters at least before that counts, or short tickers start
+ * matching each other.
+ */
+const MIN_SHARED_PREFIX = 3;
+
+export function symbolsAgree(jettonSymbol: string | undefined, wanted: string): boolean {
+  const clean = (value: string) =>
+    value.replace(/₮/g, "T").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const a = clean(jettonSymbol ?? "");
+  const b = clean(wanted);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return Math.min(a.length, b.length) >= MIN_SHARED_PREFIX && (a.startsWith(b) || b.startsWith(a));
+}
+
+/**
  * A body in a few words, for a failure message.
  *
  * Enough to recognise an error object, a login page or an empty answer, and
@@ -204,6 +230,7 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
     const owner = toTonAddress(deployment.address);
     if (!owner) {
       failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;
+      lastFailure = `адрес из реестра не похож на адрес TON: ${deployment.address.slice(0, 20)}…`;
       continue;
     }
 
@@ -263,13 +290,21 @@ export async function findTonBalances(symbol: string): Promise<NonEvmReadResult<
       }
     }
 
-    const matching =
-      known.length === 1
-        ? known
-        : known.filter((k) => (k.symbol ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith(wanted));
+    if (known.length === 0) {
+      // Wallets were listed and none of their jettons could be described,
+      // which is a different failure from finding no wallets at all.
+      failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;
+      lastFailure = lastFailure ?? "кошельки нашлись, но метаданные джеттонов индекс не отдал";
+      continue;
+    }
+
+    const matching = known.length === 1 ? known : known.filter((k) => symbolsAgree(k.symbol, wanted));
 
     if (matching.length === 0) {
       failures[TON_CHAIN.key] = (failures[TON_CHAIN.key] ?? 0) + 1;
+      lastFailure =
+        `у адаптера ${known.length} кошельков, и ни один джеттон не назвался похоже на ${wanted}: ` +
+        known.map((k) => k.symbol ?? "без символа").slice(0, 5).join(", ");
       continue;
     }
 
