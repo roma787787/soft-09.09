@@ -39,6 +39,7 @@ function helpText(): string {
 <code>/ccip &lt;сеть&gt;</code> — по шагам показать, как бот ищет пулы CCIP в этой сети.
 <code>/lzmesh &lt;тикер&gt;</code> — откуда взялось покрытие LayerZero по этому тикеру.
 <code>/lzchains</code> — у каких сетей известен eid LayerZero и откуда.
+<code>/lzgaps</code> — в каких сетях реестра LayerZero бот не читает хранилища.
 <code>/svm &lt;тикер&gt;</code> — как бот находит хранилища на сетях VM Solana, по шагам.
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
 <code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.

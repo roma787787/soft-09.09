@@ -19,6 +19,7 @@ import { registerOtherCommand } from "./commands/other";
 import { registerPortalCommand } from "./commands/portal";
 import { registerTonCommand } from "./commands/ton";
 import { registerLzProbeCommand } from "./commands/lzprobe";
+import { registerLzGapsCommand } from "./commands/lzgaps";
 
 export function createBot(): Telegraf {
   // Telegraf abandons a handler after 90 seconds by default and hands the
@@ -47,6 +48,7 @@ export function createBot(): Telegraf {
   registerPortalCommand(bot);
   registerTonCommand(bot);
   registerLzProbeCommand(bot);
+  registerLzGapsCommand(bot);
 
   bot.catch((err, ctx) => {
     console.error(`[bot] error while handling update ${ctx.updateType}:`, err);

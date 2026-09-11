@@ -28,7 +28,8 @@ import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol, extractNonEvmDeployments } from "../src/bridges/layerzero";
+import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
+import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import {
@@ -58,7 +59,8 @@ import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
-import { entriesForSymbol, extractNonEvmDeployments } from "../src/bridges/layerzero";
+import { entriesForSymbol, extractNonEvmDeployments, tallyDeploymentsByChain } from "../src/bridges/layerzero";
+import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
 import { describeBody, parseJettonMaster, parseJettonWallets, symbolsAgree } from "../src/bridges/ton";
 import { aptosCalls } from "../src/bridges/portalNonEvm";
 import { SVM_CHAINS } from "../src/config/svmChains";
@@ -1464,6 +1466,37 @@ check(
   "a deployment with no published escrow is not guessed at",
   svmEscrows(extractNonEvmDeployments(penguRegistry, "abstract")).length === 0
 );
+
+// A chain the bot cannot read hides its deployments the same way Solana hid
+// PENGU's: the missing reader and the empty bridge produce the same silence.
+// Counting the registry by chain is what turns that into a list.
+const tally = tallyDeploymentsByChain({
+  PENGU: penguRegistry,
+  USDT: [
+    {
+      deployments: {
+        ethereum: { address: "0x1", type: "OFTAdapter" },
+        solana: { address: "Ao", type: "OFT", details: { escrowTokenAccount: "Es" } },
+        aptos: { address: "0x2", type: "OFT" },
+      },
+    },
+  ],
+});
+const byKey = (key: string) => tally.find((t) => t.lzChainKey === key);
+check("every chain in the registry is counted", byKey("ethereum")?.deployments === 2);
+check("a locking deployment is counted as such", byKey("ethereum")?.locking === 1);
+check("a published escrow counts as locking", byKey("solana")?.locking === 2);
+check("a minting deployment is not counted as locking", byKey("aptos")?.locking === 0);
+check("chains are ordered by how much sits on them", tally[0].deployments >= tally[tally.length - 1].deployments);
+
+const gaps = gapsFrom(tally);
+check("a chain with a reader is not a gap", !gaps.some((g) => g.lzChainKey === "solana"));
+check("and neither is an EVM one", !gaps.some((g) => g.lzChainKey === "ethereum"));
+// Aptos the bot knows - Wormhole reads it - but nothing reads what LayerZero
+// locks there, which is the distinction the command exists to draw.
+check("a chain read by another bridge is still a LayerZero gap", gaps.some((g) => g.lzChainKey === "aptos"));
+check("a gap the bot has no chain for is named as such", classifyChain({ lzChainKey: "sui", deployments: 3, locking: 3 }).reader === "сеть неизвестна");
+check("gaps lead with the ones holding collateral", gaps.every((g, i) => i === 0 || gaps[i - 1].locking >= g.locking));
 
 // --- LayerZero OFT registry parsing (real response shape) --------------------
 

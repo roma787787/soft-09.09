@@ -333,6 +333,53 @@ export async function findRegistryDeploymentsOnChain(
   return found;
 }
 
+export interface RegistryChainUse {
+  /** The registry's own name for the chain. */
+  lzChainKey: string;
+  /** Tickers deployed there. */
+  deployments: number;
+  /** Of those, the ones that lock rather than mint, so something is held. */
+  locking: number;
+}
+
+/**
+ * How much of the registry sits on each chain.
+ *
+ * The point is the chains the bot cannot read. A deployment there is
+ * invisible in exactly the way PENGU's Solana escrow was - and there is no
+ * way to notice that from a report, because the missing bridge and the
+ * bridge that holds nothing produce the same silence. Counting the registry
+ * by chain turns "are we missing anything else" from a guess into a list.
+ */
+export async function oftRegistryByChain(): Promise<RegistryChainUse[] | undefined> {
+  const registry = await fetchOftRegistry();
+  return registry ? tallyDeploymentsByChain(registry) : undefined;
+}
+
+/** Pure half of the tally, so the counting is covered without a live call. */
+export function tallyDeploymentsByChain(registry: Record<string, unknown>): RegistryChainUse[] {
+  const byChain = new Map<string, RegistryChainUse>();
+
+  for (const entries of Object.values(registry)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries as Array<{
+      deployments?: Record<string, { type?: unknown; details?: unknown }>;
+    }>) {
+      for (const [lzChainKey, deployment] of Object.entries(entry?.deployments ?? {})) {
+        const use = byChain.get(lzChainKey) ?? { lzChainKey, deployments: 0, locking: 0 };
+        use.deployments++;
+        const rawType = String(deployment?.type ?? "");
+        if (/adapter|lockbox|proxy/i.test(rawType) || detailString(deployment?.details, "escrowTokenAccount")) {
+          use.locking++;
+        }
+        byChain.set(lzChainKey, use);
+      }
+    }
+  }
+
+  return [...byChain.values()].sort((a, b) => b.deployments - a.deployments);
+}
+
 /**
  * Pure half of the non-EVM lookup, so the real response shape is covered by
  * a test rather than only by a live call - the same reason extractDeployments
