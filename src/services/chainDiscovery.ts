@@ -231,26 +231,50 @@ async function registryFacts(chainId: number): Promise<ChainFacts | undefined> {
  * a refusal costs a request exactly once.
  */
 export async function registryRefusal(chainId: number): Promise<string | undefined> {
-  const local = testnetIds.get(chainId);
-  if (local) return local;
+  // A registry that says outright which it is outranks everything below.
+  // Both directions: viem and Hyperlane each carry a testnet flag and set
+  // it deliberately, so their word settles the question either way.
+  if (viemById.has(chainId) || hyperlaneById.has(chainId)) return undefined;
+
+  const flagged = testnetIds.get(chainId);
+  if (flagged) return flagged;
 
   // A registry that will not answer refuses nothing: the candidate goes on
   // to the probe, which is the check that actually decides.
   return refusalFromRegistryEntry(await registryEntry(chainId), chainId);
 }
 
-/** Pure half, so the shape is covered offline. */
+/**
+ * Pure half, so the shape is covered offline.
+ *
+ * Reached only when nothing authoritative describes the chain, and that
+ * ordering is the whole point. The canonical registry has no testnet flag,
+ * so the faucet list is the only hint it gives - and it is a hint, not a
+ * verdict: treating it as one threw fourteen live mainnets out of the table
+ * in a single scan, Meter, Skale, Beam, Rollux, EDU Chain and Injective
+ * among them, every one of which viem describes as a mainnet outright.
+ *
+ * The deprecation flag stays a verdict, because unlike the faucet list it is
+ * a field the registry sets on purpose to say exactly that.
+ */
 export function refusalFromRegistryEntry(
   entry: Record<string, any> | undefined,
   chainId: number
 ): string | undefined {
   if (!entry || Number(entry.chainId) !== chainId) return undefined;
-  // A non-empty faucet list is what a testnet has and a mainnet does not:
-  // the registry keeps both in one directory and does not label them.
-  if (Array.isArray(entry.faucets) && entry.faucets.length > 0) {
-    return "это тестовая сеть — в реестре у неё есть краны";
-  }
   if (entry.status === "deprecated") return "реестр помечает её устаревшей";
+
+  // What the registry's own authors wrote in the name. No flag field exists
+  // here, but "Apex Fusion - Nexus testnet" is not a guess about the chain -
+  // it is the registry saying so in the only place it can.
+  const written = `${entry.name ?? ""} ${entry.chain ?? ""}`;
+  if (/\b(testnet|devnet|sandbox|staging)\b/i.test(written)) {
+    return "в реестре она названа тестовой сетью";
+  }
+
+  if (Array.isArray(entry.faucets) && entry.faucets.length > 0) {
+    return "похоже на тестовую сеть: краны в реестре, и ни один реестр сетей её не описывает";
+  }
   return undefined;
 }
 

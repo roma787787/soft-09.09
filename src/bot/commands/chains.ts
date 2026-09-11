@@ -1,10 +1,28 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
-import { discoverChains, lastDiscovery } from "../../services/chainDiscovery";
+import { discoverChains, lastDiscovery, type RejectedChain } from "../../services/chainDiscovery";
 import { capToTelegramLimit, plural } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The kind of problem a rejection is, for grouping.
+ *
+ * Each class needs a different response, and that is the only reason to
+ * split them: a testnet is working as intended, a server refusing this IP is
+ * opened by a key, a chain nobody describes is out of the bot's hands, and a
+ * dead endpoint needs another address. The exact sentence - which host, which
+ * errno - stays on the row and is shown in full by /chains подробно.
+ */
+export function reasonClass(reason: string): string {
+  if (/тестов|устаревш/i.test(reason)) return "тестовая или устаревшая сеть — и не должна быть в таблице";
+  if (/отказывают этому серверу/i.test(reason)) return "узлы живы, но отказывают этому серверу — лечится своим RPC";
+  if (/нет публичных узлов/i.test(reason)) return "нет публичных узлов";
+  if (/ни один реестр/i.test(reason)) return "ни один реестр её не описывает";
+  if (/отдаёт сеть/i.test(reason)) return "узел отдаёт другую сеть — адрес в реестре неверный";
+  return "узлы не отвечают — нужен другой адрес ноды";
 }
 
 /**
@@ -73,15 +91,24 @@ export function registerChainsCommand(bot: Telegraf) {
     // what fell off the end was the part that says why the others are
     // missing, which is the only part anyone can act on.
     if (report.rejected.length > 0) {
-      const byReason = new Map<string, string[]>();
+      // Grouped by what kind of problem it is, not by the exact sentence.
+      // Naming the failing host made every reason unique, so forty-five
+      // chains became forty-five groups and the message ran past Telegram's
+      // limit - taking with it the part that says what the bot added, which
+      // is the half nobody can reconstruct. The exact reasons are a word
+      // away, in /chains подробно.
+      const byClass = new Map<string, RejectedChain[]>();
       for (const chain of report.rejected) {
-        const group = byReason.get(chain.reason);
-        if (group) group.push(chain.label);
-        else byReason.set(chain.reason, [chain.label]);
+        const group = byClass.get(reasonClass(chain.reason));
+        if (group) group.push(chain);
+        else byClass.set(reasonClass(chain.reason), [chain]);
       }
       lines.push("<b>Не подошли</b>");
-      for (const [reason, labels] of [...byReason].sort((a, b) => b[1].length - a[1].length)) {
-        lines.push(`❌ ${esc(reason)} — ${labels.length}\n   ${esc(labels.join(", "))}`);
+      for (const [reason, rejected] of [...byClass].sort((a, b) => b[1].length - a[1].length)) {
+        lines.push(`❌ ${esc(reason)} — ${rejected.length}\n   ${esc(rejected.map((c) => c.label).join(", "))}`);
+        if (detailed) {
+          for (const chain of rejected) lines.push(`     ${esc(chain.label)}: ${esc(chain.reason)}`);
+        }
       }
       lines.push("");
     }
@@ -94,7 +121,7 @@ export function registerChainsCommand(bot: Telegraf) {
         }
       } else {
         lines.push(`✅ ${esc(report.added.map((c) => c.label).join(", "))}`);
-        lines.push("<i>С адресами узлов: /chains подробно</i>");
+        lines.push("<i>С адресами узлов и точными причинами отказов: /chains подробно</i>");
       }
       lines.push("");
     }

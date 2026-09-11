@@ -36,6 +36,7 @@ import {
   typeMintsAndBurns,
 } from "../src/bridges/layerzero";
 import { classifyChain, gapsFrom } from "../src/bot/commands/lzgaps";
+import { reasonClass } from "../src/bot/commands/chains";
 import {
   baseTicker,
   describeBody,
@@ -63,6 +64,7 @@ import {
   keyForSlug,
   reasonForChain,
   refusalFromRegistryEntry,
+  registryRefusal,
   mergeCandidates,
   mergeFacts,
   defFromDiscovered,
@@ -1980,6 +1982,16 @@ async function asyncChecks(): Promise<void> {
   const empty = await mapWithConcurrency([], 4, async () => 1);
   check("an empty list is not a hang", empty.length === 0);
 
+  // The layering itself, against the registries that ship with the bot. Both
+  // of these answer from memory, so this costs no request: viem flags
+  // Sepolia a testnet and describes Meter, Beam, Injective's EVM chain,
+  // Rollux and EDU Chain as mainnets - and the second group is exactly what
+  // a faucet list read as a verdict had thrown out.
+  check("viem's testnet flag refuses the chain", (await registryRefusal(11155111)) !== undefined);
+  for (const [name, id] of [["Meter", 82], ["Beam", 4337], ["Injective EVM", 1776], ["Rollux", 570], ["EDU Chain", 41923]] as const) {
+    check(`and its mainnets are let through: ${name}`, (await registryRefusal(id)) === undefined);
+  }
+
   // A limit larger than the list must not spawn workers with nothing to do.
   const few = await mapWithConcurrency([1, 2], 99, async (n) => n + 1);
   check("a limit above the list length is harmless", few.join(",") === "2,3");
@@ -3070,19 +3082,31 @@ check("nothing at all is not facts", factsFromRegistryEntry(undefined, 1284) ===
 // -----------------------------------------------------------------------------
 
 check(
-  "a chain with faucets is refused outright, not merely undescribed",
-  /тестовая/.test(refusalFromRegistryEntry({ chainId: 11155111, faucets: ["https://faucet.example"] }, 11155111) ?? "")
+  "a chain the registry names a testnet is refused",
+  refusalFromRegistryEntry({ chainId: 9070, name: "Apex Fusion - Nexus testnet", faucets: [] }, 9070) !== undefined
 );
 check(
   "and so is a deprecated one",
   refusalFromRegistryEntry({ chainId: 1284, faucets: [], status: "deprecated" }, 1284) !== undefined
 );
+check(
+  "a faucet list is the last hint, and still a refusal on its own",
+  refusalFromRegistryEntry({ chainId: 11155111, name: "Sepolia", faucets: ["https://faucet.example"] }, 11155111) !== undefined
+);
 // A live mainnet must not be refused, and neither must an entry the registry
 // simply does not carry - unknown still goes to the probe, which is how the
 // chains no price API lists get read at all.
-check("a mainnet is not refused", refusalFromRegistryEntry({ chainId: 1284, faucets: [] }, 1284) === undefined);
+check("a mainnet is not refused", refusalFromRegistryEntry({ chainId: 1284, name: "Moonbeam", faucets: [] }, 1284) === undefined);
 check("an entry for another chain id is not a refusal of this one", refusalFromRegistryEntry({ chainId: 1285, faucets: ["x"] }, 1284) === undefined);
 check("and a registry with nothing to say refuses nothing", refusalFromRegistryEntry(undefined, 1284) === undefined);
+// The faucet list must never outrank a registry that says "mainnet" outright.
+// Read as a verdict it threw fourteen live chains out of the table in one
+// scan - Meter, Skale, Beam, Rollux, EDU Chain and Injective among them,
+// every one of which viem describes as a mainnet.
+check(
+  "a mainnet name is not read as a testnet name",
+  refusalFromRegistryEntry({ chainId: 82, name: "Meter Mainnet", chain: "METER", faucets: [] }, 82) === undefined
+);
 
 // -----------------------------------------------------------------------------
 // Why a candidate's endpoints failed. "No node answered" hid the difference
@@ -3129,6 +3153,24 @@ check(
 check("the cause's code is what gets reported", describeProbeError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } })) === "ENOTFOUND");
 check("a timeout is named as one", describeProbeError(Object.assign(new Error("This operation was aborted"), { name: "AbortError" })) === "не ответил вовремя");
 check("and a bare error still says something", describeProbeError(new Error("боль")) === "боль");
+
+// Naming the failing host made every reason unique, so forty-five chains
+// became forty-five groups and the report ran past Telegram's limit - taking
+// with it the part that says what the bot added, which is the half nobody
+// can reconstruct. Grouped by the kind of problem instead, because that is
+// what decides the response.
+check("every testnet wording lands in one group", reasonClass("viem знает её как тестовую сеть") === reasonClass("реестр помечает её устаревшей"));
+check("and so does every dead endpoint", reasonClass("ENOTFOUND (a.example)") === reasonClass("ни один из 2 узлов не отозвался: ETIMEDOUT (b.example); HTTP 502 (c.example)"));
+// These four need four different responses, so they must not merge.
+const classes = [
+  reasonClass("viem знает её как тестовую сеть"),
+  reasonClass("узлы отказывают этому серверу: HTTP 403 (rpc.ankr.com)"),
+  reasonClass("нет публичных узлов"),
+  reasonClass("ни один реестр её не описывает"),
+  reasonClass("ENOTFOUND (a.example)"),
+];
+check("problems needing different answers stay apart", new Set(classes).size === 5, classes.join(" | "));
+check("a refusal is labelled as fixable with a key", /RPC/.test(reasonClass("узлы отказывают этому серверу: HTTP 429 (x)")));
 
 // -----------------------------------------------------------------------------
 // Injective is two chains with one name: a Cosmos chain read over REST and,
