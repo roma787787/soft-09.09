@@ -3,7 +3,7 @@ import { env } from "./config/env";
 import { CHAINS } from "./config/chains";
 import { createBot } from "./bot";
 import { startTracker } from "./services/tracker";
-import { startChainDiscovery } from "./services/chainDiscovery";
+import { startChainDiscovery, loadDiscoveredChains } from "./services/chainDiscovery";
 import { startRpcHealth } from "./services/rpcHealth";
 import "./services/db"; // ensure schema is created on boot
 
@@ -12,6 +12,13 @@ async function main() {
   console.log(`[startup] db: ${env.dbPath}`);
   console.log(`[startup] сборка: ${env.commitSha ? env.commitSha.slice(0, 7) : "коммит не передан"}${env.gitBranch ? ` (${env.gitBranch})` : ""}`);
   console.log(`[startup] libuv threadpool requested: ${requestedThreadpoolSize} (DNS lookups queue here)`);
+
+  // Before the bot answers anything. Discovery runs in the background and
+  // takes a while, and until now the reports it raced were simply thinner -
+  // a chain the previous deploy knew came back as "the bot does not check
+  // this network", which is a claim, and a wrong one.
+  const restored = loadDiscoveredChains();
+  if (restored > 0) console.log(`[startup] восстановлено найденных ранее сетей: ${restored}, всего ${CHAINS.length}`);
 
   const bot = createBot();
   const stopTracker = startTracker(bot);

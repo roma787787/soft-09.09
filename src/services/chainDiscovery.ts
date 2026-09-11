@@ -4,6 +4,7 @@ import type { Chain } from "viem";
 import * as viemChains from "viem/chains";
 import { type ChainDef, CHAINS, getChainByChainId, registerChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
+import { env } from "../config/env";
 import { mapWithConcurrency } from "./concurrency";
 
 /**
@@ -414,6 +415,7 @@ async function runDiscovery(): Promise<DiscoveryReport> {
         } as RejectedChain);
   });
 
+  const found: StoredChain[] = [];
   for (const result of results) {
     if (!result) continue;
     if ("reason" in result) {
@@ -428,13 +430,131 @@ async function runDiscovery(): Promise<DiscoveryReport> {
         chainId: def.viemChain.id,
         rpcUrl: result.url,
       });
+      found.push({
+        slug: result.platform.id,
+        chainId: result.platform.chainId!,
+        name: result.platform.name || result.facts.name,
+        nativeCurrency: result.facts.nativeCurrency,
+        rpcUrls: result.facts.rpcUrls,
+        explorerUrl: result.facts.explorerUrl,
+        rpcUrl: result.url,
+      });
     } else {
       report.duplicates++;
     }
   }
 
+  saveDiscoveredChains(found);
   lastReport = report;
   return report;
+}
+
+/**
+ * A discovered chain as plain data, enough to rebuild its definition.
+ *
+ * Discovery only ever added chains to memory, so every restart began without
+ * them and rebuilt the table by probing a hundred and fifty endpoints - and
+ * answered questions in the meantime with the chains it had. Two identical
+ * USDC reports minutes apart differed by three networks and eighty-eight
+ * million in reported supply, purely because one of them ran before the scan
+ * finished. A report that changes with the bot's uptime is not a report.
+ */
+export interface StoredChain {
+  slug: string;
+  chainId: number;
+  name: string;
+  nativeCurrency: ChainFacts["nativeCurrency"];
+  rpcUrls: string[];
+  explorerUrl?: string;
+  /** The endpoint that answered when the chain was found. */
+  rpcUrl: string;
+}
+
+/** Kept beside the database, like the price API's platform list. */
+function discoveredPath(): string {
+  return path.join(path.dirname(env.dbPath), "chains.discovered.json");
+}
+
+/**
+ * Rebuilds a chain definition from stored facts.
+ *
+ * Defensive because the file is not code: a truncated write or a hand edit
+ * must cost one chain, not the boot. Anything that does not describe a chain
+ * completely is skipped rather than half-registered.
+ */
+export function defFromDiscovered(entry: unknown): ChainDef | undefined {
+  const e = entry as StoredChain | undefined;
+  if (!e || typeof e.slug !== "string" || !e.slug) return undefined;
+  if (typeof e.chainId !== "number" || !Number.isFinite(e.chainId)) return undefined;
+  if (typeof e.rpcUrl !== "string" || !e.rpcUrl) return undefined;
+
+  const currency = e.nativeCurrency;
+  if (!currency || typeof currency.symbol !== "string" || typeof currency.decimals !== "number") return undefined;
+
+  const name = typeof e.name === "string" && e.name ? e.name : e.slug;
+  const rpcUrls = Array.isArray(e.rpcUrls) ? e.rpcUrls.filter((u) => typeof u === "string") : [];
+
+  return chainDefFor(
+    { id: e.slug, chainId: e.chainId, name },
+    { name, nativeCurrency: currency, rpcUrls, explorerUrl: e.explorerUrl },
+    e.rpcUrl
+  );
+}
+
+/**
+ * Registers the chains a previous scan found. Called before the bot answers
+ * anything, so the first report of a deploy covers as much as the last one
+ * of the deploy before it.
+ */
+export function loadDiscoveredChains(): number {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(discoveredPath(), "utf8"));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("[chains] не удалось прочитать сохранённые сети:", err);
+    }
+    return 0;
+  }
+  if (!Array.isArray(raw)) return 0;
+
+  let added = 0;
+  for (const entry of raw) {
+    const def = defFromDiscovered(entry);
+    if (def && registerChain(def)) added++;
+  }
+  return added;
+}
+
+/**
+ * Merges this scan's finds into the stored ones.
+ *
+ * Merged rather than replaced: a chain found yesterday counts as already
+ * known today, so it never appears in a later scan's additions, and writing
+ * only what this run added would empty the file one deploy at a time.
+ */
+function saveDiscoveredChains(found: StoredChain[]): void {
+  if (found.length === 0) return;
+  const byChainId = new Map<number, StoredChain>();
+  try {
+    const existing = JSON.parse(fs.readFileSync(discoveredPath(), "utf8"));
+    if (Array.isArray(existing)) {
+      for (const entry of existing) {
+        if (defFromDiscovered(entry)) byChainId.set((entry as StoredChain).chainId, entry as StoredChain);
+      }
+    }
+  } catch {
+    // No file yet, or an unreadable one: this scan's finds become the file.
+  }
+  for (const entry of found) byChainId.set(entry.chainId, entry);
+
+  try {
+    fs.mkdirSync(path.dirname(discoveredPath()), { recursive: true });
+    fs.writeFileSync(discoveredPath(), JSON.stringify([...byChainId.values()], null, 2), "utf8");
+  } catch (err) {
+    // Losing the cache costs a slower first report, not an answer.
+    console.error("[chains] не удалось сохранить найденные сети:", err);
+  }
 }
 
 /** How often the table is refreshed. Chains launch weekly, not hourly. */

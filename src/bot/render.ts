@@ -229,6 +229,15 @@ export interface ReportInput {
     checkedProtocols?: BridgeProtocol[];
     /** Why a checked bridge found nothing, where the reason is known. */
     notFoundNotes?: Partial<Record<BridgeProtocol, string>>;
+    /**
+     * True while the chain table is still being built.
+     *
+     * Discovery runs in the background and adds most of the long tail, so a
+     * report issued before it finishes lists chains as unchecked that the
+     * next report covers. Saying "the bot does not check this network" is a
+     * claim; while the list is incomplete it is one the bot cannot make.
+     */
+    chainListIncomplete?: boolean;
   };
 }
 
@@ -266,7 +275,9 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
   }
   if (scope.unsupportedPlatforms.length > 0) {
     lines.push(
-      `Ещё в этих сетях бот их не проверяет: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
+      scope.chainListIncomplete
+        ? `Эти сети пока не в списке — он ещё достраивается, спросите через пару минут: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
+        : `Ещё в этих сетях бот их не проверяет: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
     );
   }
   return lines;

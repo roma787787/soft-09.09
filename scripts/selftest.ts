@@ -37,6 +37,7 @@ import {
   factsFromRegistryEntry,
   keyForSlug,
   mergeFacts,
+  defFromDiscovered,
   type DiscoveryReport,
 } from "../src/services/chainDiscovery";
 import { describeError, groupByReason, mostActionable, splitFailures } from "../src/bot/commands/diag";
@@ -1949,6 +1950,30 @@ check("nothing is lost between parts", wideParts.join("\n") === wide);
 check("every part is valid HTML on its own", wideParts.every(tagsBalanced));
 // A short report is still one message; splitting is not a new default shape.
 check("a report that fits stays a single message", splitForTelegram(smallReport).length === 1);
+
+// Discovery only ever added chains to memory, so every restart began without
+// them and answered questions while it rebuilt the table. Two identical USDC
+// reports minutes apart differed by three networks and eighty-eight million
+// in reported supply - one had run before the scan finished. A report that
+// changes with the bot's uptime is not a report.
+const storedChain = {
+  slug: "xdc-network",
+  chainId: 50,
+  name: "XDC Network",
+  nativeCurrency: { name: "XDC", symbol: "XDC", decimals: 18 },
+  rpcUrls: ["https://rpc.xinfin.network"],
+  explorerUrl: "https://xdcscan.io",
+  rpcUrl: "https://rpc.xinfin.network",
+};
+const restored = defFromDiscovered(storedChain);
+check("a stored chain comes back as a usable definition", restored?.viemChain.id === 50);
+check("with its own coin, not a guessed one", restored?.viemChain.nativeCurrency.symbol === "XDC");
+check("and a working explorer link", restored?.explorerAddressUrl("0xabc") === "https://xdcscan.io/address/0xabc");
+check("it answers to the name the price API uses", restored?.aliases.includes("xdc-network") === true);
+// The file is not code: a truncated write or a hand edit must cost one chain
+// rather than the boot.
+const broken = [null, {}, { slug: "x" }, { ...storedChain, nativeCurrency: undefined }, { ...storedChain, chainId: "50" }, { ...storedChain, rpcUrl: "" }];
+check("every incomplete record is skipped, not half-registered", broken.every((b) => defFromDiscovered(b) === undefined));
 
 // Breaking between any two lines put a message boundary through the middle
 // of a chain: the next message opened with a bare " - Hyperlane (Warp

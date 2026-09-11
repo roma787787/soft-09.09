@@ -31,6 +31,7 @@ import {
   type RegistryDeploymentInfo,
 } from "../../bridges/layerzero";
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
+import { lastDiscovery } from "../../services/chainDiscovery";
 import type { Custodian } from "../../bridges/types";
 import type { TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
@@ -466,6 +467,10 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // contributed nothing were asked too, and saying so is the difference
       // between "this bridge holds none of it" and "this bot ignores it".
       checkedProtocols: BRIDGE_ORDER,
+      // A chain the next report will cover must not be called unchecked in
+      // this one; until the scan lands, the list is not something to make
+      // claims from.
+      chainListIncomplete: !lastDiscovery(),
       notFoundNotes: { stargate: stargateNote() },
     },
   });
