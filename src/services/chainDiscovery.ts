@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Chain } from "viem";
 import * as viemChains from "viem/chains";
-import { type ChainDef, CHAINS, getChainByChainId, registerChain } from "../config/chains";
+import { type ChainDef, CHAINS, getChain, getChainByChainId, registerChain, resolveAnyChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
 import { lzChainCandidates, type LzChainCandidate } from "../bridges/lzMetadata";
 import { learnEndpoints } from "./extraEndpoints";
@@ -106,6 +106,17 @@ export interface ChainFacts {
   explorerUrl?: string;
 }
 
+/**
+ * Chain ids a registry actively refuses, and why.
+ *
+ * Kept apart from "not described", because they are opposite answers and
+ * were being treated as one. A chain nothing describes can still be added on
+ * a bridge's word - that is how the chains no price API lists get read at
+ * all. A chain a registry has looked at and called a testnet must never be,
+ * whatever any bridge says about it.
+ */
+const testnetIds = new Map<number, string>();
+
 const viemById = new Map<number, Chain>();
 for (const candidate of Object.values(viemChains as Record<string, unknown>)) {
   const chain = candidate as Chain;
@@ -114,14 +125,21 @@ for (const candidate of Object.values(viemChains as Record<string, unknown>)) {
   // questions about real liquidity: a testnet added here would report
   // balances in play money under a name that looks like the real chain.
   // Hyperlane's metadata is already filtered the same way.
-  if (chain.testnet) continue;
+  if (chain.testnet) {
+    testnetIds.set(chain.id, "viem знает её как тестовую сеть");
+    continue;
+  }
   if (!viemById.has(chain.id)) viemById.set(chain.id, chain);
 }
 
 const hyperlaneById = new Map<number, ChainFacts>();
 for (const entry of Object.values(HYPERLANE_METADATA) as Array<Record<string, any>>) {
-  if (entry?.protocol !== "ethereum" || entry?.isTestnet) continue;
   const id = Number(entry?.chainId);
+  if (entry?.protocol !== "ethereum") continue;
+  if (entry?.isTestnet) {
+    if (Number.isInteger(id) && !testnetIds.has(id)) testnetIds.set(id, "Hyperlane отмечает её как тестовую");
+    continue;
+  }
   if (!Number.isInteger(id) || hyperlaneById.has(id)) continue;
   const token = entry.nativeToken ?? {};
   hyperlaneById.set(id, {
@@ -174,27 +192,66 @@ export function factsFor(chainId: number): ChainFacts | undefined {
  */
 const REGISTRY_URL = "https://raw.githubusercontent.com/ethereum-lists/chains/master/_data/chains";
 
-/** Answers already fetched, misses included: a miss costs a request too. */
-const registryCache = new Map<number, ChainFacts | undefined>();
+/**
+ * Entries already fetched, misses included: a miss costs a request too.
+ *
+ * The entry rather than the facts derived from it, because two questions are
+ * asked of the same document - what the chain is, and whether the registry
+ * refuses it - and fetching it twice would double the requests on exactly
+ * the candidates that need the most.
+ */
+const registryCache = new Map<number, Record<string, any> | undefined>();
 
-async function registryFacts(chainId: number): Promise<ChainFacts | undefined> {
+async function registryEntry(chainId: number): Promise<Record<string, any> | undefined> {
   if (registryCache.has(chainId)) return registryCache.get(chainId);
 
-  let facts: ChainFacts | undefined;
+  let entry: Record<string, any> | undefined;
   try {
     const response = await fetch(`${REGISTRY_URL}/eip155-${chainId}.json`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    if (response.ok) {
-      const body = (await response.json()) as Record<string, any>;
-      facts = factsFromRegistryEntry(body, chainId);
-    }
+    if (response.ok) entry = (await response.json()) as Record<string, any>;
   } catch {
     // A registry that will not answer is the same as one that does not carry
     // the chain: nothing is added, and the next run asks again.
   }
-  registryCache.set(chainId, facts);
-  return facts;
+  registryCache.set(chainId, entry);
+  return entry;
+}
+
+async function registryFacts(chainId: number): Promise<ChainFacts | undefined> {
+  return factsFromRegistryEntry(await registryEntry(chainId), chainId);
+}
+
+/**
+ * Why a registry refuses a chain, or nothing if none does.
+ *
+ * The local registries answer from memory. The canonical one is asked only
+ * when they have nothing to say, and its answer is cached like any other -
+ * a refusal costs a request exactly once.
+ */
+export async function registryRefusal(chainId: number): Promise<string | undefined> {
+  const local = testnetIds.get(chainId);
+  if (local) return local;
+
+  // A registry that will not answer refuses nothing: the candidate goes on
+  // to the probe, which is the check that actually decides.
+  return refusalFromRegistryEntry(await registryEntry(chainId), chainId);
+}
+
+/** Pure half, so the shape is covered offline. */
+export function refusalFromRegistryEntry(
+  entry: Record<string, any> | undefined,
+  chainId: number
+): string | undefined {
+  if (!entry || Number(entry.chainId) !== chainId) return undefined;
+  // A non-empty faucet list is what a testnet has and a mainnet does not:
+  // the registry keeps both in one directory and does not label them.
+  if (Array.isArray(entry.faucets) && entry.faucets.length > 0) {
+    return "это тестовая сеть — в реестре у неё есть краны";
+  }
+  if (entry.status === "deprecated") return "реестр помечает её устаревшей";
+  return undefined;
 }
 
 /** Split out from the fetch so the shape can be checked without a network. */
@@ -274,6 +331,36 @@ export function keyForSlug(slug: string): string {
 }
 
 /**
+ * The same key, unless a chain outside the EVM table already answers to it.
+ *
+ * Injective is two chains with one name: a Cosmos chain the bot reads over
+ * REST and, since LayerZero named it, an EVM chain it reads over JSON-RPC.
+ * Both landed on the key "injective", and a key is what /track stores, what
+ * a chain filter matches and what a report labels a row with - so one of
+ * them would have been answering for the other.
+ *
+ * Suffixed rather than refused, because both chains are real and both hold
+ * balances worth reporting. The EVM one takes the suffix: the Cosmos table
+ * had the name first, and a key already in the database must not move.
+ */
+export function freeKeyFor(slug: string, taken: (key: string) => boolean = keyTakenElsewhere): string {
+  const key = keyForSlug(slug);
+  if (!taken(key)) return key;
+
+  const suffixed = `${key}evm`;
+  if (!taken(suffixed)) return suffixed;
+
+  // Third spelling rather than a loop: if two non-EVM tables and this one all
+  // claim the same name, the collision is a naming problem worth seeing.
+  return `${key}evmchain`;
+}
+
+function keyTakenElsewhere(key: string): boolean {
+  const resolved = resolveAnyChain(key);
+  return !!resolved && !getChain(key);
+}
+
+/**
  * Asks one endpoint which chain it is.
  *
  * eth_chainId rather than eth_blockNumber, because the answer has to be
@@ -281,7 +368,14 @@ export function keyForSlug(slug: string): string {
  * network answers a block number perfectly happily, and reading one chain's
  * balances while calling them another's is worse than not reading them.
  */
-async function confirmsChainId(url: string, expected: number): Promise<boolean> {
+export interface ProbeOutcome {
+  url: string;
+  ok: boolean;
+  /** What went wrong, in the terms /diag uses, so the two agree. */
+  reason?: string;
+}
+
+async function confirmsChainId(url: string, expected: number): Promise<ProbeOutcome> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
@@ -291,24 +385,95 @@ async function confirmsChainId(url: string, expected: number): Promise<boolean> 
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
       signal: controller.signal,
     });
-    if (!response.ok) return false;
+    // A refusal is not a dead node. 403 and 429 from a datacenter IP are the
+    // single most common thing a public endpoint does to this bot, and they
+    // are fixed by a key rather than by finding another host - the opposite
+    // response to a name that does not resolve. Reported as one blanket "no
+    // node answered", the two send the reader to opposite places.
+    if (!response.ok) return { url, ok: false, reason: `HTTP ${response.status} (${hostOf(url)})` };
+
     const body = (await response.json()) as { result?: unknown };
-    return typeof body.result === "string" && Number(BigInt(body.result)) === expected;
-  } catch {
-    return false;
+    if (typeof body.result !== "string") return { url, ok: false, reason: `узел ответил без chainId (${hostOf(url)})` };
+
+    const answered = Number(BigInt(body.result));
+    if (answered !== expected) {
+      // Worth its own wording: this endpoint works, it is just serving a
+      // different network than the one it is listed under. Adding it would
+      // read one chain's balances under another chain's name.
+      return { url, ok: false, reason: `узел отдаёт сеть ${answered}, а не ${expected}` };
+    }
+    return { url, ok: true };
+  } catch (err) {
+    return { url, ok: false, reason: `${describeProbeError(err)} (${hostOf(url)})` };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function firstWorkingEndpoint(urls: string[], chainId: number): Promise<string | undefined> {
+/** The host alone: a full URL per failure fills the message and says less. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url.slice(0, 40);
+  }
+}
+
+/**
+ * Node wraps the real network error in an opaque "fetch failed", so the
+ * cause has to be unwrapped or every dead endpoint reports the same
+ * sentence - which is how sixteen chains once shared one useless reason.
+ */
+export function describeProbeError(err: unknown): string {
+  const error = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+  if (error?.name === "AbortError" || /aborted/i.test(error?.message ?? "")) return "не ответил вовремя";
+
+  const code = error?.cause?.code;
+  if (code) return code;
+
+  const causeMessage = error?.cause?.message;
+  if (causeMessage) return causeMessage.split("\n")[0].slice(0, 60);
+
+  return (error?.message ?? String(err)).split("\n")[0].slice(0, 60);
+}
+
+interface EndpointSearch {
+  url?: string;
+  outcomes: ProbeOutcome[];
+}
+
+async function firstWorkingEndpoint(urls: string[], chainId: number): Promise<EndpointSearch> {
   const tried = urls.slice(0, MAX_ENDPOINTS);
-  const answers = await Promise.all(tried.map(async (u) => ((await confirmsChainId(u, chainId)) ? u : undefined)));
-  return answers.find(Boolean);
+  const outcomes = await Promise.all(tried.map((u) => confirmsChainId(u, chainId)));
+  return { url: outcomes.find((o) => o.ok)?.url, outcomes };
+}
+
+/**
+ * One sentence for a chain whose endpoints all failed.
+ *
+ * The most actionable failure wins rather than the first: a chain where one
+ * node refuses this server and three do not resolve is a chain a key opens,
+ * and saying "did not resolve" about it sends the reader hunting for an
+ * endpoint they already have.
+ */
+export function reasonForChain(outcomes: ProbeOutcome[]): string {
+  const reasons = outcomes.map((o) => o.reason).filter((r): r is string => !!r);
+  if (reasons.length === 0) return "нет публичных узлов";
+
+  const refusal = reasons.find((r) => /HTTP (401|403|429)/.test(r));
+  if (refusal) return `узлы отказывают этому серверу: ${refusal}`;
+
+  const wrongChain = reasons.find((r) => /отдаёт сеть/.test(r));
+  if (wrongChain) return wrongChain;
+
+  const unique = [...new Set(reasons)];
+  return unique.length === 1
+    ? `${unique[0]}${outcomes.length > 1 ? ` и ещё ${outcomes.length - 1}` : ""}`
+    : `ни один из ${outcomes.length} узлов не отозвался: ${unique.slice(0, 2).join("; ")}`;
 }
 
 function chainDefFor(platform: AssetPlatform, facts: ChainFacts, rpcUrl: string): ChainDef {
-  const key = keyForSlug(platform.id);
+  const key = freeKeyFor(platform.id);
   const label = platform.name || facts.name;
   const explorer = facts.explorerUrl?.replace(/\/+$/, "");
   const viem = viemById.get(platform.chainId!);
@@ -500,6 +665,24 @@ async function runDiscovery(): Promise<DiscoveryReport> {
   }
 
   const results = await mapWithConcurrency(candidates, PROBE_CONCURRENCY, async (candidate) => {
+    // A registry that refuses a chain outranks a bridge that offers it.
+    //
+    // Sepolia reached the table because those two were the same answer here.
+    // Every registry refuses it - viem and Hyperlane by their testnet flag,
+    // the canonical one by its faucet list - so "described by nobody" and
+    // "described and refused" both came back as nothing, and the bridge's
+    // own facts stood in for the missing description. A testnet in this
+    // table reports play money under a real chain's name, which is the worst
+    // thing it can do.
+    //
+    // Unknown is still allowed through on the bridge's word: that is how the
+    // chains no price API and no chain registry lists get read at all, and
+    // the bridge only names chains it is deployed on.
+    const refusal = await registryRefusal(candidate.chainId);
+    if (refusal) {
+      return { label: candidate.name, chainId: candidate.chainId, reason: refusal } as RejectedChain;
+    }
+
     const facts = mergeFacts(await mergedFacts(candidate.chainId), candidate.facts);
     if (!facts) {
       return {
@@ -511,13 +694,13 @@ async function runDiscovery(): Promise<DiscoveryReport> {
     if (facts.rpcUrls.length === 0) {
       return { label: candidate.name, chainId: candidate.chainId, reason: "нет публичных узлов" } as RejectedChain;
     }
-    const url = await firstWorkingEndpoint(facts.rpcUrls, candidate.chainId);
+    const { url, outcomes } = await firstWorkingEndpoint(facts.rpcUrls, candidate.chainId);
     return url
       ? { candidate, facts, url }
       : ({
           label: candidate.name,
           chainId: candidate.chainId,
-          reason: `ни один из ${Math.min(facts.rpcUrls.length, MAX_ENDPOINTS)} узлов не отозвался`,
+          reason: reasonForChain(outcomes),
         } as RejectedChain);
   });
 
@@ -604,6 +787,15 @@ export function defFromDiscovered(entry: unknown): ChainDef | undefined {
   if (typeof e.chainId !== "number" || !Number.isFinite(e.chainId)) return undefined;
   if (typeof e.rpcUrl !== "string" || !e.rpcUrl) return undefined;
 
+  // Checked again on the way back in, not only on the way out. Sepolia was
+  // saved by a scan that could not yet tell "no registry describes it" from
+  // "the registries refuse it", and a file is not a decision: a stored chain
+  // that today's rules would refuse must not be restored by yesterday's.
+  if (testnetIds.has(e.chainId)) {
+    console.warn(`[chains] сохранённая сеть ${e.slug} (${e.chainId}) — тестовая, не загружаю`);
+    return undefined;
+  }
+
   const currency = e.nativeCurrency;
   if (!currency || typeof currency.symbol !== "string" || typeof currency.decimals !== "number") return undefined;
 
@@ -650,11 +842,15 @@ export function loadDiscoveredChains(): number {
  * only what this run added would empty the file one deploy at a time.
  */
 function saveDiscoveredChains(found: StoredChain[]): void {
-  if (found.length === 0) return;
   const byChainId = new Map<number, StoredChain>();
+  let read = false;
   try {
     const existing = JSON.parse(fs.readFileSync(discoveredPath(), "utf8"));
     if (Array.isArray(existing)) {
+      read = true;
+      // Rebuilt through the same check the load path uses, so an entry
+      // today's rules refuse is dropped from the file rather than sitting in
+      // it being skipped forever. This is what removes Sepolia.
       for (const entry of existing) {
         if (defFromDiscovered(entry)) byChainId.set((entry as StoredChain).chainId, entry as StoredChain);
       }
@@ -663,6 +859,11 @@ function saveDiscoveredChains(found: StoredChain[]): void {
     // No file yet, or an unreadable one: this scan's finds become the file.
   }
   for (const entry of found) byChainId.set(entry.chainId, entry);
+
+  // Never rewrite on nothing. A scan that added no chains and could not read
+  // the file has no business replacing it with an empty one - that would
+  // turn one bad read into the loss of every chain ever discovered.
+  if (found.length === 0 && !read) return;
 
   try {
     fs.mkdirSync(path.dirname(discoveredPath()), { recursive: true });

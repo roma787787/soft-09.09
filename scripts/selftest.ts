@@ -56,9 +56,13 @@ import {
   portalCosmosUnreachable,
 } from "../src/config/portalCosmosChains";
 import {
+  describeProbeError,
   factsFor,
   factsFromRegistryEntry,
+  freeKeyFor,
   keyForSlug,
+  reasonForChain,
+  refusalFromRegistryEntry,
   mergeCandidates,
   mergeFacts,
   defFromDiscovered,
@@ -3055,6 +3059,113 @@ check(
   factsFromRegistryEntry({ ...moonbeamEntry, rpc: ["https://rpc.example/${API_KEY}"] }, 1284) === undefined
 );
 check("nothing at all is not facts", factsFromRegistryEntry(undefined, 1284) === undefined);
+
+// -----------------------------------------------------------------------------
+// A registry refusing a chain and a registry never having heard of it are
+// opposite answers, and treating them as one put Sepolia in the live table.
+// Every registry refuses it - viem and Hyperlane by their testnet flag, the
+// canonical one by its faucet list - so "described by nobody" came back for
+// it too, and the bridge's own facts stood in for the missing description.
+// Play money under a real chain's name is the worst thing this table can do.
+// -----------------------------------------------------------------------------
+
+check(
+  "a chain with faucets is refused outright, not merely undescribed",
+  /тестовая/.test(refusalFromRegistryEntry({ chainId: 11155111, faucets: ["https://faucet.example"] }, 11155111) ?? "")
+);
+check(
+  "and so is a deprecated one",
+  refusalFromRegistryEntry({ chainId: 1284, faucets: [], status: "deprecated" }, 1284) !== undefined
+);
+// A live mainnet must not be refused, and neither must an entry the registry
+// simply does not carry - unknown still goes to the probe, which is how the
+// chains no price API lists get read at all.
+check("a mainnet is not refused", refusalFromRegistryEntry({ chainId: 1284, faucets: [] }, 1284) === undefined);
+check("an entry for another chain id is not a refusal of this one", refusalFromRegistryEntry({ chainId: 1285, faucets: ["x"] }, 1284) === undefined);
+check("and a registry with nothing to say refuses nothing", refusalFromRegistryEntry(undefined, 1284) === undefined);
+
+// -----------------------------------------------------------------------------
+// Why a candidate's endpoints failed. "No node answered" hid the difference
+// between a server refusing this bot's IP, which a key opens, and a hostname
+// that does not resolve, which needs a different endpoint entirely.
+// -----------------------------------------------------------------------------
+
+check("no endpoints at all says so", reasonForChain([]) === "нет публичных узлов");
+// The most actionable failure wins rather than the first: a chain where one
+// node refuses this server is a chain a key opens, and reporting the dead
+// hosts instead sends the reader hunting for an endpoint they already have.
+check(
+  "a refusal outranks a dead host",
+  /отказывают/.test(
+    reasonForChain([
+      { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
+      { url: "https://b.example", ok: false, reason: "HTTP 403 (b.example)" },
+    ])
+  )
+);
+check(
+  "a node serving another network is named as such",
+  /отдаёт сеть/.test(reasonForChain([{ url: "https://a.example", ok: false, reason: "узел отдаёт сеть 1, а не 1996" }]))
+);
+check(
+  "one reason shared by every endpoint is said once",
+  reasonForChain([
+    { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
+    { url: "https://b.example", ok: false, reason: "ENOTFOUND (a.example)" },
+  ]) === "ENOTFOUND (a.example) и ещё 1"
+);
+check(
+  "and different reasons are both shown",
+  /ни один из 2 узлов/.test(
+    reasonForChain([
+      { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
+      { url: "https://b.example", ok: false, reason: "не ответил вовремя (b.example)" },
+    ])
+  )
+);
+
+// Node wraps the real network error in an opaque "fetch failed", so the cause
+// has to be unwrapped or every dead endpoint reports the same sentence.
+check("the cause's code is what gets reported", describeProbeError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } })) === "ENOTFOUND");
+check("a timeout is named as one", describeProbeError(Object.assign(new Error("This operation was aborted"), { name: "AbortError" })) === "не ответил вовремя");
+check("and a bare error still says something", describeProbeError(new Error("боль")) === "боль");
+
+// -----------------------------------------------------------------------------
+// Injective is two chains with one name: a Cosmos chain read over REST and,
+// since LayerZero named it, an EVM chain read over JSON-RPC. Both landed on
+// the key "injective" - and a key is what /track stores, what a chain filter
+// matches and what a report labels a row with.
+// -----------------------------------------------------------------------------
+
+check("a free name is kept as it is", freeKeyFor("polygon-pos", () => false) === "polygonpos");
+check("a name another table already answers to is suffixed", freeKeyFor("injective", (k) => k === "injective") === "injectiveevm");
+check("and suffixed again if that is taken too", freeKeyFor("injective", (k) => k !== "injectiveevmchain") === "injectiveevmchain");
+
+// A file is not a decision. Sepolia was written to the stored table by a scan
+// that could not yet tell a refusal from a silence, and a restart would have
+// put it straight back - so the rule is applied on the way in as well.
+check(
+  "a stored testnet is not restored",
+  defFromDiscovered({
+    slug: "sepolia",
+    chainId: 11155111,
+    name: "Sepolia",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://rpc.sepolia.org"],
+    rpcUrl: "https://rpc.sepolia.org",
+  }) === undefined
+);
+check(
+  "while a stored mainnet still is",
+  defFromDiscovered({
+    slug: "sanko",
+    chainId: 1996,
+    name: "Sanko",
+    nativeCurrency: { name: "DMT", symbol: "DMT", decimals: 18 },
+    rpcUrls: ["https://mainnet.sanko.xyz"],
+    rpcUrl: "https://mainnet.sanko.xyz",
+  }) !== undefined
+);
 
 // The registries are merged, not tried in order, and that is the whole
 // point: forty-four candidates were refused with "the one node did not
