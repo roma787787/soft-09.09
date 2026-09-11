@@ -1727,6 +1727,20 @@ check("a chain with supply but no custody is named", withSupplyOnly.includes("Ro
 check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
+// A native pool's precision comes from the chain, not from a constant. It
+// was hardcoded to 18 on the grounds that every chain carrying one used 18 -
+// true of a table kept by hand, and not something a discovered table can
+// promise. Tron and Tempo are already 6, and a native pool on one of those
+// would have been reported a trillion times small.
+check(
+  "the table still contains chains whose coin is not 18 decimals",
+  CHAINS.some((c) => c.viemChain.nativeCurrency?.decimals !== 18)
+);
+check(
+  "and six decimals render as themselves, not as a trillionth",
+  formatAmount(1_500_000n, 6).replace(/\u00a0/g, " ") === "1,5"
+);
+
 check(
   "a contract that refuses is not blamed on the node",
   renderLiquidityReport({
