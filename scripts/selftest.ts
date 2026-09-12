@@ -1665,7 +1665,7 @@ check("with the amount scaled by the coin's own decimals", suiOnly.includes("2 9
 check("and linked to the object holding it", suiOnly.includes("suiscan.xyz/mainnet/object/0xf0147adc"));
 // Wormhole is read there; the rest are not, and the report says which even
 // when it found something.
-check("the partial-coverage caveat survives a found balance", suiOnly.includes("проверен только Wormhole"));
+check("the partial-coverage caveat survives a found balance", suiOnly.includes("только Wormhole"));
 
 const suiKnownButUnread = renderLiquidityReport({
   symbol: "USDC",
@@ -1681,9 +1681,14 @@ const suiKnownButUnread = renderLiquidityReport({
     bridgesUnread: ["sui"],
   },
 });
-check("a chain whose bridges are only partly read says so", suiKnownButUnread.includes("проверен только Wormhole"));
+check("a chain whose bridges are only partly read says so", suiKnownButUnread.includes("только Wormhole"));
 check("and does not deny the check that does run", !suiKnownButUnread.includes("не хранилища мостов"));
 check("and names it", /Sui/.test(suiKnownButUnread));
+// LayerZero IS deployed on Sui - /sui prints its registry's contracts for a
+// ticker that has them - so "the other bridges are not there at all" was a
+// claim about the chain, and a false one. What is true is about the bot.
+check("it does not claim the other bridges are absent from the chain", !suiKnownButUnread.includes("нет вовсе"));
+check("and says the gap is the bot's own reader", suiKnownButUnread.includes("читателя под эту сеть"));
 
 // A node that does not implement a method, or is rate-limiting, will be
 // answered differently by the node beside it. Treating every RPC error as

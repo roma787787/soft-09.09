@@ -119,7 +119,15 @@ export function registerSuiCommand(bot: Telegraf) {
     );
     if (stats.reason) lines.push(`  <i>${esc(stats.reason)}</i>`);
     if (custody) {
-      lines.push(`  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(custody.amount.toString())}</code>`);
+      // Scaled like the supply line above it. Left raw, the two amounts on
+      // one screen were printed to different rules - one readable, one not.
+      lines.push(
+        `  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(
+          meta?.decimals !== undefined
+            ? `${formatAmount(custody.amount, meta.decimals)} (${custody.amount.toString()})`
+            : custody.amount.toString()
+        )}</code>`
+      );
     } else if (custodyReason) {
       // Its own message. "Not among the collateral" wore this one's words for
       // a whole round, on the same screen that listed the coin as found.

@@ -385,7 +385,11 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
   if (stillUnread.length > 0) {
     const named = stillUnread.map(chainName).join(", ");
     lines.push(
-      `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов проверен только Wormhole — его реестр токенов бот читает. Остальных мостов из списка бота там нет вовсе, а собственные мосты сети он пока не читает.`
+      // "The other bridges are not there at all" is a claim about the chain,
+      // and it is wrong: LayerZero is deployed on Sui - /sui prints its
+      // registry's contracts for a ticker that has them. What is true is
+      // about the bot, not the chain: it has no reader for them there.
+      `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов бот читает только Wormhole — его реестр залогов. LayerZero там тоже развёрнут, но его хранилища бот не читает, как и собственные мосты сети; для остальных мостов из своего списка читателя под эту сеть у него нет.`
     );
   }
 
@@ -458,7 +462,7 @@ function supplyOnlyLines(
         (indexIncomplete
           ? "Из мостов там читается только Wormhole, но его реестр залогов прочитался не целиком — есть там эта монета или нет, осталось невыясненным. "
           : "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. ") +
-        "Остальных мостов из списка бота там нет вовсе, но есть собственные мосты сети, и их бот пока не читает."
+        "LayerZero там тоже развёрнут, но его хранилища бот не читает, как и собственные мосты сети; для остальных мостов из своего списка читателя под эту сеть у него нет."
     );
   }
 
