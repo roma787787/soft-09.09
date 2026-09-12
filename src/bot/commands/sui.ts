@@ -6,7 +6,7 @@ import {
   probeSuiHolder,
   probeSuiObject,
   readSuiSupply,
-  readSuiWormholeCustody,
+  readSuiWormholeCustodyDetailed,
   suiCoinMetadata,
   suiTokenBridge,
 } from "../../bridges/sui";
@@ -80,7 +80,7 @@ export function registerSuiCommand(bot: Telegraf) {
     // The walk the report actually runs, and its own account of itself.
     // "Not in the registry" and "the walk never got there" are the same
     // answer from outside, and they need opposite fixes.
-    const custody = await readSuiWormholeCustody(coinType);
+    const { custody, reason: custodyReason } = await readSuiWormholeCustodyDetailed(coinType);
     const stats = lastSuiIndexStats();
     lines.push(
       "",
@@ -92,6 +92,10 @@ export function registerSuiCommand(bot: Telegraf) {
     if (stats.reason) lines.push(`  <i>${esc(stats.reason)}</i>`);
     if (custody) {
       lines.push(`  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(custody.amount.toString())}</code>`);
+    } else if (custodyReason) {
+      // Its own message. "Not among the collateral" wore this one's words for
+      // a whole round, on the same screen that listed the coin as found.
+      lines.push(`  ⚠️ запись нашлась, но баланс не прочитан\n     <i>${esc(custodyReason)}</i>`);
     } else {
       lines.push("  ❌ этой монеты среди залоговых записей нет");
       // Named, because "not among the collateral" is unfalsifiable on its

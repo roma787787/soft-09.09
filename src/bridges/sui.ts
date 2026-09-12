@@ -214,18 +214,46 @@ export interface SuiCustody {
   amount: bigint;
 }
 
-/** `custody` is a `Balance<C>`, which Sui prints as a decimal string. */
-export function parseCustodyAmount(result: unknown): bigint | undefined {
-  const fields = (result as { data?: { content?: { fields?: unknown } } } | null)?.data?.content?.fields as
-    | Record<string, unknown>
-    | undefined;
-  const custody = fields?.custody;
+/** A `Balance<C>`, which Sui prints either as a decimal string or as { value }. */
+function balanceOf(custody: unknown): bigint | undefined {
   if (typeof custody === "string" && /^\d+$/.test(custody)) return BigInt(custody);
   if (typeof custody === "number" && Number.isSafeInteger(custody)) return BigInt(custody);
-  // A Balance sometimes arrives wrapped as { value: "…" }; the shape decides,
-  // and anything else is not a number this bot will print.
   const value = (custody as { value?: unknown } | undefined)?.value;
   if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  return undefined;
+}
+
+/**
+ * What a registry entry holds.
+ *
+ * The id the listing gives is the dynamic field, not the asset: Sui wraps
+ * every one as `{ id, name, value }` and the `NativeAsset` sits under
+ * `value.fields`. Reading only the top level found no `custody` at all, and
+ * the walk reported "this coin is not among the collateral" about a coin
+ * whose entry it had just matched by name.
+ *
+ * Both depths are tried, and then the object is searched for the field by
+ * name, because the wrapper is Sui's business and not something worth
+ * re-learning by deploy each time it changes.
+ */
+export function parseCustodyAmount(result: unknown): bigint | undefined {
+  const content = (result as { data?: { content?: { fields?: unknown } } } | null)?.data?.content?.fields;
+  return findCustody(content, 0);
+}
+
+function findCustody(value: unknown, depth: number): bigint | undefined {
+  if (depth > 5 || !value || typeof value !== "object") return undefined;
+
+  const fields = value as Record<string, unknown>;
+  if ("custody" in fields) {
+    const found = balanceOf(fields.custody);
+    if (found !== undefined) return found;
+  }
+  for (const inner of Object.values(fields)) {
+    const found = findCustody(inner, depth + 1);
+    if (found !== undefined) return found;
+  }
   return undefined;
 }
 
@@ -357,22 +385,42 @@ export async function findSuiNativeAsset(coinType: string): Promise<string | und
   return (await suiNativeAssetIndex()).get(key);
 }
 
+export interface SuiCustodyResult {
+  custody?: SuiCustody;
+  /**
+   * Why there is no balance, when the coin was in the registry after all.
+   *
+   * "Not among the collateral" and "its entry would not give up its balance"
+   * were one message, and the second wore the first's words for a whole
+   * round: the registry had matched TURBOS by name on the same screen that
+   * said it was not there.
+   */
+  reason?: string;
+}
+
 /** What Wormhole's Token Bridge holds of this coin on Sui. */
 export async function readSuiWormholeCustody(coinType: string): Promise<SuiCustody | undefined> {
-  if (!isSuiCoinType(coinType)) return undefined;
+  return (await readSuiWormholeCustodyDetailed(coinType)).custody;
+}
+
+export async function readSuiWormholeCustodyDetailed(coinType: string): Promise<SuiCustodyResult> {
+  if (!isSuiCoinType(coinType)) return { reason: "это не тип монеты Move" };
 
   const objectId = await findSuiNativeAsset(coinType);
-  if (!objectId) return undefined;
+  if (!objectId) return {};
 
+  let raw: unknown;
   try {
-    const amount = parseCustodyAmount(
-      await suiCall("sui_getObject", [objectId, { showContent: true, showType: true }])
-    );
-    if (amount === undefined) return undefined;
-    return { coinType, objectId, amount };
-  } catch {
-    return undefined;
+    raw = await suiCall("sui_getObject", [objectId, { showContent: true, showType: true }]);
+  } catch (err) {
+    return { reason: `запись ${objectId}: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}` };
   }
+
+  const amount = parseCustodyAmount(raw);
+  if (amount === undefined) {
+    return { reason: `запись ${objectId} есть, но баланса в ней не нашлось: ${JSON.stringify(raw).slice(0, 200)}` };
+  }
+  return { custody: { coinType, objectId, amount } };
 }
 
 /* ------------------------------ diagnostics ----------------------------- */

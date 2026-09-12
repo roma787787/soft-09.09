@@ -1573,6 +1573,25 @@ check("and the field type survives whole, since the coin is matched on it", page
 check("a last page says so", parseFieldPage({ data: [], hasNextPage: false }).hasNextPage === false);
 
 check("the custody balance is read off the asset object", parseCustodyAmount({ data: { content: { fields: { custody: "2939806490000" } } } }) === 2_939_806_490_000n);
+// The id a dynamic-field listing gives is the wrapper, not the asset: Sui
+// writes every one as { id, name, value } with the NativeAsset under
+// value.fields. Reading only the top level found no custody at all, and the
+// walk said "this coin is not among the collateral" about a coin whose entry
+// it had just matched by name on the same screen.
+check(
+  "and also when it sits under the dynamic field's wrapper",
+  parseCustodyAmount({
+    data: {
+      content: {
+        fields: {
+          id: { id: "0xaa" },
+          name: { dummy_field: false },
+          value: { type: "0x26::native_asset::NativeAsset<0x2::sui::SUI>", fields: { custody: "17", decimals: 9 } },
+        },
+      },
+    },
+  }) === 17n
+);
 check("and also when Sui wraps it", parseCustodyAmount({ data: { content: { fields: { custody: { value: "42" } } } } }) === 42n);
 // Zero is a real answer; a shape nobody expected is not, and printing it as
 // zero would say "this vault is empty" about a vault nobody read.
