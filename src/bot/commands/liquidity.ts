@@ -609,6 +609,17 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
         `Stargate: ${stargateNote()}`
       );
     }
+    // A token that lives on Sui must not get a reply that never mentions it.
+    // TURBOS is in Wormhole's registry there and this branch said only "no
+    // bridge holds a contract under this ticker" - true of the bridges it
+    // lists, and silent about the one chain the token is actually on.
+    if (suiInScope) {
+      lines.push(
+        "",
+        "На Sui из мостов бот читает только Wormhole — этой монеты среди его залогов нет. " +
+          `Что там с выпуском и что отвечает сеть: <code>/sui ${esc(token.symbol)}</code>`
+      );
+    }
     return lines.join("\n") + meshCaveat(inScope(mesh.unasked));
   }
 
