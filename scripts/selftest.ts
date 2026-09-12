@@ -2367,6 +2367,23 @@ check(
   extractEids(payloadWithLateChain).get("latecomer") === 30999
 );
 
+// A testnet entry never supplies a mainnet chain's eid. LayerZero's metadata
+// carries one keyed "astar-testnet" declaring the chain id of Japan Open
+// Chain, and matching on the id alone handed joc that entry's eid - so the
+// peer walk would have asked a real contract about a network it has nothing
+// to do with, and any peer that came back would have been printed as this
+// token's adapter. No eid is a gap the report states plainly; a wrong one is
+// a row with a real balance under the wrong name.
+const fromTestnetEntry = extractEids({
+  "somewhere-testnet": { chainDetails: { nativeChainId: laterChainId }, deployments: [{ eid: 30285 }] },
+});
+check("a testnet entry supplies no eid, whatever chain id it claims", fromTestnetEntry.get("latecomer") === undefined);
+// And the mainnet entry for the same chain is still read.
+const fromMainnetEntry = extractEids({
+  "somewhere-mainnet": { chainDetails: { nativeChainId: laterChainId }, deployments: [{ eid: 30777 }] },
+});
+check("while a mainnet entry for the same chain is", fromMainnetEntry.get("latecomer") === 30777);
+
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
 // number at the wrong scale reads as real and is off by orders of magnitude.

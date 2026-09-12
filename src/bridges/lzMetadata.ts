@@ -310,6 +310,18 @@ function indexEntries(): Map<string, number> {
 
   for (const entry of lastEntries) {
     const rawKey = entry.key;
+
+    // A testnet entry never supplies a mainnet chain's eid. LayerZero's
+    // metadata carries an entry keyed "astar-testnet" declaring the chain id
+    // of Japan Open Chain, and matching on the id alone handed joc that
+    // entry's eid - so the peer walk would have asked a real contract about
+    // a network it has nothing to do with, and any peer that came back would
+    // have been printed as this token's adapter. No eid is a gap the report
+    // states plainly; a wrong one is a row with a real balance under the
+    // wrong name. Discovery already refuses these entries; this is the same
+    // filter on the other half of the same payload.
+    if (NOT_MAINNET.test(rawKey)) continue;
+
     const nativeId = entry.nativeChainId;
     const chainKey =
       (nativeId !== undefined ? byNativeId.get(nativeId) : undefined) ?? resolveChain(rawKey)?.key;
