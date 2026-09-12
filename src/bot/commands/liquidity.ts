@@ -39,7 +39,7 @@ import type { Custodian } from "../../bridges/types";
 import type { TokenInfo, TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
 import { formatAmount, readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
-import { renderLiquidityReport, splitForTelegram } from "../render";
+import { plural, renderLiquidityReport, splitForTelegram } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -505,6 +505,16 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
 
+  // "Nothing was found" is a claim, and a truncated walk cannot support it.
+  // Both short replies below end the report before the scope section that
+  // would have said so, so they carry the caveat themselves.
+  // Counted the same way the rest of the report is narrowed, so a reply
+  // about one chain never quotes a number covering all of them.
+  const meshCaveat = (unasked: string[]): string =>
+    unasked.length === 0
+      ? ""
+      : `\n\nНо обход пиров LayerZero не успел спросить ${unasked.length} ${plural(unasked.length, "сеть", "сети", "сетей")} — узел зацепки отвечал слишком медленно. Повторите команду, ответ может оказаться другим.`;
+
   if (all.length === 0 && !solanaHasSomething) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
     if (nativeOftChains.size > 0) {
@@ -524,7 +534,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
         `Stargate: ${stargateNote()}`
       );
     }
-    return lines.join("\n");
+    return lines.join("\n") + meshCaveat(inScope(mesh.unasked));
   }
 
   // Narrowing to one chain is not a display option, it is the whole
@@ -539,8 +549,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     const label = chainMeta(chainFilter)?.label ?? chainFilter;
     return (
       `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
-      `В сети ${esc(label)} контрактов-хранилищ по этому токену не найдено.\n\n` +
-      `Без указания сети: <code>/info ${esc(token.symbol)}</code>`
+      `В сети ${esc(label)} контрактов-хранилищ по этому токену не найдено.` +
+      meshCaveat(inScope(mesh.unasked)) +
+      `\n\nБез указания сети: <code>/info ${esc(token.symbol)}</code>`
     );
   }
 
@@ -622,6 +633,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // this one; until the scan lands, the list is not something to make
       // claims from.
       chainListIncomplete: !lastDiscovery(),
+      // The walk asks the seed's node once per destination chain, so a slow
+      // node can leave part of the list unasked. Reported rather than
+      // silently dropped: LayerZero absent from a chain and LayerZero never
+      // asked about it read identically otherwise.
+      meshUnasked: inScope(mesh.unasked).length,
       notFoundNotes: { stargate: stargateNote([...balances, ...solanaRows]) },
     },
   });

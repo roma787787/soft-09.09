@@ -1407,6 +1407,44 @@ const emptyReport = renderLiquidityReport({
 });
 check("zero balances are reported as no liquidity, not as an error", emptyReport.includes("не заведён"));
 
+// A peer walk that ran out of time must say so. The walk asks the seed's own
+// node once per destination chain, and the number of chains it asks about
+// went from 98 to 144, so a slow node can now leave the tail of the list
+// unasked - which produces exactly the silence "LayerZero is not deployed
+// there" produces.
+const truncatedMesh = renderLiquidityReport({
+  symbol: "MESHY",
+  name: "Meshy",
+  balances: [fakeBalance("ethereum", "layerzero", 1_000_000n)],
+  checkedCount: 7,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { layerzero: 1 },
+    meshUnasked: 37,
+  },
+});
+check("a truncated peer walk is admitted in the report", truncatedMesh.includes("не успел спросить 37"));
+check("and says it was the node, not the token", truncatedMesh.includes("медленно"));
+
+const wholeMesh = renderLiquidityReport({
+  symbol: "MESHY",
+  name: "Meshy",
+  balances: [fakeBalance("ethereum", "layerzero", 1_000_000n)],
+  checkedCount: 7,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { layerzero: 1 },
+    meshUnasked: 0,
+  },
+});
+check("a walk that finished says nothing about time", !wholeMesh.includes("не успел спросить"));
+
 // A chain where one read of twenty failed still has its data in the report,
 // so calling it unchecked tells the user their numbers are missing when they
 // are printed right above.

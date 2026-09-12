@@ -269,6 +269,15 @@ export interface ReportInput {
      * claim; while the list is incomplete it is one the bot cannot make.
      */
     chainListIncomplete?: boolean;
+    /**
+     * Chains with a known LayerZero eid that the peer walk ran out of time
+     * to ask about.
+     *
+     * Same rule as chainListIncomplete, one level down. A chain nobody asked
+     * produces exactly the silence a chain with no deployment produces, and
+     * the report must not let a clock that ran out pass for an answer.
+     */
+    meshUnasked?: number;
   };
 }
 
@@ -333,6 +342,16 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
       scope.chainListIncomplete
         ? `Эти сети пока не в списке — он ещё достраивается, спросите через пару минут: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
         : `Этих сетей пока нет в таблице бота, поэтому они не проверялись: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}. Почему — <code>/chains</code>.`
+    );
+  }
+  if (scope.meshUnasked && scope.meshUnasked > 0) {
+    // Named as a limit on this report rather than as a fact about the token.
+    // The walk asks one question per destination chain and they all land on
+    // the same node, so a slow one leaves the tail of the list unasked - and
+    // an unasked chain is indistinguishable, in the lines above, from a
+    // chain LayerZero never reached.
+    lines.push(
+      `LayerZero: обход пиров не успел спросить ${scope.meshUnasked} ${plural(scope.meshUnasked, "сеть", "сети", "сетей")} — узел зацепки отвечал слишком медленно. Там может быть хранилище, которого нет в отчёте; повторите команду.`
     );
   }
   return lines;

@@ -679,6 +679,22 @@ const PEERS_ABI = [
 /** Peer lookups per round against a single node. */
 const PEER_QUERY_BATCH = 8;
 
+/**
+ * Wall-clock ceiling on the peer walk.
+ *
+ * Every query in it lands on the seed's own node and they go eight at a
+ * time, so the walk costs one round per eight chains known - and the number
+ * of chains with a known eid just went from 98 to 144, which made an
+ * already-long walk half again as long. A seed whose node answers slowly,
+ * or five dead seeds in a row, turned that into minutes of a command that
+ * shows nothing while it runs.
+ *
+ * Deliberately generous: this is here to stop the pathological case, not to
+ * cut short a walk that is working. A healthy seed finishes all eighteen
+ * rounds well inside it.
+ */
+const MESH_BUDGET_MS = 75_000;
+
 /** How many seeds to try before concluding a deployment has no peers. */
 const MAX_SEEDS_TRIED = 5;
 
@@ -722,6 +738,14 @@ export interface MeshResult {
   /** Peers that answered but could not be read as an OFT. */
   unrecognised: string[];
   /**
+   * Chains with a known eid that the walk never got to ask about.
+   *
+   * "We did not ask" and "this deployment does not reach it" produce the
+   * same silence in the report, and only one of them means there is no
+   * liquidity there. Kept separate so the report can say which it is.
+   */
+  unasked: string[];
+  /**
    * Where the walk got to, step by step. Four live calls in a row fail in
    * four different ways, and "reached 0 new chains" is the same sentence
    * whether no eid was known, no peer came back, or every peer turned out
@@ -758,6 +782,7 @@ export async function expandLayerZeroMesh(
       nativeChains: [],
       reached: [],
       unrecognised: [],
+      unasked: [],
       steps: { eids: 0, asked: 0, peers: 0, probed: 0 },
     };
   }
@@ -773,10 +798,17 @@ export async function expandLayerZeroMesh(
   const useful = seeds.slice(0, MAX_SEEDS_TRIED);
 
   const peerByChain = new Map<string, Address>();
+  // Chains a truncated round left behind. A later seed that asks them
+  // removes them again, so what survives to the end is what nobody asked.
+  const unasked = new Set<string>();
   let asked = 0;
   let seedVersion: "v1" | "v2" | undefined;
+  const deadline = Date.now() + MESH_BUDGET_MS;
 
   for (const seed of useful) {
+    // Checked before the version probe, which is itself a call on a node
+    // that may be exactly what ran the clock down.
+    if (Date.now() > deadline) break;
     const client = getClient(seed.chainKey);
     // Which function to ask depends on the generation, and asking the wrong
     // one returns nothing at all - which is how an entire V1 deployment came
@@ -791,10 +823,19 @@ export async function expandLayerZeroMesh(
     // Every one of these lands on the seed's own node, so they go in batches
     // rather than all at once: asking one endpoint for forty answers in the
     // same instant is a reliable way to be rate-limited by it.
-    asked += targets.length;
     for (let i = 0; i < targets.length; i += PEER_QUERY_BATCH) {
+      const batch = targets.slice(i, i + PEER_QUERY_BATCH);
+      if (Date.now() > deadline) {
+        for (const [chainKey] of targets.slice(i)) unasked.add(chainKey);
+        break;
+      }
+      // Counted where the asking happens, not from the size of the list we
+      // meant to ask: a truncated walk that still reported the full number
+      // would be claiming coverage it does not have.
+      asked += batch.length;
+      for (const [chainKey] of batch) unasked.delete(chainKey);
       await Promise.all(
-        targets.slice(i, i + PEER_QUERY_BATCH).map(async ([chainKey, eid]) => {
+        batch.map(async ([chainKey, eid]) => {
           const peer =
             version === "v2"
               ? await readV2Peer(client, seed.oapp, eid)
@@ -852,6 +893,7 @@ export async function expandLayerZeroMesh(
     nativeChains,
     reached,
     unrecognised,
+    unasked: [...unasked],
     steps: {
       eids: eidMap.chainKeyToId.size,
       asked,

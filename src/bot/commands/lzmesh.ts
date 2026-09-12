@@ -114,6 +114,11 @@ export function registerLzMeshCommand(bot: Telegraf) {
       `  пиров вернулось: ${peers}`,
       `  из них опознано как OFT: ${recognised}`
     );
+    if (mesh.unasked.length > 0) {
+      // Without this line "спрошено: 40" out of 144 known eids looks like a
+      // deployment that reaches forty chains, not a walk that stopped.
+      lines.push(`  не успели спросить: ${mesh.unasked.length} (узел отвечал слишком медленно)`);
+    }
     for (const c of mesh.custodians.slice(0, 10)) {
       lines.push(`  ${esc(chainName(c.chainKey))} — адаптер <code>${esc(c.custodyAddress)}</code>`);
     }
