@@ -55,14 +55,22 @@ export function registerSuiCommand(bot: Telegraf) {
     ];
 
     const token = await lookupToken(symbol);
-    const coinType = token?.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key)?.tokenAddress;
+    // A ticker nobody has heard of and a ticker that exists elsewhere are
+    // different answers, and the second half of this reply - "here is what
+    // CoinGecko does know" - is empty and puzzling for the first.
+    if (!token) {
+      lines.push(`Тикер <b>${esc(symbol)}</b> не найден на CoinGecko. Проверьте написание.`);
+      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      return;
+    }
+
+    const coinType = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key)?.tokenAddress;
     if (!coinType) {
       lines.push(
         "CoinGecko не знает этот токен на Sui — типа монеты, о котором спрашивать, нет.",
         "",
         `Что CoinGecko знает: ${esc(
-          [...(token?.platforms ?? []), ...(token?.otherPlatforms ?? [])].map((p) => p.platformName).join(", ") ||
-            "ничего"
+          [...token.platforms, ...token.otherPlatforms].map((p) => p.platformName).join(", ") || "ничего"
         )}.`
       );
       await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
