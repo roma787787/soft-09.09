@@ -269,13 +269,36 @@ function shortError(err: unknown): string {
   return text.split("\n")[0].slice(0, 120);
 }
 
-/** Cached per chain: the registry address of a live deployment is stable. */
-const registryCache = new Map<string, Address | undefined>();
+/**
+ * Cached per chain: the registry address of a live deployment is stable.
+ *
+ * A miss is not. Finding the registry means walking the OnRamps, and a node
+ * that rate-limits during one report makes that walk come back empty - which
+ * was then remembered as "no CCIP here" for the life of the process, on a
+ * chain that has it. So a found address is kept for good and a miss only
+ * briefly: long enough that a report does not re-walk the same chains it
+ * just walked, short enough that one bad minute does not cost a bridge until
+ * the next deploy.
+ */
+const registryCache = new Map<string, Address>();
+const registryMisses = new Map<string, number>();
+
+const MISS_TTL_MS = 10 * 60 * 1000;
 
 async function tokenAdminRegistryFor(chainKey: string): Promise<Address | undefined> {
-  if (registryCache.has(chainKey)) return registryCache.get(chainKey);
+  const known = registryCache.get(chainKey);
+  if (known) return known;
+
+  const missedAt = registryMisses.get(chainKey);
+  if (missedAt !== undefined && Date.now() - missedAt < MISS_TTL_MS) return undefined;
+
   const { registry } = await findTokenAdminRegistry(chainKey);
-  registryCache.set(chainKey, registry);
+  if (registry) {
+    registryCache.set(chainKey, registry);
+    registryMisses.delete(chainKey);
+  } else {
+    registryMisses.set(chainKey, Date.now());
+  }
   return registry;
 }
 

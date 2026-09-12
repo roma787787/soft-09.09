@@ -47,17 +47,25 @@ const VAULTS: SharedVault[] = [
 /**
  * Verification is per contract, not per report: what a deployed contract
  * answers does not change, and re-asking on every /info would add an RPC
- * round-trip per chain for nothing. A failure is cached too - a chain whose
- * node is down should not be re-probed for every token in a row - but only
- * until the process restarts, so an outage does not disable a bridge for
- * good.
+ * round-trip per chain for nothing.
+ *
+ * A confirmation is therefore kept for good and a refusal only briefly. The
+ * refusal is not a fact about the contract - it is a fact about the node
+ * that minute - and keeping it for the life of the process means one bad
+ * minute at boot silently drops the bridge on that chain until the next
+ * deploy, which on a server that runs for weeks is not "temporary".
  */
 const verified = new Map<string, boolean>();
+const refusedAt = new Map<string, number>();
+
+const REFUSAL_TTL_MS = 10 * 60 * 1000;
 
 async function isGenuine(vault: SharedVault, chainKey: string, address: Address): Promise<boolean> {
   const key = `${vault.protocol}:${chainKey}:${address.toLowerCase()}`;
-  const cached = verified.get(key);
-  if (cached !== undefined) return cached;
+  if (verified.get(key)) return true;
+
+  const refused = refusedAt.get(key);
+  if (refused !== undefined && Date.now() - refused < REFUSAL_TTL_MS) return false;
 
   let ok = false;
   try {
@@ -71,7 +79,12 @@ async function isGenuine(vault: SharedVault, chainKey: string, address: Address)
     ok = false;
   }
 
-  verified.set(key, ok);
+  if (ok) {
+    verified.set(key, true);
+    refusedAt.delete(key);
+  } else {
+    refusedAt.set(key, Date.now());
+  }
   if (!ok) {
     console.warn(`[vaults] ${vault.protocol} на ${chainKey}: контракт ${address} не подтвердил себя, пропускаю`);
   }

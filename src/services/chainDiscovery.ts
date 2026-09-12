@@ -202,6 +202,20 @@ const REGISTRY_URL = "https://raw.githubusercontent.com/ethereum-lists/chains/ma
  */
 const registryCache = new Map<number, Record<string, any> | undefined>();
 
+/**
+ * Forgotten at the start of each scan, so a miss is retried once a day.
+ *
+ * Within one scan a miss must not cost a second request - that is what the
+ * cache is for. Across scans it must: a chain added to the registry after
+ * the first miss would otherwise never be described, and so never added,
+ * for as long as the process lives.
+ */
+function forgetRegistryMisses(): void {
+  for (const [chainId, entry] of registryCache) {
+    if (entry === undefined) registryCache.delete(chainId);
+  }
+}
+
 async function registryEntry(chainId: number): Promise<Record<string, any> | undefined> {
   if (registryCache.has(chainId)) return registryCache.get(chainId);
 
@@ -667,6 +681,7 @@ function factsFromBridge(chain: LzChainCandidate): ChainFacts | undefined {
 }
 
 async function runDiscovery(): Promise<DiscoveryReport> {
+  forgetRegistryMisses();
   const report: DiscoveryReport = {
     at: new Date(),
     listed: 0,
