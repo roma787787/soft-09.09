@@ -25,7 +25,7 @@ import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
 import { findPortalCosmosBalances } from "../../bridges/portalCosmos";
 import { findCcipSvmBalances, SOLANA_KEY } from "../../bridges/ccipSvm";
-import { readSuiSupply, readSuiWormholeCustody, suiCoinMetadata } from "../../bridges/sui";
+import { readSuiSupply, readSuiWormholeCustodyDetailed, suiCoinMetadata } from "../../bridges/sui";
 import { SUI_CHAIN } from "../../config/suiChain";
 import { portalCosmosChain } from "../../config/portalCosmosChains";
 import { findTonBalances } from "../../bridges/ton";
@@ -570,8 +570,15 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   const suiPlatform = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key);
   const suiInScope = !!suiPlatform && (!chainFilter || chainFilter === SUI_CHAIN.key);
   const suiRows: BalanceRow[] = [];
+  // Whether "this coin is not among Wormhole's collateral" was ever actually
+  // established. A walk that ran out of time or pages produces the same empty
+  // result as a coin that genuinely is not there, and three replies below say
+  // it outright.
+  let suiIndexIncomplete = false;
   if (suiInScope) {
-    const custody = await readSuiWormholeCustody(suiPlatform!.tokenAddress);
+    const read = await readSuiWormholeCustodyDetailed(suiPlatform!.tokenAddress);
+    const custody = read.custody;
+    suiIndexIncomplete = !!read.incompleteIndex;
     const meta = custody ? await suiCoinMetadata(suiPlatform!.tokenAddress) : undefined;
     if (custody && meta?.decimals !== undefined) {
       suiRows.push({
@@ -622,7 +629,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     if (suiInScope) {
       lines.push(
         "",
-        "На Sui из мостов бот читает только Wormhole — этой монеты среди его залогов нет. " +
+        (suiIndexIncomplete
+          ? "На Sui из мостов бот читает только Wormhole, но его реестр залогов сейчас прочитать целиком не удалось — есть там эта монета или нет, осталось невыясненным. "
+          : "На Sui из мостов бот читает только Wormhole — этой монеты среди его залогов нет. ") +
           `Что там с выпуском и что отвечает сеть: <code>/sui ${esc(token.symbol)}</code>`
       );
     }
@@ -646,7 +655,9 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // without that reads as a checked, empty chain. This reply returns
       // before the supply is ever read, so it carries the caveat itself.
       (chainFilter === SUI_CHAIN.key
-        ? " Из мостов на Sui проверен только Wormhole — этой монеты в его реестре нет; остальные там устроены иначе и пока не читаются."
+        ? suiIndexIncomplete
+          ? " Из мостов на Sui бот читает только Wormhole, и его реестр залогов сейчас прочитался не целиком — есть там эта монета или нет, осталось невыясненным."
+          : " Из мостов на Sui проверен только Wormhole — этой монеты в его реестре нет; остальные там устроены иначе и пока не читаются."
         : "") +
       meshCaveat(inScope(mesh.unasked)) +
       `\n\nБез указания сети: <code>/info ${esc(token.symbol)}</code>`
@@ -756,6 +767,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // every "no bridge holds any of it here" sentence would be covering
       // for a check that never ran.
       bridgesUnread: suiInScope ? [SUI_CHAIN.key] : [],
+      suiIndexIncomplete,
       // The walk asks the seed's node once per destination chain, so a slow
       // node can leave part of the list unasked. Reported rather than
       // silently dropped: LayerZero absent from a chain and LayerZero never

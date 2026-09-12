@@ -298,6 +298,14 @@ export interface ReportInput {
      * and the vaults are not.
      */
     bridgesUnread?: string[];
+    /**
+     * True when Wormhole's Sui registry could not be read to the end.
+     *
+     * Then "this coin is not among its collateral" was never established -
+     * the walk produces the same empty result for a coin that is not there
+     * and for the half of the registry it never reached.
+     */
+    suiIndexIncomplete?: boolean;
   };
 }
 
@@ -405,7 +413,8 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
  */
 function supplyOnlyLines(
   supplyOnly: ReportInput["supplyOnly"],
-  bridgesUnread: string[] = []
+  bridgesUnread: string[] = [],
+  indexIncomplete = false
 ): string[] {
   if (!supplyOnly || supplyOnly.length === 0) return [];
   const unread = new Set(bridgesUnread);
@@ -446,7 +455,9 @@ function supplyOnlyLines(
     );
     lines.push(
       `ℹ️ Столько токена выпущено в ${unverified.length === 1 ? "сети" : "сетях"} ${described.join(", ")}. ` +
-        "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. " +
+        (indexIncomplete
+          ? "Из мостов там читается только Wormhole, но его реестр залогов прочитался не целиком — есть там эта монета или нет, осталось невыясненным. "
+          : "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. ") +
         "Остальных мостов из списка бота там нет вовсе, но есть собственные мосты сети, и их бот пока не читает."
     );
   }
@@ -652,7 +663,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
-    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread);
+    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, input.scope?.suiIndexIncomplete);
     if (supplyText.length > 0) lines.push("", ...supplyText);
     const scopeText = scopeLines(scope, input.supplyOnly);
     if (scopeText.length > 0) lines.push("", ...scopeText);
@@ -832,7 +843,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
   }
   const closingNotes = [
-    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread),
+    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, input.scope?.suiIndexIncomplete),
     `Всего проверено контрактов: ${checkedCount}.`,
     ...scopeLines(scope, input.supplyOnly),
   ];

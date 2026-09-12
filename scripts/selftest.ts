@@ -1751,6 +1751,27 @@ check("it does not invent bridges that are not there", !suiSupplyUnverified.incl
 check("it names the bridge that was checked", suiSupplyUnverified.includes("проверен только Wormhole"));
 // The caveat now sits beside the number it qualifies, so repeating it in the
 // scope block put the same warning twice in one report.
+// A registry walk that stopped early produces the same empty result as a coin
+// that genuinely is not locked - and the report said the second out loud.
+const suiHalfRead = renderLiquidityReport({
+  symbol: "TURBOS",
+  name: "Turbos",
+  balances: [fakeBalance("ethereum", "wormhole", 1_000_000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  supplyOnly: [{ chainKey: "sui", amount: 500_000_000000n, decimals: 6 }],
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { wormhole: 1 },
+    bridgesUnread: ["sui"],
+    suiIndexIncomplete: true,
+  },
+});
+check("a half-read registry does not claim the coin is absent from it", !suiHalfRead.includes("этой монеты в его реестре токенов нет"));
+check("and says the question is open instead", suiHalfRead.includes("осталось невыясненным"));
+
 check(
   "the warning is not repeated once the supply line carries it",
   suiSupplyUnverified.split("проверен только Wormhole").length === 2
