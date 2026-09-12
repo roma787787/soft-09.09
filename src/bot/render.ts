@@ -713,9 +713,22 @@ export function renderLiquidityReport(input: ReportInput): string {
           .map((b) => b.chainKey)
       ),
     ];
+    // Stargate is built on LayerZero and its row says so - "Stargate (пул
+    // LayerZero)". So a chain with a Stargate pool holding 356 000 read one
+    // line above "у LayerZero там хранилища нет по устройству" looks like
+    // the report contradicting itself, when the two lines are about two
+    // different contracts: the token's own OFT route, which mints, and
+    // Stargate's shared vault, which holds. Named rather than left to the
+    // reader to reconcile.
+    const stargateHolds = nativeOftChains.filter((c) =>
+      balances.some((b) => b.chainKey === c && b.protocol === "stargate" && b.amount > 0n)
+    );
     notes.push(
       `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
         "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой." +
+        (stargateHolds.length > 0
+          ? ` Это про собственный маршрут токена. Пул Stargate — отдельное хранилище на той же LayerZero, и в сетях ${esc(stargateHolds.map(chainName).join(", "))} он не пуст: оттуда вывести можно, строками выше.`
+          : "") +
         (anchors.length > 0
           ? ` Заблокированный запас LayerZero лежит в других сетях: ${esc(anchors.map(chainName).join(", "))} — строками выше.`
           : "") +

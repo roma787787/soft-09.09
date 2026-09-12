@@ -1445,6 +1445,46 @@ const wholeMesh = renderLiquidityReport({
 });
 check("a walk that finished says nothing about time", !wholeMesh.includes("не успел спросить"));
 
+// Stargate's row is labelled "пул LayerZero" because that is what it is, so
+// a chain whose own OFT route mints and whose Stargate pool holds 356 000
+// printed both facts under the same protocol name and read as the report
+// contradicting itself.
+const mintsButStargateHolds = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [
+    fakeBalance("ethereum", "layerzero", 3_151_135_000000n),
+    fakeBalance("mantle", "stargate", 356_615_000000n),
+  ],
+  checkedCount: 4,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1, mantle: 1 },
+  nativeOftChains: ["mantle"],
+});
+check(
+  "a chain that mints still says its Stargate pool holds something",
+  mintsButStargateHolds.includes("Stargate") && /Mantle/.test(mintsButStargateHolds)
+);
+check(
+  "and separates the token's own route from the shared vault",
+  mintsButStargateHolds.includes("собственный маршрут")
+);
+
+// The reverse: nothing to reconcile, so nothing is said.
+const mintsAndNothingElse = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [fakeBalance("ethereum", "layerzero", 3_151_135_000000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  nativeOftChains: ["mantle"],
+});
+check(
+  "a minting chain with no Stargate pool says nothing about one",
+  !mintsAndNothingElse.includes("собственный маршрут")
+);
+
 // A chain where one read of twenty failed still has its data in the report,
 // so calling it unchecked tells the user their numbers are missing when they
 // are printed right above.
