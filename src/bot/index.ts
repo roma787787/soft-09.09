@@ -14,6 +14,7 @@ import { registerCcipCommand } from "./commands/ccip";
 import { registerLzMeshCommand } from "./commands/lzmesh";
 import { registerLzChainsCommand } from "./commands/lzchains";
 import { registerSvmCommand } from "./commands/svm";
+import { registerSuiCommand } from "./commands/sui";
 import { registerCosmosCommand } from "./commands/cosmos";
 import { registerOtherCommand } from "./commands/other";
 import { registerPortalCommand } from "./commands/portal";
@@ -44,6 +45,7 @@ export function createBot(): Telegraf {
   registerLzMeshCommand(bot);
   registerLzChainsCommand(bot);
   registerSvmCommand(bot);
+  registerSuiCommand(bot);
   registerCosmosCommand(bot);
   registerOtherCommand(bot);
   registerPortalCommand(bot);

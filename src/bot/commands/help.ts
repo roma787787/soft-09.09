@@ -68,6 +68,7 @@ export function helpText(): string {
 <code>/lzchains</code> — у каких сетей известен eid LayerZero и откуда.
 <code>/lzgaps</code> — в каких сетях реестра LayerZero бот не читает хранилища.
 <code>/svm &lt;тикер&gt;</code> — как бот находит хранилища на сетях VM Solana, по шагам.
+<code>/sui &lt;тикер&gt;</code> — что Sui отвечает по этому токену, дословно.
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
 <code>/other &lt;тикер&gt;</code> — то же для ${listOf(OTHER_CHAINS.map((c) => c.label))}.
 <code>/portal &lt;тикер&gt;</code> — то же для ${listOf(PORTAL_CHAINS.map((c) => c.label))}, где единственный мост — Portal.

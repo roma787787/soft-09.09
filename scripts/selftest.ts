@@ -96,7 +96,7 @@ import {
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../src/config/suiChain";
-import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees } from "../src/bridges/sui";
+import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees, parseDynamicFields, suiTokenBridge } from "../src/bridges/sui";
 import { isNodeLevelError } from "../src/services/suiClient";
 import { helpText } from "../src/bot/commands/help";
 import { formatInfoCard } from "../src/bot/format";
@@ -1492,6 +1492,31 @@ check("another project's coin is rejected", !suiSymbolAgrees("CETUS", "USDC"));
 // A coin with no metadata published is still evidence: the type tag came
 // from the price API, and refusing on silence would hide real supply.
 check("a coin that publishes no symbol is not refused", suiSymbolAgrees(undefined, "USDC"));
+
+// On Sui a bridge does not own its collateral at an address - it hangs off
+// the state object as a dynamic field - so the custody walk starts by
+// listing those fields. Nothing here infers the shape; it prints it, and the
+// reader gets written against what actually came back.
+const suiFields = parseDynamicFields({
+  data: [
+    {
+      name: { type: "0x2::dynamic_object_field::Wrapper<0x1::type_name::TypeName>", value: "0x2::sui::SUI" },
+      objectType: "0xc575::token_registry::NativeAsset<0x2::sui::SUI>",
+      objectId: "0xabc",
+    },
+  ],
+});
+check("a dynamic field is read out of Sui's listing", suiFields.length === 1);
+check("its name is kept as the key the collateral hangs on", suiFields[0]?.name === "0x2::sui::SUI");
+check("and its type, which is what says it holds an asset", suiFields[0]?.objectType.includes("NativeAsset"));
+// A shape nobody expected must print as itself rather than vanish: the whole
+// point of the listing is to find out what is there.
+check("a field with no string name still arrives", parseDynamicFields({ data: [{ name: { value: { x: 1 } } }] }).length === 1);
+check("a listing that is not a list yields nothing", parseDynamicFields({ data: "oops" }).length === 0);
+check("and neither does an empty answer", parseDynamicFields(null).length === 0);
+// Wormhole publishes the Sui bridge itself, so the walk needs no address
+// written down here.
+check("Wormhole names its own Sui bridge", (suiTokenBridge() ?? "").startsWith("0x"));
 
 // Sui is in the chain table now, which is precisely why the report has to
 // say its vaults went unread: without the line, "no bridge holds any of it

@@ -1,3 +1,4 @@
+import { contracts } from "@wormhole-foundation/sdk-base";
 import { suiCall, SuiRpcError } from "../services/suiClient";
 import { SUI_CHAIN, isSuiAddress, isSuiCoinType, normaliseSuiCoinType } from "../config/suiChain";
 
@@ -168,4 +169,85 @@ export async function readSuiBalance(owner: string, coinType: string): Promise<b
   } catch {
     return undefined;
   }
+}
+
+/* ------------------------------ diagnostics ----------------------------- */
+
+/** Wormhole's Sui Token Bridge, from Wormhole's own registry. */
+export function suiTokenBridge(): string | undefined {
+  try {
+    return contracts.tokenBridge("Mainnet", "Sui");
+  } catch {
+    return undefined;
+  }
+}
+
+export interface SuiDynamicField {
+  /** The field's name as Sui prints it, which is how the collateral is keyed. */
+  name: string;
+  objectType: string;
+  objectId: string;
+}
+
+/**
+ * Pure half of the dynamic-field listing.
+ *
+ * The custody walk this chain needs starts here: on Sui the token bridge
+ * does not own its collateral at an address, it keeps it in fields hanging
+ * off its state object. Nothing is guessed from the shape - the shape is
+ * printed, and the reader is written against what came back.
+ */
+export function parseDynamicFields(result: unknown): SuiDynamicField[] {
+  const data = (result as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return [];
+
+  const fields: SuiDynamicField[] = [];
+  for (const raw of data.slice(0, 20)) {
+    const entry = raw as { name?: { type?: unknown; value?: unknown }; objectType?: unknown; objectId?: unknown };
+    const value = entry?.name?.value;
+    fields.push({
+      name: typeof value === "string" ? value : JSON.stringify(value ?? entry?.name?.type ?? "?").slice(0, 90),
+      objectType: String(entry?.objectType ?? "?").slice(0, 120),
+      objectId: String(entry?.objectId ?? "?"),
+    });
+  }
+  return fields;
+}
+
+export interface SuiHolderProbe {
+  owner: string;
+  /** What suix_getBalance said, verbatim. */
+  balance: string;
+  /** What hangs off the object, which is where Sui keeps a bridge's money. */
+  fields: SuiDynamicField[];
+  fieldsNote?: string;
+}
+
+/**
+ * Everything Sui will say about one address holding one coin.
+ *
+ * Both halves, because they answer different questions: a balance covers
+ * collateral held as owned `Coin<T>` objects, and the dynamic fields cover
+ * collateral held inside the object - which is how Wormhole does it here, and
+ * the reason this chain's custody is still unread.
+ */
+export async function probeSuiHolder(owner: string, coinType: string): Promise<SuiHolderProbe> {
+  const probe: SuiHolderProbe = { owner, balance: "не спрошено", fields: [] };
+
+  try {
+    const raw = await suiCall("suix_getBalance", [owner, coinType]);
+    const parsed = parseBalance(raw);
+    probe.balance = parsed !== undefined ? parsed.toString() : `не разобрано: ${JSON.stringify(raw).slice(0, 90)}`;
+  } catch (err) {
+    probe.balance = `ошибка: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}`;
+  }
+
+  try {
+    probe.fields = parseDynamicFields(await suiCall("suix_getDynamicFields", [owner, null, 20]));
+    if (probe.fields.length === 0) probe.fieldsNote = "полей нет";
+  } catch (err) {
+    probe.fieldsNote = `ошибка: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}`;
+  }
+
+  return probe;
 }
