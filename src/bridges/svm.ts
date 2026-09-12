@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { contracts } from "@wormhole-foundation/sdk-base";
 import { withSvmClient } from "../services/svmClient";
 import { getSvmChain, SVM_CHAINS, type SvmChainDef } from "../config/svmChains";
-import { loadHyperlaneRegistry } from "./hyperlane";
+import { loadHyperlaneRegistry, routeHoldsCollateral } from "./hyperlane";
 import { findRegistryDeploymentsOnChain } from "./layerzero";
 import type { NonEvmReadResult } from "./types";
 
@@ -237,7 +237,7 @@ export function findSolanaHyperlaneRoutes(symbol: string): SolanaRoute[] {
       if (!getSvmChain(token.chainName)) continue;
       const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
       if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
-      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+      if (!routeHoldsCollateral(token.standard)) continue;
       if (!token.addressOrDenom || !token.collateralAddressOrDenom) continue;
 
       found.push({

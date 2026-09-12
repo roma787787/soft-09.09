@@ -1,7 +1,7 @@
 import { keccak256, stringToBytes } from "viem";
 import { getOtherChain, OTHER_CHAINS } from "../config/otherChains";
 import { endpointsWithOverride } from "../config/env";
-import { loadHyperlaneRegistry } from "./hyperlane";
+import { loadHyperlaneRegistry, routeHoldsCollateral } from "./hyperlane";
 import type { NonEvmReadResult } from "./types";
 
 /**
@@ -37,7 +37,7 @@ export function findOtherRoutes(symbol: string): OtherRoute[] {
 
       const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
       if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
-      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+      if (!routeHoldsCollateral(token.standard)) continue;
       if (typeof token.addressOrDenom !== "string") continue;
 
       found.push({

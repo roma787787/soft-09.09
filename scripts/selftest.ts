@@ -115,6 +115,7 @@ import { endpointsWithOverride, rpcUrlsFor } from "../src/config/env";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { COSMOS_CHAINS } from "../src/config/cosmosChains";
 import { findCosmosRoutes, findNativeModuleRoutes } from "../src/bridges/cosmos";
+import { routeHoldsCollateral } from "../src/bridges/hyperlane";
 import { OTHER_CHAINS } from "../src/config/otherChains";
 import { findOtherRoutes, decimalToBaseUnits } from "../src/bridges/others";
 import {
@@ -2124,6 +2125,36 @@ check("an absent chain is described as absent from the table", /нет в таб
 check("and never as something the bot refuses to check", !/бот их не проверяет/.test(unchecked));
 check("with a command that explains why", /\/chains/.test(unchecked));
 
+// -----------------------------------------------------------------------------
+// A synthetic route holds nothing, and on the Cosmos family it was being read
+// as collateral: their standards are CosmosNativeHypCollateral and
+// CosmosNativeHypSynthetic, so the synthetic one matched the "Native" in the
+// middle of its own name. USDC's Celestia route is one, with no collateral
+// denom of its own - so the reader fell back to the chain's coin and printed
+// the Hyperlane module's TIA balance under the ticker USDC. The same number,
+// 92.6785, appeared in the TIA report as TIA and in the USDC report as USDC.
+// -----------------------------------------------------------------------------
+
+check("a Cosmos synthetic is not read as collateral", routeHoldsCollateral("CosmosNativeHypSynthetic") === false);
+check("though its collateral sibling still is", routeHoldsCollateral("CosmosNativeHypCollateral") === true);
+check("and so are the CosmWasm ones", routeHoldsCollateral("CwHypCollateral") && routeHoldsCollateral("CwHypNative"));
+// Every VM names the thing the same way, so the word is refused everywhere.
+check("a Sealevel synthetic too", routeHoldsCollateral("SealevelHypSynthetic") === false);
+check("and an EVM one", routeHoldsCollateral("EvmHypSynthetic") === false);
+check("while the EVM collateral kinds pass", routeHoldsCollateral("EvmHypCollateral") && routeHoldsCollateral("EvmHypNative"));
+check("an unknown standard holds nothing until it says so", routeHoldsCollateral(undefined) === false);
+
+// Against the real registry, because the trap was in real data: the token
+// whose route printed somebody else's balance must no longer have one there,
+// and the token that legitimately escrows on that chain must keep all of its.
+const celestiaUsdc = findNativeModuleRoutes("USDC").filter((r) => r.chainKey === "celestia");
+check("USDC no longer claims a module route on Celestia", celestiaUsdc.length === 0, celestiaUsdc.map((r) => r.routeId).join(", "));
+const celestiaTia = findNativeModuleRoutes("TIA").filter((r) => r.chainKey === "celestia");
+check("while TIA keeps its collateral routes there", celestiaTia.length > 0 && celestiaTia.every((r) => r.denom === "utia"));
+// These two name no collateral denom and genuinely escrow the chain's own
+// coin, so the fallback that caused the bug is right for them and must stay.
+check("a collateral route that names no denom still falls back to the chain coin", findNativeModuleRoutes("KYVE").some((r) => r.denom === "ukyve"));
+
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
 // number at the wrong scale reads as real and is off by orders of magnitude.
@@ -2952,7 +2983,23 @@ const withSupplyOnly = renderLiquidityReport({
   ],
 });
 check("a chain with supply but no custody is named", withSupplyOnly.includes("Robinhood"));
-check("with how much is there", /выпущено\s*5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
+check("with how much is there", /5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
+// Three different facts used to share one heading, and it read as a
+// contradiction: "the token is on these chains: Mantle (no supply)". LINK's
+// report carried twenty-eight such entries, most of them zeroes, with the
+// ones that mattered buried among them.
+check("a chain with supply is under a heading that says so", /выпущен в этих сетях[^\n]*Robinhood/.test(withSupplyOnly));
+check("a chain with none is not called a chain the token is on", !/выпущен в этих сетях[^\n]*Abstract/.test(withSupplyOnly));
+check("it gets its own plain statement instead", /выпуска нет[^\n]*Abstract/.test(withSupplyOnly), withSupplyOnly);
+check("and one that could not be read is neither", /не прочитался[^\n]*BNB/.test(withSupplyOnly), withSupplyOnly);
+// A group with nothing in it says nothing at all.
+const onlyIssued = renderLiquidityReport({
+  symbol: "T", name: "Test",
+  balances: [fakeBalance("ethereum", "hyperlane", 1n)],
+  checkedCount: 1, failuresByChain: {}, attemptsByChain: {},
+  supplyOnly: [{ chainKey: "robinhood", amount: 5n, decimals: 0 }],
+});
+check("no empty groups are printed", !/выпуска нет/.test(onlyIssued) && !/не прочитался/.test(onlyIssued));
 check("a chain with no supply says so", withSupplyOnly.includes("выпуска нет"));
 check("and one that would not answer is not called empty", withSupplyOnly.includes("узел не ответил"));
 // When several of a chain's nodes fail differently, the report used to name

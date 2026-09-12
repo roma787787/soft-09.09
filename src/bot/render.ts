@@ -335,22 +335,47 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
 function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
   if (!supplyOnly || supplyOnly.length === 0) return [];
 
-  const described = supplyOnly.map((s) => {
-    const name = esc(chainName(s.chainKey));
-    if (s.amount === undefined || s.decimals === undefined) {
-      // Which of the two, because the report blames one of them out loud and
-      // the fixes are different: a node needs an RPC, a contract needs
-      // nothing at all.
-      return s.unreadable ? `${name} (контракт не отдаёт выпуск)` : `${name} (узел не ответил)`;
-    }
-    if (s.amount === 0n) return `${name} (выпуска нет)`;
-    return `${name} — выпущено ${esc(formatAmount(s.amount, s.decimals))}`;
-  });
+  // Three different facts used to share one heading, and it read as a
+  // contradiction: "the token is on these chains: Mantle (no supply)". LINK's
+  // report carried twenty-eight such entries, most of them zeroes, and the
+  // ones that mattered - a billion on Moonriver, a billion on Harmony - were
+  // buried among them. Each group now says only what is true of it, and the
+  // group worth reading comes first.
+  const issued = supplyOnly.filter((s) => s.amount !== undefined && s.decimals !== undefined && s.amount > 0n);
+  const none = supplyOnly.filter((s) => s.amount === 0n);
+  const unknown = supplyOnly.filter((s) => s.amount === undefined || s.decimals === undefined);
 
-  return [
-    `ℹ️ Токен есть в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
-    "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя.",
-  ];
+  const lines: string[] = [];
+
+  if (issued.length > 0) {
+    const described = issued.map(
+      (s) => `${esc(chainName(s.chainKey))} — ${esc(formatAmount(s.amount!, s.decimals!))}`
+    );
+    lines.push(
+      `ℹ️ Токен выпущен в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
+      "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя."
+    );
+  }
+
+  // Said in one clause rather than one entry each: "checked, nothing there"
+  // is worth knowing and is not worth a line per chain.
+  if (none.length > 0) {
+    lines.push(
+      `Контракт есть, но выпуска нет: ${none.map((s) => esc(chainName(s.chainKey))).join(", ")}.`
+    );
+  }
+
+  if (unknown.length > 0) {
+    // Which of the two, because the fixes are different: a node needs an RPC,
+    // a contract that will not answer needs nothing at all.
+    const described = unknown.map((s) => {
+      const name = esc(chainName(s.chainKey));
+      return s.unreadable ? `${name} (контракт не отдаёт выпуск)` : `${name} (узел не ответил)`;
+    });
+    lines.push(`Выпуск не прочитался: ${described.join(", ")}.`);
+  }
+
+  return lines;
 }
 
 /** The end of an address: enough to tell two rows apart at a glance. */

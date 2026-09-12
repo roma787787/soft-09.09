@@ -1,6 +1,6 @@
 import { COSMOS_CHAINS, getCosmosChain } from "../config/cosmosChains";
 import { endpointsWithOverride } from "../config/env";
-import { loadHyperlaneRegistry } from "./hyperlane";
+import { loadHyperlaneRegistry, routeHoldsCollateral } from "./hyperlane";
 import type { NonEvmReadResult } from "./types";
 
 /**
@@ -45,7 +45,7 @@ export function findCosmosRoutes(symbol: string): CosmosRoute[] {
 
       const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
       if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
-      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+      if (!routeHoldsCollateral(token.standard)) continue;
 
       // A route addressed by a hex router id belongs to the native module,
       // whose collateral sits in an account this code cannot yet derive.
@@ -82,7 +82,7 @@ export function countCosmosNativeRoutes(symbol: string): number {
       if (!getCosmosChain(token.chainName)) continue;
       const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
       if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
-      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+      if (!routeHoldsCollateral(token.standard)) continue;
       if (typeof token.addressOrDenom === "string" && !isBech32(token.addressOrDenom)) n++;
     }
   }
@@ -199,7 +199,7 @@ export function findNativeModuleRoutes(symbol: string): NativeModuleRoute[] {
 
       const tokenSymbol = (token.symbol ?? routeSymbol ?? "").toUpperCase();
       if (tokenSymbol !== wanted && routeSymbol !== wanted) continue;
-      if (!/Collateral|Native/i.test(token.standard ?? "")) continue;
+      if (!routeHoldsCollateral(token.standard)) continue;
 
       const id = token.addressOrDenom;
       if (typeof id !== "string" || isBech32(id)) continue;

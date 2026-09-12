@@ -51,6 +51,28 @@ export function isProductionRoute(routeId: string): boolean {
   return !/testnet|staging|sandbox|sepolia|holesky|goerli|devnet/i.test(deployment);
 }
 
+/**
+ * Whether a warp route's standard means it escrows what it carries.
+ *
+ * "Collateral or Native" was the test, and on the Cosmos family it is not
+ * enough: their standards are named CosmosNativeHypCollateral and
+ * CosmosNativeHypSynthetic, so the synthetic one matches on the "Native" in
+ * the middle of its own name. USDC's Celestia route is exactly that - a
+ * synthetic that mints its own supply and holds nothing - and it was read as
+ * collateral. With no collateral denom of its own the reader then fell back
+ * to the chain's coin and printed the Hyperlane module's TIA balance under
+ * the ticker USDC: 92.6785 of somebody else's asset, in a report whose whole
+ * job is to say how much of yours is there.
+ *
+ * So synthetic is refused by name, ahead of everything else. It is the one
+ * word that means "holds nothing" on every VM the registry covers.
+ */
+export function routeHoldsCollateral(standard: string | undefined): boolean {
+  const name = standard ?? "";
+  if (/synthetic/i.test(name)) return false;
+  return /Collateral|Native/i.test(name);
+}
+
 /** Routes left out as test deployments, for the coverage report. */
 export function hyperlaneSkippedRoutes(): number {
   loadRegistry();
