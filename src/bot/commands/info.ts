@@ -2,18 +2,11 @@ import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
+import { scanChainsForAddress, scanShortfall } from "../../services/chainScan";
 import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
-import { mapWithConcurrency } from "../../services/concurrency";
 import { capToTelegramLimit, plural } from "../render";
-
-/**
- * Chains asked at once when an address is checked against all of them.
- * Each chain costs one getCode before anything heavier, so this is about
- * not stampeding the nodes rather than about the work itself.
- */
-const CHAIN_SCAN_CONCURRENCY = 24;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -147,14 +140,8 @@ export function registerInfoCommand(bot: Telegraf) {
     }
 
     // --- no chain given: scan every configured chain ---
-    // Bounded: the table is discovered rather than typed and has passed two
-    // hundred chains, and a sweep of that many at once stops measuring the
-    // nodes and starts measuring the queue - the ones at the back time out
-    // and the address is reported as absent from a chain nobody asked.
-    const perChain = await mapWithConcurrency(CHAINS, CHAIN_SCAN_CONCURRENCY, async (c) => ({
-      chain: c.key,
-      outcome: await detectOnChain(c.key, address),
-    }));
+    const scan = await scanChainsForAddress(address);
+    const perChain = scan.perChain;
 
     const withHits = perChain.filter((p) => p.outcome.results.length > 0);
     if (withHits.length > 0) {
@@ -171,7 +158,7 @@ export function registerInfoCommand(bot: Telegraf) {
 
     // Every chain we could actually reach came back empty - but say so only
     // about the chains that answered.
-    if (failed.length === CHAINS.length) {
+    if (failed.length === scan.reachable) {
       await ctx.reply(
         `⚠️ Ни одна из сетей не ответила, проверить адрес не вышло.\n\n` +
           `<code>${failed[0].outcome.rpcError}</code>\n\n` +
@@ -192,7 +179,8 @@ export function registerInfoCommand(bot: Telegraf) {
     let message =
       `🔎 <code>${address}</code>\n\n` +
       `Ни на одной сети этот адрес не относится к LayerZero, Hyperlane, Transporter или Portal.\n\n` +
-      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.`;
+      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.` +
+      (scanShortfall(scan) ? `\n${scanShortfall(scan)}` : "");
 
     if (contractFoundOn.length > 0) {
       message +=

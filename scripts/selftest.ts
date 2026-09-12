@@ -23,6 +23,7 @@ import {
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
+import { scanShortfall } from "../src/services/chainScan";
 import { isFragile, isUnreachable, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
@@ -2223,6 +2224,25 @@ const wholeToken = renderLiquidityReport({
   },
 });
 check("a whole-token report still speaks for the token", /под этот тикер не нашлось/.test(wholeToken));
+
+// /track and /info both sweep every chain when no network is named, and they
+// did it with two copies of one loop - which is how one came to be bounded
+// and the other left as it was. One scan now, so the next change lands in
+// both. What it must always say is the shortfall: "not found on any chain"
+// and "not looked at on all of them" are different answers.
+check("a complete sweep claims no shortfall", scanShortfall({ perChain: [], reachable: 250, skipped: 0, total: 250 }) === "");
+check(
+  "chains that answer nothing are counted out loud",
+  /22 не отвечают совсем/.test(scanShortfall({ perChain: [], reachable: 228, skipped: 0, total: 250 }))
+);
+check(
+  "and so are the ones that ran out of time",
+  /5 не уложились/.test(scanShortfall({ perChain: [], reachable: 250, skipped: 5, total: 250 }))
+);
+check(
+  "with the count of what was actually looked at",
+  /Просмотрено 223 сетей из 250/.test(scanShortfall({ perChain: [], reachable: 228, skipped: 5, total: 250 }))
+);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

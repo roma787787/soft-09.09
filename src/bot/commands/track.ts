@@ -1,48 +1,11 @@
 import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
-import { detectOnChain, type DetectionOutcome } from "../../protocols/registry";
+import { detectOnChain } from "../../protocols/registry";
+import { scanChainsForAddress, scanShortfall } from "../../services/chainScan";
 import { getClient } from "../../services/rpcClient";
 import { addTracked } from "../../services/db";
-import { CHAINS, getChain } from "../../config/chains";
+import { getChain } from "../../config/chains";
 import { PROTOCOL_LABELS, type DetectionResult } from "../../protocols/types";
-import { isUnreachable } from "../../services/rpcHealth";
-import { mapWithConcurrency } from "../../services/concurrency";
-
-/**
- * Chains asked at once when an address is checked against all of them.
- * Each chain costs one getCode before anything heavier, so this is about
- * not stampeding the nodes rather than about the work itself.
- */
-const CHAIN_SCAN_CONCURRENCY = 24;
-
-/**
- * How long one chain gets before the scan moves on.
- *
- * A chain whose endpoints are all dead costs six timeouts before getCode so
- * much as returns an error, and the table has grown from forty chains to two
- * hundred and fifty since this scan was written. Without a deadline the
- * first person to type /track without a network waits minutes and then gets
- * the generic error - the same failure /diag had, for the same reason.
- */
-const CHAIN_DEADLINE_MS = 8_000;
-
-/** The whole sweep, so the reply always arrives while someone is looking. */
-const TOTAL_BUDGET_MS = 90_000;
-
-/** Runs a probe under a deadline; a chain that overruns is not an answer. */
-async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<undefined>((resolve) => {
-        timer = setTimeout(() => resolve(undefined), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 export function registerTrackCommand(bot: Telegraf) {
   bot.command("track", async (ctx: Context) => {
@@ -66,38 +29,15 @@ export function registerTrackCommand(bot: Telegraf) {
     let detected: DetectionResult[] | undefined;
 
     if (!chainKey) {
-      // Bounded, for the same reason as /info: the chain table is discovered
-      // rather than typed and has passed two hundred, and a sweep of that
-      // many at once measures the queue rather than the nodes.
-      //
-      // Chains already known to answer nothing are not asked. That is where
-      // the time went: today's /diag found seventeen of them, and each was
-      // costing the scan six timeouts to re-learn what the last sweep
-      // already recorded.
-      const reachable = CHAINS.filter((c) => !isUnreachable(c.key));
-      const started = Date.now();
-      let skipped = 0;
+      const scan = await scanChainsForAddress(address);
+      const perChain = scan.perChain;
 
-      const perChain = await mapWithConcurrency(reachable, CHAIN_SCAN_CONCURRENCY, async (c) => {
-        if (Date.now() - started > TOTAL_BUDGET_MS) {
-          skipped++;
-          return { chain: c.key, outcome: { results: [] } as DetectionOutcome };
-        }
-        const outcome = await withDeadline(detectOnChain(c.key, address), CHAIN_DEADLINE_MS);
-        if (!outcome) skipped++;
-        return { chain: c.key, outcome: outcome ?? ({ results: [] } as DetectionOutcome) };
-      });
       const withHits = perChain.filter((p) => p.outcome.results.length > 0);
 
-      // Said out loud whenever the sweep was not complete: "not found" and
-      // "not looked at" are different answers, and only one of them means
-      // the address is not there.
-      const partial =
-        skipped > 0 || reachable.length < CHAINS.length
-          ? `\n\nПросмотрено ${reachable.length - skipped} сетей из ${CHAINS.length}: ` +
-            `${CHAINS.length - reachable.length} не отвечают совсем, ${skipped} не уложились в отведённое время. ` +
-            "Если сеть известна, укажите её явно — это и быстрее, и точнее."
-          : "";
+      // "Not found on any chain" and "not looked at on all of them" are
+      // different answers, and only one means the address is not there.
+      const shortfall = scanShortfall(scan);
+      const partial = shortfall ? `\n\n${shortfall}` : "";
       if (withHits.length === 1) {
         chainKey = withHits[0].chain;
         detected = withHits[0].outcome.results;
