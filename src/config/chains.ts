@@ -1837,6 +1837,13 @@ const byChainId = new Map(CHAINS.map((c) => [c.viemChain.id, c]));
  * already taken. Two entries for one chain id would have the report reading
  * the same custody contract twice and adding it to itself.
  */
+/** Whether a non-EVM chain already answers to this name. */
+function namedByAnotherFamily(name: string): boolean {
+  if (name === TON_CHAIN.key || (TON_CHAIN.aliases as readonly string[]).includes(name)) return true;
+  if (name === SUI_CHAIN.key || (SUI_CHAIN.aliases as readonly string[]).includes(name)) return true;
+  return !!(resolveSvmChain(name) ?? resolveCosmosChain(name) ?? resolveOtherChain(name) ?? resolvePortalChain(name));
+}
+
 export function registerChain(chain: ChainDef): boolean {
   if (byKey.has(chain.key) || byChainId.has(chain.viemChain.id)) return false;
   CHAINS.push(chain);
@@ -1844,9 +1851,16 @@ export function registerChain(chain: ChainDef): boolean {
   byChainId.set(chain.viemChain.id, chain);
   // Aliases last, and never over an existing one: a discovered chain must
   // not quietly take a name a person already types for another.
+  //
+  // "Existing" means any family, not just this table. The check used to see
+  // only EVM chains while resolveAnyChain asks EVM first, so a discovered
+  // "Injective (EVM)" took the name of Cosmos Injective and made that chain
+  // unreachable by name - /info USDC injective answered about the wrong one
+  // and there was no spelling that reached the right one.
   for (const alias of chain.aliases) {
     const key = alias.toLowerCase();
-    if (!byAlias.has(key)) byAlias.set(key, chain);
+    if (byAlias.has(key) || namedByAnotherFamily(key)) continue;
+    byAlias.set(key, chain);
   }
   return true;
 }

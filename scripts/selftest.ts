@@ -1408,7 +1408,26 @@ const emptyReport = renderLiquidityReport({
   failuresByChain: {},
   attemptsByChain: { ethereum: 1 },
 });
-check("zero balances are reported as no liquidity, not as an error", emptyReport.includes("не заведён"));
+// A contract that was asked and answered zero is a checked, empty vault -
+// not a token nobody bridged. /info USDC aptos printed both four words
+// apart, and then advised hunting for a LayerZero adapter among the token's
+// holders on a chain where that advice means nothing.
+check("zero balances are reported as no liquidity, not as an error", emptyReport.includes("Ни на одном из них токена сейчас нет"));
+check("an empty vault is named as checked and empty", emptyReport.includes("Проверено, хранилища пусты"));
+check("and with the bridge that was asked", /хранилища пусты[^\n]*Wormhole/.test(emptyReport));
+check("a checked vault is never called unbridged", !emptyReport.includes("не заведён"));
+check("nor sent hunting for an adapter by hand", !emptyReport.includes("вкладка Holders"));
+
+// With nothing read at all the hunt is the right answer, and still is.
+const nothingRead = renderLiquidityReport({
+  symbol: "NADA",
+  name: "Nothing At All",
+  balances: [],
+  checkedCount: 0,
+  failuresByChain: {},
+  attemptsByChain: {},
+});
+check("a token nothing could be read for still gets the manual route", nothingRead.includes("вкладка Holders"));
 
 // A peer walk that ran out of time must say so. The walk asks the seed's own
 // node once per destination chain, and the number of chains it asks about
@@ -2311,6 +2330,26 @@ check("no key is claimed by two chain tables", sharedKeys.length === 0, sharedKe
 
 const sharedAliases = [...aliasOwners].filter(([, owners]) => new Set(owners).size > 1);
 check("and no alias is pulled by two", sharedAliases.length === 0, sharedAliases.map(([a, o]) => `${a}: ${[...new Set(o)].join(" | ")}`).join("; "));
+
+
+// Discovery adds chains at runtime, and the guard against one taking a name
+// already in use only ever saw the EVM table - while resolveAnyChain asks
+// EVM first. A discovered "Injective (EVM)" therefore took the name of
+// Cosmos Injective, and /info USDC injective answered about the wrong chain
+// with no spelling left that reached the right one.
+const shadow = {
+  key: "injectiveevm",
+  label: "Injective (EVM)",
+  viemChain: { id: 2525252, name: "Injective (EVM)", nativeCurrency: { name: "INJ", symbol: "INJ", decimals: 18 }, rpcUrls: { default: { http: ["https://example.invalid"] } } },
+  rpcEnvVar: "INJECTIVEEVM_RPC_URL",
+  defaultRpcUrls: ["https://example.invalid"],
+  explorerTxUrl: () => "",
+  explorerAddressUrl: () => "",
+  aliases: ["injectiveevm", "injective"],
+} as any;
+check("a discovered chain is registered", registerChain(shadow) === true);
+check("but it does not take a name another family answers to", resolveAnyChain("injective")?.key === "injective");
+check("and is still reachable by its own name", resolveAnyChain("injectiveevm")?.key === "injectiveevm");
 
 // A key in one table that another table hands out as an alias is the same
 // bug wearing a different hat: whoever the resolver reaches first wins.

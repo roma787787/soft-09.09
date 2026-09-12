@@ -602,7 +602,35 @@ export function renderLiquidityReport(input: ReportInput): string {
         `Есть маршруты Hyperlane в сетях ${esc(syntheticHyperlaneChains.map(chainName).join(", "))}, но они синтетические: тоже чеканят supply, а не блокируют его.`
       );
     }
-    if (nativeOftChains.length === 0 && syntheticHyperlaneChains.length === 0 && unreachable.length === 0 && partial.length === 0) {
+    // Which vaults answered, and answered nothing. A contract that was asked
+    // and said zero is a checked, empty vault, and the lines below claim the
+    // token is not bridged at all - /info USDC aptos printed both, four words
+    // apart, about a Wormhole vault it had just read.
+    if (balances.length > 0) {
+      const emptyHere = new Map<string, Set<BridgeProtocol>>();
+      for (const b of balances) {
+        if (!emptyHere.has(b.chainKey)) emptyHere.set(b.chainKey, new Set());
+        emptyHere.get(b.chainKey)!.add(b.protocol);
+      }
+      lines.push(
+        "",
+        `Проверено, хранилища пусты: ${[...emptyHere.entries()]
+          .map(([chainKey, protocols]) => `${esc(chainName(chainKey))} (${esc([...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))})`)
+          .join(", ")}. Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего.`
+      );
+    }
+
+    // Only when nothing was read at all. With a vault checked and empty the
+    // token is demonstrably bridged, and the hunt below - open the token in
+    // an explorer, find the adapter among its holders - is advice about
+    // LayerZero on EVM handed to someone who asked about Aptos.
+    if (
+      balances.length === 0 &&
+      nativeOftChains.length === 0 &&
+      syntheticHyperlaneChains.length === 0 &&
+      unreachable.length === 0 &&
+      partial.length === 0
+    ) {
       // Written for whoever is reading the report, which is not whoever runs
       // the bot. The old version ended "add the address to
       // config/layerzero-lockboxes.json" - a repository this reader does not
