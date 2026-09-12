@@ -94,6 +94,7 @@ import {
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { helpText } from "../src/bot/commands/help";
+import { formatInfoCard } from "../src/bot/format";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { OTHER_CHAINS } from "../src/config/otherChains";
 import { preferredRouteId } from "../src/bridges/hyperlane";
@@ -2065,6 +2066,27 @@ for (const chain of OTHER_CHAINS) {
 for (const chain of PORTAL_CHAINS) {
   check(`/portal names ${chain.label}`, help.includes(chain.label));
 }
+
+// The address card spells the queried address checksummed and the peers
+// lowercased, because a peer arrives as the low 20 bytes of a bytes32 slot.
+// One card spelling addresses two ways reads as two kinds of address, and
+// the peers are the half somebody copies out to look up next.
+const adapterCard = formatInfoCard("ethereum", "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee" as Address, [
+  {
+    protocol: "layerzero",
+    confidence: "high",
+    role: "OFT Adapter",
+    facts: [["Заблокировано", "3 186 989 757,693 USDT"]],
+    peers: [{ chainLabel: "Arbitrum One", remoteId: 30110, peerAddress: "0x14e4a1b13bf7f943c8ff7c51fb60fa964a298d92" }],
+    notes: [],
+  },
+]);
+check(
+  "a peer address is shown checksummed",
+  adapterCard.includes("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92"),
+  adapterCard
+);
+check("and the locked balance earns its place on the card", adapterCard.includes("Заблокировано"));
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

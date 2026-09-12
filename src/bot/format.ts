@@ -1,10 +1,26 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 import type { DetectionResult } from "../protocols/types";
 import { PROTOCOL_LABELS } from "../protocols/types";
 import { getChain } from "../config/chains";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Peer addresses in the spelling everything else uses.
+ *
+ * They arrive as the low 20 bytes of a bytes32 peer slot, so they come out
+ * lowercased - beside a header that shows the queried address checksummed.
+ * One card spelling addresses two ways reads as two kinds of address, and
+ * the peers are the half a person copies out to look up next.
+ */
+function pretty(address: string): string {
+  try {
+    return getAddress(address as Address);
+  } catch {
+    return address;
+  }
 }
 
 const CONFIDENCE_EMOJI: Record<string, string> = { high: "🟢", medium: "🟡", low: "🟠" };
@@ -47,7 +63,7 @@ export function formatInfoCard(chainKey: string, address: Address, results: Dete
       lines.push("");
       lines.push(`<b>Связанные сети (${r.peers.length}):</b>`);
       for (const p of r.peers) {
-        lines.push(`• ${esc(p.chainLabel)} (${p.remoteId}) → <code>${esc(p.peerAddress)}</code>`);
+        lines.push(`• ${esc(p.chainLabel)} (${p.remoteId}) → <code>${esc(pretty(p.peerAddress))}</code>`);
       }
     }
     if (r.notes.length) {

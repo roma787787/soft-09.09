@@ -3,6 +3,7 @@ import type { DetectionResult, RemotePeer } from "./types";
 import { safeRead, isNonZero, bytes32ToAddress, chainLabel } from "./util";
 import { LZ_ENDPOINT_V2 } from "./addresses/layerzero";
 import { getLzEidMap } from "../services/idMaps";
+import { formatAmount } from "../services/balances";
 
 const OAPP_ABI = [
   { type: "function", name: "endpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
@@ -53,6 +54,13 @@ const OAPP_V1_ABI = [
  * well-known EndpointV2 constant) and, on a best-effort basis, legacy V1
  * User Applications.
  */
+/** Just enough of ERC-20 to say how much an adapter is holding. */
+const ERC20_ABI = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+] as const;
+
 export async function detectLayerZero(
   client: PublicClient,
   chainKey: string,
@@ -89,6 +97,26 @@ export async function detectLayerZero(
       ["Официальный Endpoint LayerZero V2", isKnownEndpoint ? "да" : "нет, адрес не совпадает с известным"],
     ];
     if (oAppVersion) facts.push(["Версия OApp", `отправка ${oAppVersion[0]}, приём ${oAppVersion[1]}`]);
+
+    // The number this bot exists to report. An adapter's whole job is to
+    // hold what the far side has minted against it, and the card described
+    // one holding three billion USDT without saying so - leaving the reader
+    // to go and run /info on the ticker to find the figure they were
+    // already looking at the contract for.
+    //
+    // Only for an adapter: an OFT mints its own supply and holds nothing, so
+    // a balance line there would be a zero that means nothing.
+    if (wrapsExternalToken && tokenAddr) {
+      const [locked, decimals, lockedSymbol] = await Promise.all([
+        safeRead<bigint>(client, tokenAddr, ERC20_ABI as any, "balanceOf", [address]),
+        safeRead<number>(client, tokenAddr, ERC20_ABI as any, "decimals"),
+        safeRead<string>(client, tokenAddr, ERC20_ABI as any, "symbol"),
+      ]);
+      if (locked !== undefined && decimals !== undefined) {
+        facts.push(["Заблокировано", `${formatAmount(locked, decimals)}${lockedSymbol ? ` ${lockedSymbol}` : ""}`]);
+      }
+    }
+
     if (owner && isNonZero(owner)) facts.push(["Владелец", owner]);
 
     const eidMap = await getLzEidMap();
