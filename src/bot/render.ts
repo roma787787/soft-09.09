@@ -727,7 +727,9 @@ export function renderLiquidityReport(input: ReportInput): string {
       `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
         "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой." +
         (stargateHolds.length > 0
-          ? ` Это про собственный маршрут токена. Пул Stargate — отдельное хранилище на той же LayerZero, и в сетях ${esc(stargateHolds.map(chainName).join(", "))} он не пуст: оттуда вывести можно, строками выше.`
+          ? ` Это про собственный маршрут токена. Пул Stargate — отдельное хранилище на той же LayerZero, и ${
+              stargateHolds.length === 1 ? "в сети" : "в сетях"
+            } ${esc(stargateHolds.map(chainName).join(", "))} он не пуст: оттуда вывести можно, строками выше.`
           : "") +
         (anchors.length > 0
           ? ` Заблокированный запас LayerZero лежит в других сетях: ${esc(anchors.map(chainName).join(", "))} — строками выше.`
