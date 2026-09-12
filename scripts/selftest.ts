@@ -4333,9 +4333,34 @@ check(
 check(
   "one reason shared by every endpoint is said once",
   reasonForChain([
-    { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
-    { url: "https://b.example", ok: false, reason: "ENOTFOUND (a.example)" },
-  ]) === "ENOTFOUND (a.example) и ещё 1"
+    { url: "https://a.example", ok: false, reason: "не ответил вовремя (a.example)" },
+    { url: "https://b.example", ok: false, reason: "не ответил вовремя (a.example)" },
+  ]) === "не ответил вовремя (a.example) и ещё 1"
+);
+// A hostname that does not resolve anywhere is its own answer. "Нужен
+// другой адрес ноды" was sending the reader to look for an address that
+// does not exist: Sanko carries one dead hostname in every registry, and
+// Hyperlane's own marks the chain unavailable. Waiting is the next step,
+// and a report that does not say so costs an evening to find out.
+check(
+  "every address dead is not 'find another address'",
+  /публичного узла у сети сейчас нет/.test(
+    reasonForChain([
+      { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
+      { url: "https://b.example", ok: false, reason: "ENOTFOUND (b.example)" },
+    ])
+  )
+);
+// One live address among dead ones means the opposite: somebody publishes a
+// node, it just did not work this time.
+check(
+  "one live address among dead ones keeps the ordinary reason",
+  !/публичного узла у сети сейчас нет/.test(
+    reasonForChain([
+      { url: "https://a.example", ok: false, reason: "ENOTFOUND (a.example)" },
+      { url: "https://b.example", ok: false, reason: "не ответил вовремя (b.example)" },
+    ])
+  )
 );
 check(
   "and different reasons are both shown",

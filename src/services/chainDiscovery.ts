@@ -376,11 +376,17 @@ export function factsFromRegistryEntry(
  * this address said - which is how an entry gets removed again.
  */
 const FALLBACK_RPCS: Record<number, string[]> = {
-  // Sanko runs on Caldera, whose rollups answer at this shape of address.
-  1996: ["https://sanko-mainnet.calderachain.xyz/http"],
   // Glue's own two nodes answered 502 - an outage, so they may well come
-  // back on their own; this is a third door rather than a replacement.
+  // back on their own; this is a third door rather than a replacement. It
+  // reached a live server on the first scan after it was added, which is
+  // what an entry here has to do to stay.
   1300: ["https://lb.routeme.sh/rpc/evm/1300"],
+  // Sanko had an entry here too, guessing at Caldera's address shape for it.
+  // It did not resolve either, so it is gone: Hyperlane's own registry marks
+  // the chain `availability: disabled, reasons: [unavailable]` and carries
+  // the same dead address everyone else does. There is no public Sanko node
+  // to point at right now, and an address that answers nothing is worse than
+  // none - it reads as a maintained alternative.
 };
 
 async function mergedFacts(chainId: number): Promise<ChainFacts | undefined> {
@@ -556,6 +562,15 @@ export function reasonForChain(outcomes: ProbeOutcome[]): string {
 
   const refusal = reasons.find((r) => /HTTP (401|403|429)/.test(r));
   if (refusal) return `узлы отказывают этому серверу: ${refusal}`;
+
+  // Every address the registries carry has stopped resolving. That is not
+  // "try another one": there is no other one, and the answer is to wait
+  // until somebody publishes a node, not to go hunting for an address.
+  // Sanko is the case - one dead hostname everywhere, and Hyperlane's own
+  // registry marks the chain unavailable.
+  if (reasons.length > 0 && reasons.every((r) => /ENOTFOUND/.test(r))) {
+    return `ни один адрес не резолвится — публичного узла у сети сейчас нет: ${[...new Set(reasons)].join("; ")}`;
+  }
 
   const wrongChain = reasons.find((r) => /отдаёт сеть/.test(r));
   if (wrongChain) return wrongChain;
