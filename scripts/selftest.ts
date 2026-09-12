@@ -2883,6 +2883,36 @@ async function asyncChecks(): Promise<void> {
     async () => undefined
   );
   check("with nothing to lock, the adapter is dropped rather than guessed", unknown.custodians.length === 0);
+  check("and is counted as unresolved rather than vanishing", unknown.accounting.unresolved === 1);
+
+  // Every registry entry lands in exactly one bucket, and the buckets sum to
+  // what went in. /lzmesh reported "28 in the registry, 24 accepted, 1
+  // rejected" - three entries gone between two numbers, with no way to tell
+  // a deliberate skip from a read that failed.
+  const mixedRegistry = await resolveRegistryDeployments(
+    [
+      deployment("ethereum", true), // adapter locking the listed token
+      deployment("arbitrum", false), // plain OFT: mints
+      deployment("optimism", true), // adapter on a chain already configured
+    ],
+    [
+      { chainKey: "ethereum", platformName: "Ethereum", tokenAddress: TOKEN },
+      { chainKey: "arbitrum", platformName: "Arbitrum", tokenAddress: TOKEN },
+    ],
+    new Set(["optimism"]),
+    "TKN",
+    async (chainKey) => (chainKey === "ethereum" ? TOKEN : undefined)
+  );
+  const tallied =
+    mixedRegistry.custodians.length +
+    mixedRegistry.rejected.length +
+    mixedRegistry.accounting.minting +
+    mixedRegistry.accounting.preconfigured +
+    mixedRegistry.accounting.unresolved;
+  check("every registry entry is accounted for in exactly one bucket", tallied === 3);
+  check("the minting one is counted as minting", mixedRegistry.accounting.minting === 1);
+  check("the preconfigured one is counted as preconfigured", mixedRegistry.accounting.preconfigured === 1);
+  check("and the adapter still becomes a custodian", mixedRegistry.custodians.length === 1);
 }
 
 // -----------------------------------------------------------------------------

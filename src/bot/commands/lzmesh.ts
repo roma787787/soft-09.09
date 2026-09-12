@@ -71,12 +71,26 @@ export function registerLzMeshCommand(bot: Telegraf) {
     }
 
     const resolution = await resolveRegistryDeployments(deployments, token.platforms, new Set(), symbol);
+    // Every entry accounted for. "28 in the registry, 24 accepted, 1
+    // rejected" left three unexplained, and an entry that disappears between
+    // two numbers is indistinguishable from one the bot failed to read.
+    const { minting, preconfigured, unresolved } = resolution.accounting;
     lines.push(
       "",
-      `<b>Из реестра принято</b>: ${resolution.custodians.length}, отсеяно: ${resolution.rejected.length}`
+      `<b>Из реестра принято</b>: ${resolution.custodians.length} из ${deployments.length}`
     );
-    for (const r of resolution.rejected.slice(0, 8)) {
-      lines.push(`  ${esc(chainName(r.chainKey))} — ${esc(r.reason)}`);
+    if (resolution.rejected.length > 0) {
+      lines.push(`  отсеяно: ${resolution.rejected.length}`);
+      for (const r of resolution.rejected.slice(0, 8)) {
+        lines.push(`    ${esc(chainName(r.chainKey))} — ${esc(r.reason)}`);
+      }
+    }
+    if (minting > 0) lines.push(`  чеканят, хранилища нет: ${minting}`);
+    if (preconfigured > 0) lines.push(`  сеть уже описана в конфиге: ${preconfigured}`);
+    if (unresolved > 0) lines.push(`  не назвали, что блокируют: ${unresolved}`);
+    const tallied = resolution.custodians.length + resolution.rejected.length + minting + preconfigured + unresolved;
+    if (tallied !== deployments.length) {
+      lines.push(`  ⚠️ не сошлось: ${deployments.length - tallied} без объяснения`);
     }
 
     lines.push("", `<b>Опрос контрактов токена</b>: ${probed.length === 0 ? "OFT не найден" : `${probed.length}`}`);
@@ -93,24 +107,38 @@ export function registerLzMeshCommand(bot: Telegraf) {
       return;
     }
 
-    // What the seed itself answers, verbatim. A walk that finds nothing is
-    // not evidence about the token; it is evidence about this contract, and
-    // only the raw readings distinguish the two.
-    const readings = await describeSeed(seeds[0].chainKey, seeds[0].oapp);
-    lines.push("", `<b>Зацепка</b> (${esc(chainName(seeds[0].chainKey))})`);
+    const covered = new Set([...deployments.map((d) => d.chainKey), ...probed.map((r) => r.platform.chainKey!)]);
+    const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
+
+    // The seed whose answers these are - which is routinely not seeds[0].
+    // Seeds are tried in turn until one names a peer, so printing the first
+    // one's raw readings above another one's results made the two look like
+    // one contract contradicting itself: a dead V1 deployment answering
+    // `trustedRemoteLookup(102): 0x` directly above nine peers it never
+    // returned.
+    const source = mesh.answeredSeed ?? seeds[0];
+    const readings = await describeSeed(source.chainKey, source.oapp);
+    lines.push(
+      "",
+      `<b>Зацепка</b> (${esc(chainName(source.chainKey))})` +
+        (mesh.answeredSeed
+          ? seeds.length > 1
+            ? " — та, что ответила"
+            : ""
+          : " — ни одна не ответила, показана первая")
+    );
     for (const r of readings) {
       lines.push(`  ${esc(r.name)}: <code>${esc(r.value)}</code>`);
     }
 
-    const covered = new Set([...deployments.map((d) => d.chainKey), ...probed.map((r) => r.platform.chainKey!)]);
-    const mesh = await expandLayerZeroMesh(seeds, symbol, covered);
-
-    const { eids, asked, peers, probed: recognised, version } = mesh.steps;
+    const { eids, asked, peers, probed: recognised, version, seedsTried = 1 } = mesh.steps;
     lines.push(
       "",
       `<b>Сеть пиров</b> (зацепка ${version === "v1" ? "LayerZero V1" : "LayerZero V2"})`,
       `  сетей с известным eid: ${eids}`,
-      `  спрошено у контракта: ${asked}`,
+      // Said with the number of seeds, because the total runs over the eid
+      // count once more than one seed is walked and then reads as impossible.
+      `  спрошено у контракта: ${asked}${seedsTried > 1 ? ` (зацепок пройдено: ${seedsTried})` : ""}`,
       `  пиров вернулось: ${peers}`,
       `  из них опознано как OFT: ${recognised}`
     );

@@ -746,13 +746,36 @@ export interface MeshResult {
    */
   unasked: string[];
   /**
+   * The seed whose answers these are.
+   *
+   * Seeds are tried in turn and the walk stops at the first that names a
+   * peer, so the contract that produced the result is routinely not the
+   * first one in the list. /lzmesh printed the raw readings of seed one -
+   * a dead V1 deployment answering `trustedRemoteLookup(102): 0x` - directly
+   * above nine peers that came from seed three, and labelled the whole walk
+   * with seed one's generation.
+   */
+  answeredSeed?: { chainKey: string; oapp: Address };
+  /**
    * Where the walk got to, step by step. Four live calls in a row fail in
    * four different ways, and "reached 0 new chains" is the same sentence
    * whether no eid was known, no peer came back, or every peer turned out
    * not to be readable - three different problems with three different
    * fixes.
    */
-  steps: { eids: number; asked: number; peers: number; probed: number; version?: "v1" | "v2" };
+  steps: {
+    eids: number;
+    asked: number;
+    peers: number;
+    probed: number;
+    version?: "v1" | "v2";
+    /**
+     * How many seeds the walk went through. Without it "asked 369" sits
+     * beside "144 chains with a known eid" and reads as impossible, when it
+     * is three seeds' worth of one list.
+     */
+    seedsTried?: number;
+  };
 }
 
 /**
@@ -802,7 +825,12 @@ export async function expandLayerZeroMesh(
   // removes them again, so what survives to the end is what nobody asked.
   const unasked = new Set<string>();
   let asked = 0;
+  // The version of the seed that answered, and - only as a fallback for a
+  // walk where none did - of the first one tried.
   let seedVersion: "v1" | "v2" | undefined;
+  let firstVersion: "v1" | "v2" | undefined;
+  let answeredSeed: { chainKey: string; oapp: Address } | undefined;
+  let seedsTried = 0;
   const deadline = Date.now() + MESH_BUDGET_MS;
 
   for (const seed of useful) {
@@ -814,7 +842,8 @@ export async function expandLayerZeroMesh(
     // one returns nothing at all - which is how an entire V1 deployment came
     // back as "no peers" and was read as "not bridged anywhere else".
     const version = (await layerZeroVersionOf(seed.chainKey, seed.oapp)) ?? "v2";
-    seedVersion ??= version;
+    firstVersion ??= version;
+    seedsTried++;
 
     const targets = [...eidMap.chainKeyToId.entries()].filter(
       ([chainKey]) => chainKey !== seed.chainKey && !peerByChain.has(chainKey) && !known.has(chainKey)
@@ -847,7 +876,11 @@ export async function expandLayerZeroMesh(
 
     // One live deployment names every chain it reaches, so once a seed has
     // answered there is nothing further to learn from the others.
-    if (peerByChain.size > 0) break;
+    if (peerByChain.size > 0) {
+      seedVersion = version;
+      answeredSeed = seed;
+      break;
+    }
   }
 
   const custodians: Custodian[] = [];
@@ -894,12 +927,14 @@ export async function expandLayerZeroMesh(
     reached,
     unrecognised,
     unasked: [...unasked],
+    answeredSeed,
     steps: {
       eids: eidMap.chainKeyToId.size,
       asked,
       peers: peerByChain.size,
       probed: reached.length,
-      version: seedVersion,
+      version: seedVersion ?? firstVersion,
+      seedsTried,
     },
   };
 }

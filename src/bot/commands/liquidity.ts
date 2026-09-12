@@ -60,6 +60,25 @@ export interface RegistryResolution {
    * full of other projects.
    */
   rejected: Array<{ chainKey: string; address: Address; reason: string }>;
+  /**
+   * Every registry entry, sorted into the bucket that swallowed it.
+   *
+   * `nativeOftChains` is a set of CHAINS, so two minting deployments on one
+   * chain collapse into one entry and the deployments cannot be counted back
+   * out of it. Two more exits - an entry on a chain the manual config already
+   * covers, and an adapter with nothing to lock - left no trace at all. So
+   * /lzmesh reported "28 in the registry, 24 accepted, 1 rejected" and three
+   * entries had simply vanished between the two numbers, which is the exact
+   * shape of every real bug this report has turned up.
+   */
+  accounting: {
+    /** Entries whose deployment mints its supply, so there is no vault. */
+    minting: number;
+    /** Entries on a chain the manual config already answers for. */
+    preconfigured: number;
+    /** Adapters that named nothing to lock and had no listed address either. */
+    unresolved: number;
+  };
 }
 
 /**
@@ -83,6 +102,8 @@ export async function resolveRegistryDeployments(
   const nativeOftChains = new Set<string>();
   const rejected: RegistryResolution["rejected"] = [];
   let mismatchedAdapters = 0;
+  let minting = 0;
+  let unresolved = 0;
 
   const reject = (d: RegistryDeploymentInfo, reason: string) => {
     mismatchedAdapters++;
@@ -117,6 +138,7 @@ export async function resolveRegistryDeployments(
     // here, and only here.
     if (deployment.mintsAndBurns || (!onChain && !deployment.locksCollateral)) {
       nativeOftChains.add(deployment.chainKey);
+      minting++;
       continue;
     }
 
@@ -156,7 +178,10 @@ export async function resolveRegistryDeployments(
     }
 
     const locked = onChain ?? listed;
-    if (!locked) continue;
+    if (!locked) {
+      unresolved++;
+      continue;
+    }
 
     // An exact-ticker deployment locking something else is a different
     // project sharing the symbol, and reading its balance under this ticker
@@ -177,7 +202,17 @@ export async function resolveRegistryDeployments(
     });
   }
 
-  return { custodians, nativeOftChains: [...nativeOftChains], mismatchedAdapters, rejected };
+  return {
+    custodians,
+    nativeOftChains: [...nativeOftChains],
+    mismatchedAdapters,
+    rejected,
+    accounting: {
+      minting,
+      preconfigured: deployments.length - pending.length,
+      unresolved,
+    },
+  };
 }
 
 function countByProtocol(
