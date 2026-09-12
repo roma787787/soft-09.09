@@ -32,7 +32,15 @@ function esc(s: string): string {
 export function registerSuiCommand(bot: Telegraf) {
   bot.command("sui", async (ctx: Context) => {
     const text = (ctx.message as { text?: string } | undefined)?.text ?? "";
-    const symbol = text.trim().split(/\s+/)[1]?.toUpperCase();
+    const parts = text.trim().split(/\s+/);
+    const symbol = parts[1]?.toUpperCase();
+    // The object walk was scaffolding: it is how the registry's shape was
+    // found, and the shape is encoded now. Kept behind a word rather than
+    // deleted, because the day Wormhole upgrades its Sui package it is the
+    // only thing that will say what moved - but it costs ten requests and
+    // prints "notExists" for every table id, which is normal and reads as
+    // broken.
+    const raw = (parts[2] ?? "").toLowerCase() === "raw";
     if (!symbol) {
       await ctx.reply("Укажите тикер. Пример: <code>/sui USDC</code>", { parse_mode: "HTML" });
       return;
@@ -114,11 +122,25 @@ export function registerSuiCommand(bot: Telegraf) {
       holders.push({ what: `LayerZero — ${deployment.rawType}`, address: deployment.address });
     }
 
-    if (holders.length === 0) {
-      lines.push("", "Ни один реестр не называет держателя на Sui.");
+    // Named whether or not the dump is asked for: LayerZero is deployed on
+    // Sui and the bot does not read it, so a report saying "only Wormhole is
+    // checked here" should be backed by a number rather than left as a
+    // blanket caveat.
+    const lzOnSui = holders.filter((h) => h.what.startsWith("LayerZero"));
+    lines.push(
+      "",
+      lzOnSui.length === 0
+        ? "Реестр LayerZero не называет по этому тикеру ничего на Sui."
+        : `Реестр LayerZero называет на Sui ${lzOnSui.length} ${lzOnSui.length === 1 ? "контракт" : "контракта"} — бот их пока не читает:`
+    );
+    for (const holder of lzOnSui.slice(0, 3)) {
+      lines.push(`  <code>${esc(holder.address)}</code> — ${esc(holder.what.replace(/^LayerZero — /, ""))}`);
     }
 
-    for (const holder of holders.slice(0, 3)) {
+    if (!raw) {
+      lines.push("", `Сырой обход объекта моста: <code>/sui ${esc(symbol)} raw</code>`);
+    }
+    for (const holder of raw ? holders.slice(0, 3) : []) {
       lines.push("", `<b>${esc(holder.what)}</b>`, `<code>${esc(holder.address)}</code>`);
       const probe = await probeSuiHolder(holder.address, coinType);
       lines.push(`  баланс: <code>${esc(probe.balance)}</code>`);
