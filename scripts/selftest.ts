@@ -2056,6 +2056,15 @@ check("it does not claim the adapters are kept by hand", !/вручную в к�
 check("it names the registries the addresses come from", /реестр OFT/.test(help) && /деплои Stargate/.test(help) && /справочник Chainlink/.test(help));
 // And it must not promise balances the bot does not read.
 check("CCTP is described as identified, not measured", /CCTP/.test(help) && /хранилища у него нет/.test(help));
+// A list typed beside the table it describes drifts the moment the table
+// moves, invisibly: /other promised three chains while its table held four.
+// Both lists are built from the tables now, so this asserts they stay built.
+for (const chain of OTHER_CHAINS) {
+  check(`/other names ${chain.label}, which its table holds`, help.includes(chain.label));
+}
+for (const chain of PORTAL_CHAINS) {
+  check(`/portal names ${chain.label}`, help.includes(chain.label));
+}
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

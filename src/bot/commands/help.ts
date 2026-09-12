@@ -13,6 +13,22 @@ import { capToTelegramLimit } from "../render";
  * so a help text frozen at import time would keep quoting the number the
  * table had before any of them arrived.
  */
+/**
+ * "A, B and C" - the chains a command covers, taken from the table rather
+ * than typed beside it.
+ *
+ * /other promised "Starknet, Radix and Aleo" while its table held four
+ * chains: Paradex had been added and the sentence describing the command
+ * had not. A hand-typed list next to a table it describes drifts the moment
+ * the table moves, and the drift is invisible - which is the same way the
+ * chain count came to be one short of its own parts.
+ */
+function listOf(labels: string[]): string {
+  if (labels.length === 0) return "—";
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(", ")} и ${labels[labels.length - 1]}`;
+}
+
 export function helpText(): string {
   // TON counted here too. The line below adds it to the breakdown and this
   // sum did not, so the total came out one short of its own parts - and one
@@ -47,8 +63,8 @@ export function helpText(): string {
 <code>/lzgaps</code> — в каких сетях реестра LayerZero бот не читает хранилища.
 <code>/svm &lt;тикер&gt;</code> — как бот находит хранилища на сетях VM Solana, по шагам.
 <code>/cosmos &lt;тикер&gt;</code> — то же для сетей Cosmos.
-<code>/other &lt;тикер&gt;</code> — то же для Starknet, Radix и Aleo.
-<code>/portal &lt;тикер&gt;</code> — то же для Near и Aptos, где единственный мост — Portal.
+<code>/other &lt;тикер&gt;</code> — то же для ${listOf(OTHER_CHAINS.map((c) => c.label))}.
+<code>/portal &lt;тикер&gt;</code> — то же для ${listOf(PORTAL_CHAINS.map((c) => c.label))}, где единственный мост — Portal.
 <code>/ton &lt;тикер&gt;</code> — то же для TON, где единственный мост — LayerZero.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
