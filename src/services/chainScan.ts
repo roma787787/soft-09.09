@@ -31,11 +31,21 @@ const CHAIN_DEADLINE_MS = 8_000;
 const TOTAL_BUDGET_MS = 90_000;
 
 export interface ChainScanResult {
+  /** Only the chains that were actually asked and answered in time. */
   perChain: Array<{ chain: string; outcome: DetectionOutcome }>;
-  /** Chains actually asked: the table minus the ones known to be silent. */
+  /** Chains asked at all: the table minus the ones known to be silent. */
   reachable: number;
-  /** Of those, how many ran out of time - neither an answer nor a refusal. */
-  skipped: number;
+  /**
+   * Chains that ran out of time, by key.
+   *
+   * Named rather than counted, because a caller has to be able to put them
+   * with the chains that failed outright: a timeout returns an empty result
+   * and no error, so counted as an answer it becomes "checked, nothing
+   * there" about a chain nobody finished asking.
+   */
+  timedOut: string[];
+  /** Chains not asked at all, the last sweep having found them silent. */
+  unreachable: string[];
   /** Every chain in the table, so a report can say what it did not cover. */
   total: number;
 }
@@ -56,21 +66,35 @@ export async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T |
 }
 
 export async function scanChainsForAddress(address: `0x${string}`): Promise<ChainScanResult> {
-  const reachable = CHAINS.filter((c) => !isUnreachable(c.key));
+  const asked = CHAINS.filter((c) => !isUnreachable(c.key));
+  const unreachable = CHAINS.filter((c) => isUnreachable(c.key)).map((c) => c.key);
   const started = Date.now();
-  let skipped = 0;
+  const timedOut: string[] = [];
 
-  const perChain = await mapWithConcurrency(reachable, CONCURRENCY, async (c) => {
+  const answers = await mapWithConcurrency(asked, CONCURRENCY, async (c) => {
     if (Date.now() - started > TOTAL_BUDGET_MS) {
-      skipped++;
-      return { chain: c.key, outcome: { results: [] } as DetectionOutcome };
+      timedOut.push(c.key);
+      return undefined;
     }
     const outcome = await withDeadline(detectOnChain(c.key, address), CHAIN_DEADLINE_MS);
-    if (!outcome) skipped++;
-    return { chain: c.key, outcome: outcome ?? ({ results: [] } as DetectionOutcome) };
+    if (!outcome) {
+      timedOut.push(c.key);
+      return undefined;
+    }
+    return { chain: c.key, outcome };
   });
 
-  return { perChain, reachable: reachable.length, skipped, total: CHAINS.length };
+  // A chain that ran out of time is left out of the results entirely rather
+  // than handed back as an empty answer. Every caller counts what it got
+  // back as "asked and answered", and an empty result with no error reads
+  // exactly like "checked, nothing there".
+  return {
+    perChain: answers.filter((a): a is { chain: string; outcome: DetectionOutcome } => a !== undefined),
+    reachable: asked.length,
+    timedOut,
+    unreachable,
+    total: CHAINS.length,
+  };
 }
 
 /**
@@ -79,11 +103,10 @@ export async function scanChainsForAddress(address: `0x${string}`): Promise<Chai
  * and only one of them means the address is not there.
  */
 export function scanShortfall(scan: ChainScanResult): string {
-  const unreachable = scan.total - scan.reachable;
-  if (unreachable === 0 && scan.skipped === 0) return "";
+  if (scan.unreachable.length === 0 && scan.timedOut.length === 0) return "";
   return (
-    `Просмотрено ${scan.reachable - scan.skipped} сетей из ${scan.total}: ` +
-    `${unreachable} не отвечают совсем, ${scan.skipped} не уложились в отведённое время. ` +
+    `Просмотрено ${scan.perChain.length} сетей из ${scan.total}: ` +
+    `${scan.unreachable.length} не отвечают совсем, ${scan.timedOut.length} не уложились в отведённое время. ` +
     "Если сеть известна, укажите её явно — это и быстрее, и точнее."
   );
 }

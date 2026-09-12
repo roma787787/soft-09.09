@@ -2230,18 +2230,33 @@ check("a whole-token report still speaks for the token", /под этот тик
 // and the other left as it was. One scan now, so the next change lands in
 // both. What it must always say is the shortfall: "not found on any chain"
 // and "not looked at on all of them" are different answers.
-check("a complete sweep claims no shortfall", scanShortfall({ perChain: [], reachable: 250, skipped: 0, total: 250 }) === "");
+const answered = (n: number) => Array.from({ length: n }, (_, i) => ({ chain: `c${i}`, outcome: { results: [] } }));
+const names = (n: number) => Array.from({ length: n }, (_, i) => `x${i}`);
+
+check(
+  "a complete sweep claims no shortfall",
+  scanShortfall({ perChain: answered(250), reachable: 250, timedOut: [], unreachable: [], total: 250 }) === ""
+);
 check(
   "chains that answer nothing are counted out loud",
-  /22 не отвечают совсем/.test(scanShortfall({ perChain: [], reachable: 228, skipped: 0, total: 250 }))
+  /22 не отвечают совсем/.test(
+    scanShortfall({ perChain: answered(228), reachable: 228, timedOut: [], unreachable: names(22), total: 250 })
+  )
 );
 check(
   "and so are the ones that ran out of time",
-  /5 не уложились/.test(scanShortfall({ perChain: [], reachable: 250, skipped: 5, total: 250 }))
+  /5 не уложились/.test(
+    scanShortfall({ perChain: answered(245), reachable: 250, timedOut: names(5), unreachable: [], total: 250 })
+  )
 );
+// The count is of what actually came back, not of what was set out for -
+// a timeout is neither an answer nor a refusal, and counting it as either
+// put 249 beside 229 in adjacent lines of one report.
 check(
   "with the count of what was actually looked at",
-  /Просмотрено 223 сетей из 250/.test(scanShortfall({ perChain: [], reachable: 228, skipped: 5, total: 250 }))
+  /Просмотрено 223 сетей из 250/.test(
+    scanShortfall({ perChain: answered(223), reachable: 228, timedOut: names(5), unreachable: names(22), total: 250 })
+  )
 );
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the

@@ -2,7 +2,7 @@ import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
-import { scanChainsForAddress, scanShortfall } from "../../services/chainScan";
+import { scanChainsForAddress } from "../../services/chainScan";
 import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
@@ -179,8 +179,7 @@ export function registerInfoCommand(bot: Telegraf) {
     let message =
       `🔎 <code>${address}</code>\n\n` +
       `Ни на одной сети этот адрес не относится к LayerZero, Hyperlane, Transporter или Portal.\n\n` +
-      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.` +
-      (scanShortfall(scan) ? `\n${scanShortfall(scan)}` : "");
+      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.`;
 
     if (contractFoundOn.length > 0) {
       message +=
@@ -188,9 +187,21 @@ export function registerInfoCommand(bot: Telegraf) {
         `Чтобы посмотреть, что это, укажите сеть явно: <code>/info ${address} ${contractFoundOn.length === 1 ? (getChain(perChain.find((p) => !p.outcome.rpcError && !p.outcome.noContract)!.chain)?.key ?? "ethereum") : "bsc"}</code>`;
     }
 
-    if (failed.length > 0) {
-      const failedNames = failed.map((p) => getChain(p.chain)?.label ?? p.chain);
-      message += `\n\n⚠️ Не ответили и остались непроверенными: ${failedNames.join(", ")}. Подробности: /diag`;
+    // Everything the scan did not finish, in one list rather than in a count
+    // beside it. A second summary sentence said "0 не отвечают совсем" on a
+    // report that went on to name twenty-two chains which had not answered,
+    // and put 249 next to 229 in adjacent lines. Three ways of not being
+    // checked - the node refused, the deadline ran out, the chain was known
+    // silent before the sweep began - are one fact to whoever is reading:
+    // this address was not looked for there.
+    const unchecked = [
+      ...failed.map((p) => p.chain),
+      ...scan.timedOut,
+      ...scan.unreachable,
+    ].map((key) => getChain(key)?.label ?? key);
+
+    if (unchecked.length > 0) {
+      message += `\n\n⚠️ Не ответили и остались непроверенными: ${unchecked.join(", ")}. Подробности: /diag`;
     }
 
     // Capped, which it never was: this is the one report that grew with the
