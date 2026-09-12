@@ -13,8 +13,12 @@ import { capToTelegramLimit } from "../render";
  * so a help text frozen at import time would keep quoting the number the
  * table had before any of them arrived.
  */
-function helpText(): string {
-  const total = CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length;
+export function helpText(): string {
+  // TON counted here too. The line below adds it to the breakdown and this
+  // sum did not, so the total came out one short of its own parts - and one
+  // short of what /sources reports for the same tables.
+  const total =
+    CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 1;
   return `🌉 <b>Bridge Liquidity Tracker</b>
 
 Показывает, сколько токена лежит в контрактах-хранилищах мостов по всем сетям. Это нужно, чтобы понять, хватит ли ликвидности на вывод, прежде чем заводить туда деньги.
@@ -22,7 +26,7 @@ function helpText(): string {
 Поддерживаемые протоколы:
 • <b>LayerZero</b> — OApp / OFT / OFT Adapter (V2, best-effort V1), не только Stargate
 • <b>Hyperlane</b> — Warp Route TokenRouter / MailboxClient
-• <b>Transporter</b> — Chainlink CCIP Router и Circle CCTP (TokenMessenger/MessageTransmitter), которые Transporter использует под капотом
+• <b>Transporter</b> — пулы Chainlink CCIP, включая Solana. Контракты Circle CCTP бот опознаёт по адресу, но балансов по ним не показывает: CCTP сжигает и чеканит, хранилища у него нет
 • <b>Portal</b> — Wormhole Token Bridge (сам мост и токены, которые он выпустил)
 • <b>Stargate</b> — пулы Stargate, включая нативные
 • <b>Across</b> — SpokePool, одно хранилище на сеть
@@ -54,9 +58,14 @@ function helpText(): string {
 Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length + PORTAL_CHAINS.length + 1} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.
 
 <b>Откуда берутся адреса хранилищ:</b>
-• Wormhole — фиксированный Token Bridge на каждую сеть, зашит в бот
-• Hyperlane — публичный реестр warp-маршрутов, обновляется вместе с пакетом
-• LayerZero — единого реестра нет, адаптеры ведутся вручную в конфиге
+Ни один адрес не вписан руками — все приходят из реестров самих мостов, поэтому новый деплой доезжает вместе с обновлением, а не после правки кода.
+• Wormhole — официальный SDK моста, Token Bridge на каждой сети
+• Hyperlane — публичный реестр warp-маршрутов
+• LayerZero — реестр OFT по тикерам, плюс обход сети пиров: один найденный контракт разворачивается в остальные сети сам
+• Stargate — опубликованные деплои Stargate
+• Across — опубликованные деплои Across
+• CCIP — справочник Chainlink, роутер и реестр пулов на каждой сети
+Сети бот тоже находит сам — сверяя список у CoinGecko и у реестров мостов, и проверяя каждую ноду, прежде чем добавить. Что именно добавлено и что отвергнуто — <code>/chains</code>.
 
 Пример: <code>/info ARB</code>`;
 }

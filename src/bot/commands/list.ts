@@ -1,9 +1,27 @@
 import type { Telegraf, Context } from "telegraf";
 import { listTrackedForChat } from "../../services/db";
 import { getChain } from "../../config/chains";
+import { getAddress, type Address } from "viem";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The canonical spelling of a stored address.
+ *
+ * They are stored lowercased so /untrack finds them however they were typed,
+ * but the checksummed form is what /track echoed back and what every
+ * explorer shows - and a list that spells them differently reads as a list
+ * of different addresses. Defensive because the column is only as clean as
+ * whatever wrote it.
+ */
+function pretty(address: string): string {
+  try {
+    return getAddress(address as Address);
+  } catch {
+    return address;
+  }
 }
 
 export function registerListCommand(bot: Telegraf) {
@@ -18,7 +36,7 @@ export function registerListCommand(bot: Telegraf) {
 
     const lines = rows.map((r) => {
       const chain = getChain(r.chain);
-      return `• <b>${esc(chain?.label ?? r.chain)}</b> <code>${esc(r.address)}</code>${r.label ? `\n  ${esc(r.label)}` : ""}`;
+      return `• <b>${esc(chain?.label ?? r.chain)}</b> <code>${esc(pretty(r.address))}</code>${r.label ? `\n  ${esc(r.label)}` : ""}`;
     });
 
     // Budgeted rather than sent whole. Nothing limits how much one chat can

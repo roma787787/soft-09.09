@@ -93,6 +93,9 @@ import {
   CHAINS,
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
+import { helpText } from "../src/bot/commands/help";
+import { SVM_CHAINS } from "../src/config/svmChains";
+import { OTHER_CHAINS } from "../src/config/otherChains";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
@@ -2036,6 +2039,23 @@ check("nothing to add is not a change", withCustodianTokens(listed, []).size ===
 // on that would skip the entire table on a fresh boot - so only a chain that
 // was actually asked and said nothing counts as unreachable.
 check("an unmeasured chain is not called unreachable", isUnreachable("ethereum") === false);
+
+// The first screen anyone sees, and it was contradicting the rest of the bot.
+// Its chain total left TON out while its own breakdown counted it, so the
+// sum came out one short of its parts and one short of /sources - and it
+// described LayerZero as a handful of adapters kept by hand, on a bot that
+// reads a registry of three hundred and fifty-eight tickers.
+const help = helpText();
+const totalInHelp = Number(/Сетей сейчас (\d+)/.exec(help)?.[1]);
+const partsInHelp = [...help.matchAll(/(\d+) (?:EVM|на VM Solana|Cosmos|прочих)/g)].reduce((n, m) => n + Number(m[1]), 0);
+check("the help's chain total matches its own breakdown", totalInHelp === partsInHelp, `итого=${totalInHelp} по частям=${partsInHelp}`);
+check("and counts every table the bot reads", totalInHelp === CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 1);
+// Understating the product on its own front page is its own kind of wrong
+// answer: every address comes from a bridge's registry, none by hand.
+check("it does not claim the adapters are kept by hand", !/вручную в конфиге/.test(help));
+check("it names the registries the addresses come from", /реестр OFT/.test(help) && /деплои Stargate/.test(help) && /справочник Chainlink/.test(help));
+// And it must not promise balances the bot does not read.
+check("CCTP is described as identified, not measured", /CCTP/.test(help) && /хранилища у него нет/.test(help));
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
