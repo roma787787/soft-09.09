@@ -26,6 +26,35 @@ export interface StorageReport {
    * restart" is all this check can ever say, however many deploys pass.
    */
   buildKnown: boolean;
+  /** Whether the database sits inside a mounted volume. */
+  onVolume: boolean;
+}
+
+/**
+ * Whether the database file lives inside the host's mounted volume.
+ *
+ * A volume mounted for the first time is empty, exactly like no volume at
+ * all, so the boots table cannot tell the two apart on the first run - and
+ * it reported a correctly mounted volume as "похоже на контейнер без тома",
+ * which is the opposite of what had just been set up. The host says so
+ * directly, so it is asked rather than inferred.
+ *
+ * Compared as path segments: a mount at /data must not match /database,
+ * which a plain prefix test would accept.
+ */
+export function isOnVolume(dbPath: string, mountPath: string): boolean {
+  if (!mountPath) return false;
+  // Both have to be absolute. Dropping the leading empty segment makes
+  // "data/bot.db" and "/data/bot.db" identical, so a relative path - which
+  // resolves against the working directory, inside the container, and is
+  // the default this whole check exists to catch - would match a mount at
+  // "/data" and be reported as sitting on the volume.
+  if (!mountPath.startsWith("/") || !dbPath.startsWith("/")) return false;
+  const segments = (p: string) => p.replace(/\/+$/, "").split("/").filter(Boolean);
+  const mount = segments(mountPath);
+  const file = segments(dbPath);
+  if (mount.length === 0 || file.length <= mount.length) return false;
+  return mount.every((part, i) => file[i] === part);
 }
 
 /**

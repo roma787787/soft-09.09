@@ -48,6 +48,15 @@ const MIN_POLL_INTERVAL_MS = 5_000;
 export const env = {
   telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
   dbPath: read("DB_PATH") || "./data/bot.db",
+  /**
+   * Where the host mounted a persistent volume, if it did.
+   *
+   * The only signal that separates "no volume" from "a volume mounted for
+   * the first time". Both start with an empty directory, so the boot check
+   * alone cannot tell them apart - and it was calling a correctly mounted,
+   * freshly created volume a container without one.
+   */
+  volumeMountPath: read("RAILWAY_VOLUME_MOUNT_PATH") || read("VOLUME_MOUNT_PATH") || "",
   trackPollIntervalMs: positiveInt("TRACK_POLL_INTERVAL_MS", 60_000, MIN_POLL_INTERVAL_MS),
   trackMaxBlockRange: BigInt(positiveInt("TRACK_MAX_BLOCK_RANGE", 2000, 1)),
   trackInitialLookbackBlocks: BigInt(positiveInt("TRACK_INITIAL_LOOKBACK_BLOCKS", 1000, 1)),

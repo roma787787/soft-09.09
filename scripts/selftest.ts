@@ -47,7 +47,7 @@ import {
   symbolsAgree,
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
-import { verdictFrom } from "../src/services/storage";
+import { isOnVolume, verdictFrom } from "../src/services/storage";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
 import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
@@ -4607,6 +4607,28 @@ check(
 // deploy that introduced the check.
 check("a file that was not there is a new file", verdictFrom([], "abc", false) === "new-file");
 check("a file that was there claims nothing yet", verdictFrom([], "abc", true) === "unknown");
+
+// A volume mounted for the first time is empty, exactly like no volume at
+// all - so the boots table cannot separate them, and the report called a
+// correctly mounted volume "похоже на контейнер без тома" minutes after it
+// was set up. The host is asked instead of guessed.
+check("a database inside the mount is on the volume", isOnVolume("/data/bot.db", "/data"));
+check("and deeper inside it too", isOnVolume("/data/state/bot.db", "/data"));
+check("a database outside it is not", !isOnVolume("./data/bot.db", "/data"));
+// Segment comparison alone would call the relative "data/bot.db" a match for
+// a mount at "/data": both split to the same segments once the leading empty
+// one is dropped. A relative path is resolved against the working directory,
+// which is inside the container, so it is never on the volume.
+check("a relative path is never on an absolute mount", !isOnVolume("data/bot.db", "/data"));
+// A prefix test would accept /database for a mount at /data, and report a
+// container without a volume as having one.
+check("a longer name that merely starts the same is not a match", !isOnVolume("/database/bot.db", "/data"));
+check("a trailing slash on the mount changes nothing", isOnVolume("/data/bot.db", "/data/"));
+// No mount path in the environment means the host said nothing, which is
+// not the same as saying no - but it is all the claim this can support.
+check("no mount path means no claim", !isOnVolume("/data/bot.db", ""));
+// The file cannot BE the mount point: that would be a directory.
+check("the mount point itself is not a database on it", !isOnVolume("/data", "/data"));
 check(
   "a boot from another build proves the file outlived it",
   verdictFrom([{ sha: "old" }, { sha: "abc" }], "abc") === "survived-deploy"
