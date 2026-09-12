@@ -6,6 +6,7 @@ import { OTHER_CHAINS } from "../../config/otherChains";
 import { PORTAL_CHAINS } from "../../config/portalChains";
 import { PORTAL_COSMOS_CHAINS, portalCosmosUnreachable } from "../../config/portalCosmosChains";
 import { TON_CHAIN } from "../../config/tonChain";
+import { SUI_CHAIN } from "../../config/suiChain";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../../protocols/addresses/portal";
 import { hyperlaneRouteCount, hyperlaneSkippedRoutes } from "../../bridges/hyperlane";
 import { layerZeroRegistrySize, layerZeroConfigSize } from "../../bridges/layerzero";
@@ -27,13 +28,14 @@ export function registerSourcesCommand(bot: Telegraf) {
     const lines: string[] = ["<b>Что бот знает о мостах</b>", ""];
 
     lines.push(
-      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 1}</b>`,
+      `Сетей подключено: <b>${CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 2}</b>`,
       `  ${CHAINS.length} EVM (включая Tron — у него EVM-совместимый RPC)`,
       `  ${SVM_CHAINS.length} на VM Solana: ${SVM_CHAINS.map((c) => c.label).join(", ")}`,
       `  ${COSMOS_CHAINS.length} Cosmos: ${COSMOS_CHAINS.map((c) => c.label).join(", ")}`,
       `  ${OTHER_CHAINS.length} прочих: ${OTHER_CHAINS.map((c) => c.label).join(", ")}`,
       `  ${PORTAL_CHAINS.length} только через Portal: ${PORTAL_CHAINS.map((c) => c.label).join(", ")}`,
-      `  1 только через LayerZero: ${TON_CHAIN.label}`
+      `  1 только через LayerZero: ${TON_CHAIN.label}`,
+      `  1 только через Wormhole: ${SUI_CHAIN.label}`
     );
     lines.push("");
 
@@ -42,7 +44,8 @@ export function registerSourcesCommand(bot: Telegraf) {
     lines.push(
       `<b>Wormhole</b> — Token Bridge в ${wormholeChains} из ${CHAINS.length} сетей EVM, плюс Solana.`,
       "Адреса из официального реестра Wormhole, держит любой токен, который через него проходил.",
-      `На Near и Aptos это единственный мост, который бот умеет читать: ни warp-маршрутов, ни пулов там нет.`,
+      `На Near, Aptos и Sui это единственный мост, который бот умеет читать: ни warp-маршрутов, ни пулов там нет.`,
+      "На Sui залог лежит не по адресу, а объектом внутри состояния моста: бот обходит его реестр токенов и берёт баланс из записи под нужную монету.",
       ...(PORTAL_COSMOS_CHAINS.length > 0
         ? [
             `В Cosmos читается в ${PORTAL_COSMOS_CHAINS.length} ${plural(PORTAL_COSMOS_CHAINS.length, "сети", "сетях", "сетях")}: ` +

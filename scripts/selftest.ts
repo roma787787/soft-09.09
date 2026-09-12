@@ -2437,7 +2437,15 @@ const help = helpText();
 const totalInHelp = Number(/Сетей сейчас (\d+)/.exec(help)?.[1]);
 const partsInHelp = [...help.matchAll(/(\d+) (?:EVM|на VM Solana|Cosmos|прочих)/g)].reduce((n, m) => n + Number(m[1]), 0);
 check("the help's chain total matches its own breakdown", totalInHelp === partsInHelp, `итого=${totalInHelp} по частям=${partsInHelp}`);
-check("and counts every table the bot reads", totalInHelp === CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 1);
+// TON and Sui are the two that have no table of their own: one chain each,
+// counted by hand. Sui joined the total the day its vaults became readable -
+// the count means "chains whose bridge vaults are read", and leaving it out
+// would have the first screen deny a balance the report prints.
+check("and counts every table the bot reads", totalInHelp === CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 2);
+// The claim that stopped being true, not the words: the other bridges on
+// Sui genuinely are unread, and the help still says so.
+check("the help no longer says Sui gives only a supply", !help.includes("читает только выпуск токена"));
+check("and says what it does read there", help.includes("реестр токенов Wormhole"));
 // Understating the product on its own front page is its own kind of wrong
 // answer: every address comes from a bridge's registry, none by hand.
 check("it does not claim the adapters are kept by hand", !/вручную в конфиге/.test(help));
