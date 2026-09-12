@@ -107,7 +107,7 @@ import {
   explainMissing,
   normaliseLzKey,
 } from "../src/bridges/lzMetadata";
-import { resolveRegistryDeployments, stargateNote } from "../src/bot/commands/liquidity";
+import { listedChains, resolveRegistryDeployments, stargateNote } from "../src/bot/commands/liquidity";
 import type { Custodian } from "../src/bridges/types";
 import type { Address } from "viem";
 import { validateAddress } from "../src/protocols/addresses/validate";
@@ -2154,6 +2154,28 @@ check("while TIA keeps its collateral routes there", celestiaTia.length > 0 && c
 // These two name no collateral denom and genuinely escrow the chain's own
 // coin, so the fallback that caused the bug is right for them and must stay.
 check("a collateral route that names no denom still falls back to the chain coin", findNativeModuleRoutes("KYVE").some((r) => r.denom === "ukyve"));
+
+// "CoinGecko знает токен в сетях: Paradex" - about ETH, which the price API
+// lists nowhere. The line was built from the chains rows were found on, so a
+// Hyperlane route on Paradex became a claim the price API never made. It is
+// about who listed what; a row found through a bridge's own registry is
+// already in the report above.
+const listedBoth = listedChains({
+  platforms: [
+    { chainKey: "ethereum", platformName: "Ethereum", tokenAddress: USDT_ETH },
+    { chainKey: undefined, platformName: "Tezos", tokenAddress: USDT_ETH },
+  ],
+  otherPlatforms: [
+    { chainKey: "solanamainnet", platformName: "Solana", tokenAddress: "So111" },
+    { chainKey: TON_CHAIN.key, platformName: "TON", tokenAddress: "0:abc" },
+    { chainKey: undefined, platformName: "Sui", tokenAddress: "0xsui" },
+  ],
+});
+check("both halves of the price API's answer are listed", listedBoth.includes("Ethereum") && listedBoth.includes("Solana") && listedBoth.includes("TON"), listedBoth.join(", "));
+// A platform the bot cannot read is not in this line - it has its own.
+check("a platform the bot does not support is left out", !listedBoth.includes("Tezos") && !listedBoth.includes("Sui"));
+// The whole point: nothing enters this line except what the price API said.
+check("a token listed nowhere claims nothing", listedChains({ platforms: [], otherPlatforms: [] }).length === 0);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

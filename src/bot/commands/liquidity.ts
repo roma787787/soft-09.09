@@ -36,7 +36,7 @@ import {
 import { findSyntheticHyperlaneChains } from "../../bridges/hyperlane";
 import { lastDiscovery } from "../../services/chainDiscovery";
 import type { Custodian } from "../../bridges/types";
-import type { TokenPlatform } from "../../services/coingecko";
+import type { TokenInfo, TokenPlatform } from "../../services/coingecko";
 import type { Address } from "viem";
 import { formatAmount, readChainSupplies, readCustodianBalances, type BalanceRow } from "../../services/balances";
 import { renderLiquidityReport, splitForTelegram } from "../render";
@@ -238,6 +238,26 @@ export function stargateNote(balances: BalanceRow[] = []): string {
     `строка LayerZero, ${formatAmount(biggest.amount, biggest.decimals)} в сети ${where}. ` +
     "Отдельной ликвидности у Stargate тут не существует: это те же деньги, а не ещё одни."
   );
+}
+
+/**
+ * The chains the price API listed and this bot can read - both halves of its
+ * answer, the EVM addresses and the others.
+ *
+ * The non-EVM half used to be stood in for by the chains rows were found on,
+ * which is a different fact wearing the same sentence. ETH is listed by
+ * nobody: its report found a Hyperlane route on Paradex and then said
+ * "CoinGecko знает токен в сетях: Paradex", attributing to the price API a
+ * claim it never made. A row found through a bridge's own registry is
+ * already in the report above; this line is only about who listed what.
+ */
+export function listedChains(token: Pick<TokenInfo, "platforms" | "otherPlatforms">): string[] {
+  return [
+    ...new Set([
+      ...token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!),
+      ...token.otherPlatforms.filter((p) => p.chainKey).map((p) => chainMeta(p.chainKey!)?.label ?? p.chainKey!),
+    ]),
+  ];
 }
 
 export async function buildLiquidityReport(rawSymbol: string, chainFilter?: string): Promise<string> {
@@ -543,12 +563,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
   const supplyOnly = supplyTargets.length > 0 ? await readChainSupplies(supplyTargets) : [];
 
-  // Solana now counts as a chain the bot checks, so it belongs with the
-  // supported ones rather than in the "not checked" footer.
-  const solanaLabel = [...new Set(nonEvmAll.map((r) => chainMeta(r.chainKey)?.label ?? r.chainKey))];
-  const supportedChains = [
-    ...new Set(token.platforms.filter((p) => p.chainKey).map((p) => getChain(p.chainKey!)?.label ?? p.chainKey!)),
-  ];
+  const supportedChains = listedChains(token);
   const unsupportedPlatforms = [
     ...new Set([
       ...token.platforms.filter((p) => !p.chainKey).map((p) => p.platformName),
@@ -575,7 +590,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     mintsOnly: ccipSvmRead.mints ? [{ chainKey: SOLANA_KEY, protocol: "ccip" as const }] : [],
     supplyOnly,
     scope: {
-      supportedChains: [...supportedChains, ...solanaLabel],
+      supportedChains,
       unsupportedPlatforms,
       // Said out loud, because the alternative reads as a failure. A chain's
       // own coin has no contract address anywhere, and every lookup here
