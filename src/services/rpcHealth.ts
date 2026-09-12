@@ -176,6 +176,22 @@ export function isFragile(chainKey: string): boolean {
   return measured && healthyCount(chainKey) <= 1;
 }
 
+/**
+ * Whether every endpoint this chain has was measured and none answered.
+ *
+ * Distinct from "no healthy endpoints", which is also what an unmeasured
+ * chain looks like - and skipping those would skip the whole table before
+ * the first sweep lands. Only a chain that was actually asked and said
+ * nothing counts, so a sweep of every chain can pass over it instead of
+ * paying six timeouts to learn what was already known.
+ */
+export function isUnreachable(chainKey: string): boolean {
+  const urls = rpcUrlsFor(chainKey);
+  if (urls.length === 0) return true;
+  const measured = urls.some((url) => health.has(url));
+  return measured && healthyCount(chainKey) === 0;
+}
+
 /* ------------------------------------------------------------------ */
 
 /** Chains queued for an unscheduled re-measure, and the timer that drains them. */

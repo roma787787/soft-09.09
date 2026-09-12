@@ -23,7 +23,7 @@ import {
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
-import { isFragile, orderEndpoints } from "../src/services/rpcHealth";
+import { isFragile, isUnreachable, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
@@ -2030,6 +2030,12 @@ check("so the vault lookup reaches four chains instead of two", widened.size ===
 check("but it never overwrites what the price API said", widened.get("ethereum") === USDT_ETH);
 check("and the original map is left alone", listed.size === 2);
 check("nothing to add is not a change", withCustodianTokens(listed, []).size === 2);
+
+// Before the first sweep nothing has been measured, and a chain with no
+// measurements looks exactly like a chain where nothing answered. Skipping
+// on that would skip the entire table on a fresh boot - so only a chain that
+// was actually asked and said nothing counts as unreachable.
+check("an unmeasured chain is not called unreachable", isUnreachable("ethereum") === false);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
