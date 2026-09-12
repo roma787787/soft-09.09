@@ -722,7 +722,8 @@ export function renderLiquidityReport(input: ReportInput): string {
   }
   if (mismatchedAdapters > 0) {
     notes.push(
-      `Пропущено ${mismatchedAdapters} ${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
+      `${plural(mismatchedAdapters, "Пропущен", "Пропущено", "Пропущено")} ${mismatchedAdapters} ` +
+      `${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
         ` LayerZero: ${plural(
           mismatchedAdapters,
           "он не подтвердил, что держит",

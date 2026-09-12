@@ -7,13 +7,14 @@ import {
   type RegistryChainUse,
 } from "../../bridges/layerzero";
 import { getChain } from "../../config/chains";
-import { lzChainKeyIndex, normaliseLzKey } from "../../bridges/lzMetadata";
+import { lzChainKeyIndex, normaliseLzKey, REGISTRY_CHAIN_IDS } from "../../bridges/lzMetadata";
 import { resolveSvmChain } from "../../config/svmChains";
 import { resolveCosmosChain } from "../../config/cosmosChains";
 import { resolveOtherChain } from "../../config/otherChains";
 import { resolvePortalChain } from "../../config/portalChains";
 import { TON_CHAIN } from "../../config/tonChain";
 import { replyInParts } from "../reply";
+import { plural } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -99,7 +100,7 @@ export function registerLzGapsCommand(bot: Telegraf) {
       "<b>LayerZero: что бот не читает</b>",
       "",
       `Сетей в реестре: ${uses.length}, деплойментов: ${totalDeployments}.`,
-      `Читаются: ${covered.length} ${covered.length === 1 ? "сеть" : "сетей"} ` +
+      `Читаются: ${covered.length} ${plural(covered.length, "сеть", "сети", "сетей")} ` +
         `(EVM — ${all.filter((c) => c.reader === "evm").length}, ` +
         `VM Solana — ${all.filter((c) => c.reader === "svm").length}, ` +
         `TON — ${all.filter((c) => c.reader === "ton").length}, ` +
@@ -115,7 +116,9 @@ export function registerLzGapsCommand(bot: Telegraf) {
     lines.push(
       "",
       `<b>Не читаются: ${gaps.length}</b> — в них ${missedLocking} ` +
-        "деплойментов реестр считает блокирующими, и их сейчас не видно ни в одном отчёте.",
+        `${plural(missedLocking, "деплоймент", "деплоймента", "деплойментов")} реестр считает ` +
+        `${plural(missedLocking, "блокирующим", "блокирующими", "блокирующими")}, ` +
+        "и их сейчас не видно ни в одном отчёте.",
       ""
     );
 
@@ -126,12 +129,18 @@ export function registerLzGapsCommand(bot: Telegraf) {
     for (const gap of gaps.slice(0, 25)) {
       const mark = gap.locking > 0 ? "❗" : "·";
       const detail = gap.locking > 0 ? `${gap.locking} с залогом из ${gap.deployments}` : `${gap.deployments}, все чеканят`;
+      const known = normaliseLzKey(gap.lzChainKey);
+      const writtenDownId = REGISTRY_CHAIN_IDS[known];
       const why =
         gap.reader !== "сеть неизвестна"
           ? "ридера LayerZero под это семейство сетей нет"
-          : index.has(normaliseLzKey(gap.lzChainKey))
+          : index.has(known)
             ? "имя сопоставлено, но сети нет в боте"
-            : "этого имени нет в метаданных LayerZero — сопоставить не с чем";
+            : // The id is written down, so the name is not the problem: the
+              // chain itself is missing, and that is what discovery acts on.
+              writtenDownId !== undefined
+              ? `id сети известен (${writtenDownId}), но самой сети нет в таблице — /chains обнови`
+              : "этого имени нет в метаданных LayerZero — сопоставить не с чем";
       lines.push(`${mark} <b>${esc(gap.label)}</b> — ${detail}\n   <i>${esc(why)}</i>`);
     }
     if (gaps.length > 25) lines.push(`… и ещё ${gaps.length - 25}.`);

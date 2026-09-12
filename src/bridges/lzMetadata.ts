@@ -10,8 +10,11 @@ import { LZ_V2_EID_BY_CHAIN } from "../protocols/addresses/layerzero";
  * These are the leftovers, where the registry files a chain under a name
  * that appears nowhere else - Linea as "zkconsensys" was losing all
  * twenty-two of its deployments to it. Each entry is a chain id, never a
- * chain key, so it can only ever name a chain the bot already has, and it
- * stops mattering on its own the day the metadata publishes the name.
+ * chain key, and it stops mattering on its own the day the metadata
+ * publishes the name.
+ *
+ * A chain id here is also enough to go and add the chain: see
+ * registryOnlyCandidates below.
  */
 export const REGISTRY_CHAIN_IDS: Record<string, number> = {
   zkconsensys: 59144, // Linea
@@ -229,6 +232,29 @@ export async function lzChainKeyIndex(): Promise<Map<string, string>> {
     if (chain && !index.has(name)) index.set(name, chain.key);
   }
   return index;
+}
+
+/**
+ * The registry's chains that the bot's table does not have, ready to be
+ * added.
+ *
+ * The chains discovery looks at come from the price API and from LayerZero's
+ * chain metadata, and Sanko and Glue are in neither: nobody prices tokens
+ * there, and the metadata does not describe them - which is why they are in
+ * the table above at all. But the OFT registry files deployments on them,
+ * three of which it marks as locking collateral, and the id above is all a
+ * chain registry needs to describe a chain. So the same table that lets a
+ * name be recognised also lets the chain be found.
+ *
+ * Only the ids, and only for chains not already present: everything else
+ * about the chain - its name, its nodes, whether it is a testnet - comes
+ * from the registries discovery already consults, which is what decides
+ * whether it gets in.
+ */
+export function registryOnlyCandidates(): { slug: string; chainId: number; name: string }[] {
+  return Object.entries(REGISTRY_CHAIN_IDS)
+    .filter(([, chainId]) => !getChainByChainId(chainId))
+    .map(([name, chainId]) => ({ slug: name, chainId, name }));
 }
 
 export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {

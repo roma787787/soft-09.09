@@ -4527,6 +4527,25 @@ check(
 );
 check("either source alone works", mergeCandidates([], [bridgeOnly]).length === 1 && mergeCandidates([{ id: "base", chainId: 8453, name: "Base" }], []).length === 1);
 
+// The third source: a name in the OFT registry with an id written down next
+// to it. Sanko and Glue are in neither of the other two - nobody prices
+// tokens there and LayerZero's metadata does not describe them - so without
+// this they were never even looked up, and /lzgaps reported three locking
+// deployments on them as unreadable deploy after deploy.
+const registryOnly = { slug: "sanko", chainId: 1996, name: "sanko" };
+check("a registry name with an id becomes a candidate", mergeCandidates([], [], [registryOnly]).length === 1);
+check(
+  "and it carries no facts of its own - the registries describe it",
+  mergeCandidates([], [], [registryOnly])[0].facts === undefined
+);
+// Merged last for the same reason the price API goes first: the slug is what
+// /track subscriptions are stored under, and the registry's short name is
+// nobody else's spelling of the chain.
+check(
+  "it never renames a chain the other sources already named",
+  mergeCandidates([{ id: "sanko-real", chainId: 1996, name: "Sanko" }], [], [registryOnly])[0].slug === "sanko-real"
+);
+
 
 // -----------------------------------------------------------------------------
 // Whether the database outlives the container

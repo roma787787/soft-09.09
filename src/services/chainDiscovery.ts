@@ -4,7 +4,7 @@ import type { Chain } from "viem";
 import * as viemChains from "viem/chains";
 import { type ChainDef, CHAINS, getChain, getChainByChainId, registerChain, resolveAnyChain } from "../config/chains";
 import { assetPlatforms, type AssetPlatform } from "./coingecko";
-import { lzChainCandidates, type LzChainCandidate } from "../bridges/lzMetadata";
+import { lzChainCandidates, registryOnlyCandidates, type LzChainCandidate } from "../bridges/lzMetadata";
 import { learnEndpoints } from "./extraEndpoints";
 import { sweepRpcHealth } from "./rpcHealth";
 import { env } from "../config/env";
@@ -633,7 +633,13 @@ interface Candidate {
  */
 export function mergeCandidates(
   platforms: Iterable<AssetPlatform>,
-  bridgeChains: Iterable<LzChainCandidate>
+  bridgeChains: Iterable<LzChainCandidate>,
+  /**
+   * Chains known only as a name in the OFT registry and an id next to it.
+   * Merged last and never overriding the others: they carry no facts at all,
+   * so they are a reason to look a chain up, not a description of it.
+   */
+  registryChains: Iterable<{ slug: string; chainId: number; name: string }> = []
 ): Candidate[] {
   const byId = new Map<number, Candidate>();
 
@@ -663,6 +669,16 @@ export function mergeCandidates(
       chainId: chain.chainId,
       name: chain.name,
       facts: factsFromBridge(chain),
+      fromBridgeOnly: true,
+    });
+  }
+
+  for (const chain of registryChains) {
+    if (byId.has(chain.chainId)) continue;
+    byId.set(chain.chainId, {
+      slug: chain.slug,
+      chainId: chain.chainId,
+      name: chain.name,
       fromBridgeOnly: true,
     });
   }
@@ -714,7 +730,10 @@ async function runDiscovery(): Promise<DiscoveryReport> {
   }
 
   const candidates: Candidate[] = [];
-  for (const candidate of mergeCandidates(platforms.values(), bridgeChains)) {
+  // And the third: names the OFT registry uses whose chain id is written
+  // down here. Sanko and Glue are in neither of the other two, and /lzgaps
+  // has been reporting three locking deployments on them as unreadable.
+  for (const candidate of mergeCandidates(platforms.values(), bridgeChains, registryOnlyCandidates())) {
     report.listed++;
     if (candidate.fromBridgeOnly) report.fromBridges++;
     if (getChainByChainId(candidate.chainId)) {
