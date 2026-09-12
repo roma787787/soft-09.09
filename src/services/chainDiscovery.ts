@@ -361,8 +361,33 @@ export function factsFromRegistryEntry(
  * ones whose first listed endpoint has gone stale, which is the same thing
  * that already cost the bot a chain a week ago.
  */
+/**
+ * Endpoints for chains whose published address is dead, written down here.
+ *
+ * The last resort, and deliberately a short list. Every other endpoint in
+ * this file comes from a registry that maintains it; these are the chains
+ * where the registries carry an address that no longer resolves at all, so
+ * there is nothing to maintain and the chain simply cannot be added. Sanko
+ * is the case: its one published node is an ENOTFOUND, and three LayerZero
+ * deployments holding collateral sit behind it.
+ *
+ * An entry here is a candidate, not a claim. If it does not answer either,
+ * the chain is refused exactly as before and /chains &lt;сеть&gt; shows what
+ * this address said - which is how an entry gets removed again.
+ */
+const FALLBACK_RPCS: Record<number, string[]> = {
+  // Sanko runs on Caldera, whose rollups answer at this shape of address.
+  1996: ["https://sanko-mainnet.calderachain.xyz/http"],
+  // Glue's own two nodes answered 502 - an outage, so they may well come
+  // back on their own; this is a third door rather than a replacement.
+  1300: ["https://lb.routeme.sh/rpc/evm/1300"],
+};
+
 async function mergedFacts(chainId: number): Promise<ChainFacts | undefined> {
-  return mergeFacts(factsFor(chainId), await registryFacts(chainId));
+  const merged = mergeFacts(factsFor(chainId), await registryFacts(chainId));
+  const fallback = FALLBACK_RPCS[chainId];
+  if (!merged || !fallback) return merged;
+  return { ...merged, rpcUrls: [...new Set([...merged.rpcUrls, ...fallback])] };
 }
 
 /** The merge itself, without the fetch, so it can be checked offline. */
