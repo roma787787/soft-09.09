@@ -112,12 +112,22 @@ export function registerPortalCommand(bot: Telegraf) {
         // store, and every address it names is then asked for a balance -
         // the one that answers is the escrow, and nothing else is reported.
         const resources = await aptosResources("aptos", adapter.address);
-        lines.push(`  <i>ресурсов на объекте: ${resources.length}</i>`);
+        const shown = resources.slice(0, 12);
+        lines.push(
+          `  <i>ресурсов на объекте: ${resources.length}${
+            shown.length < resources.length ? `, показаны первые ${shown.length}` : ""
+          }</i>`
+        );
+        // Listed from the first dozen, gathered from all of them: the
+        // escrow is whichever address answers with a balance, and it has no
+        // reason to be among the first resources the node happens to return.
         const candidates = new Set<string>();
         for (const resource of resources) {
+          for (const address of resource.addresses) candidates.add(address);
+        }
+        for (const resource of shown) {
           const short = resource.type.replace(/^0x[0-9a-f]+::/i, "");
           lines.push(`  · <code>${esc(short)}</code>${resource.fields.length ? ` — ${esc(resource.fields.join(", "))}` : ""}`);
-          for (const address of resource.addresses) candidates.add(address);
         }
 
         for (const candidate of [...candidates].slice(0, 6)) {

@@ -47,6 +47,7 @@ import {
   symbolsAgree,
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
+import { verdictFrom } from "../src/services/storage";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
 import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
@@ -4526,6 +4527,34 @@ check(
 );
 check("either source alone works", mergeCandidates([], [bridgeOnly]).length === 1 && mergeCandidates([{ id: "base", chainId: 8453, name: "Base" }], []).length === 1);
 
+
+// -----------------------------------------------------------------------------
+// Whether the database outlives the container
+// -----------------------------------------------------------------------------
+
+// The whole point is that "no volume" and "volume" look identical from the
+// inside on the first boot, and only the second boot tells them apart. So the
+// first boot must not claim either.
+check("a fresh file claims nothing", verdictFrom([], "abc") === "unknown");
+check(
+  "a boot from another build proves the file outlived it",
+  verdictFrom([{ sha: "old" }, { sha: "abc" }], "abc") === "survived-deploy"
+);
+check(
+  "boots from this build alone only prove a restart",
+  verdictFrom([{ sha: "abc" }, { sha: "abc" }], "abc") === "survived-restart"
+);
+// Without a commit sha every deploy looks like a restart. Understating it is
+// the safe direction: claiming a volume that is not there loses subscriptions
+// silently, while claiming less than there is only costs a check.
+check(
+  "an unnamed build never claims a volume",
+  verdictFrom([{ sha: null }, { sha: null }], "") === "survived-restart"
+);
+check(
+  "and a named build after unnamed ones does",
+  verdictFrom([{ sha: null }], "abc") === "survived-deploy"
+);
 
 // -----------------------------------------------------------------------------
 

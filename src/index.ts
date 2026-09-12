@@ -5,11 +5,20 @@ import { createBot } from "./bot";
 import { startTracker } from "./services/tracker";
 import { startChainDiscovery, loadDiscoveredChains } from "./services/chainDiscovery";
 import { startRpcHealth } from "./services/rpcHealth";
-import "./services/db"; // ensure schema is created on boot
+import { storageReport } from "./services/db"; // importing it also creates the schema
 
 async function main() {
   console.log(`[startup] configured chains: ${CHAINS.map((c) => c.key).join(", ")}`);
-  console.log(`[startup] db: ${env.dbPath}`);
+  const storage = storageReport();
+  console.log(
+    `[startup] db: ${env.dbPath} — ${
+      storage.verdict === "survived-deploy"
+        ? `переживает деплой, прошлых запусков: ${storage.previousBoots}`
+        : storage.verdict === "survived-restart"
+          ? "пережила перезапуск, деплой ещё не проверялся"
+          : "создана заново: тома, похоже, нет"
+    }`
+  );
   console.log(`[startup] сборка: ${env.commitSha ? env.commitSha.slice(0, 7) : "коммит не передан"}${env.gitBranch ? ` (${env.gitBranch})` : ""}`);
   console.log(`[startup] libuv threadpool requested: ${requestedThreadpoolSize} (DNS lookups queue here)`);
 

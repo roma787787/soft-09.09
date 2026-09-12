@@ -222,7 +222,12 @@ export async function findTokenAdminRegistry(chainKey: string): Promise<CcipRegi
     return { steps };
   }
 
-  for (const selector of selectors.slice(0, 5)) {
+  // Bounded because each selector costs up to three calls and a chain can
+  // list dozens of lanes. Eight rather than a handful: the older OnRamps
+  // have no registry in their config at all, and on a chain whose first
+  // lanes are old ones a shorter walk gives up on a registry that exists.
+  const walked = selectors.slice(0, 8);
+  for (const selector of walked) {
     let onRamp: Address | undefined;
     try {
       const result = await client.readContract({
@@ -259,7 +264,13 @@ export async function findTokenAdminRegistry(chainKey: string): Promise<CcipRegi
   steps.push({
     name: "TokenAdminRegistry",
     ok: false,
-    detail: "ни один OnRamp не отдал реестр в известных форматах конфига",
+    // With the count, because "none of them" reads as "all of them were
+    // asked". When the walk stops short of the lanes the chain listed, the
+    // honest answer is that the registry was not found in what was checked.
+    detail:
+      walked.length < selectors.length
+        ? `проверено ${walked.length} направлений из ${selectors.length} — реестр не отдал ни один OnRamp`
+        : "ни один OnRamp не отдал реестр в известных форматах конфига",
   });
   return { steps };
 }

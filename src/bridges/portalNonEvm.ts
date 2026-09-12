@@ -193,7 +193,10 @@ async function fetchResources(chainKey: string, address: string): Promise<unknow
 }
 
 export async function aptosResources(chainKey: string, address: string): Promise<AptosResource[]> {
-  return (await fetchResources(chainKey, address)).slice(0, 12).map((raw) => {
+  // Everything the object carries, not a first handful: the caller prints
+  // how many there are, and a count taken after a cap says twelve for an
+  // object with forty.
+  return (await fetchResources(chainKey, address)).map((raw) => {
     const data = (raw as { data?: unknown })?.data;
     const fields = data && typeof data === "object" ? Object.keys(data as object) : [];
     return {

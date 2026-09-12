@@ -7,6 +7,7 @@ import { mapWithConcurrency } from "../../services/concurrency";
 import { healthSummary, orderedRpcUrls } from "../../services/rpcHealth";
 import { learnedSummary } from "../../services/extraEndpoints";
 import { replyInParts } from "../reply";
+import { storageReport } from "../../services/db";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -343,6 +344,26 @@ export function registerDiagCommand(bot: Telegraf) {
     const header = `🩺 Связь с сетями: ${ok.length} из ${health.length}\n\n`;
 
     let footer = "";
+
+    // Before the node list, because it is the one line here that says
+    // something is lost rather than slow. Without a volume the file holding
+    // /track subscriptions is thrown away at every deploy, and nothing in
+    // the bot said so - /track answered "готово" either way.
+    const storage = storageReport();
+    if (storage.verdict === "survived-deploy") {
+      footer += `\n\n💾 База переживает деплой (записей о прошлых запусках: ${storage.previousBoots}` +
+        `${storage.firstBootAt ? `, первый — ${esc(storage.firstBootAt)} UTC` : ""}). Подписки /track не теряются.`;
+    } else if (storage.verdict === "survived-restart") {
+      footer += storage.buildKnown
+        ? `\n\n💾 База пережила перезапуск, но ещё ни одного деплоя — переживёт ли его, пока неизвестно.`
+        : `\n\n💾 База пережила перезапуск. Отличить деплой от перезапуска не выйдет: ` +
+          `сборка себя не называет — нужна переменная <code>RAILWAY_GIT_COMMIT_SHA</code>.`;
+    } else {
+      footer += `\n\n⚠️ База создана заново при этом запуске. Если так будет и после следующего деплоя, ` +
+        `тома нет: подписки /track и кеши пропадают при каждом обновлении. ` +
+        `Лечится томом на /data и переменной <code>DB_PATH=/data/bot.db</code>.`;
+    }
+
     if (skipped.length > 0) {
       // Said outright rather than counted with the failures: these chains
       // were never asked, and reporting them as down would be a lie that
