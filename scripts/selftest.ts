@@ -97,6 +97,7 @@ import {
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../src/config/suiChain";
 import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees } from "../src/bridges/sui";
+import { isNodeLevelError } from "../src/services/suiClient";
 import { helpText } from "../src/bot/commands/help";
 import { formatInfoCard } from "../src/bot/format";
 import { SVM_CHAINS } from "../src/config/svmChains";
@@ -1511,6 +1512,44 @@ const suiKnownButUnread = renderLiquidityReport({
 });
 check("a chain whose vaults cannot be read says so", suiKnownButUnread.includes("не хранилища мостов"));
 check("and names it", /Sui/.test(suiKnownButUnread));
+
+// A node that does not implement a method, or is rate-limiting, will be
+// answered differently by the node beside it. Treating every RPC error as
+// final meant one endpoint's "method not found" ended the read for all three.
+check("a missing method is a reason to try the next node", isNodeLevelError(-32601, "Method not found"));
+check("so is a rate limit", isNodeLevelError(-32000, "Too Many Requests"));
+check("and an overloaded node", isNodeLevelError(undefined, "service temporarily unavailable"));
+// A bad argument will be bad everywhere, and asking three nodes in turn
+// only turns one wrong question into three.
+check("a bad argument is final", !isNodeLevelError(-32602, "Invalid params: not a valid coin type"));
+
+// This chain cannot be tried from a laptop the way an EVM node can, so
+// without the node's own words the only way to learn why a read failed is
+// to guess and redeploy.
+const supplyWithReason = renderLiquidityReport({
+  symbol: "USDC",
+  name: "USDC",
+  balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  supplyOnly: [{ chainKey: "sui", unreadable: true, reason: "Cannot find treasury cap" }],
+});
+check("an unread supply quotes what the chain said", supplyWithReason.includes("Cannot find treasury cap"));
+// Without a captured reason the old two-way split still stands.
+const supplyWithoutReason = renderLiquidityReport({
+  symbol: "USDC",
+  name: "USDC",
+  balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  supplyOnly: [{ chainKey: "sui", unreadable: true }],
+});
+check(
+  "and falls back to the generic split when it said nothing",
+  supplyWithoutReason.includes("контракт не отдаёт выпуск")
+);
 
 // Stargate's row is labelled "пул LayerZero" because that is what it is, so
 // a chain whose own OFT route mints and whose Stargate pool holds 356 000

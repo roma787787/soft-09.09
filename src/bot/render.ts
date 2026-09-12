@@ -218,7 +218,14 @@ export interface ReportInput {
    * contract produced no row and no mention, so "checked, no bridge there"
    * looked exactly like "not checked".
    */
-  supplyOnly?: Array<{ chainKey: string; amount?: bigint; decimals?: number; unreadable?: boolean }>;
+  supplyOnly?: Array<{
+    chainKey: string;
+    amount?: bigint;
+    decimals?: number;
+    unreadable?: boolean;
+    /** What the chain said, when the reader captured it. */
+    reason?: string;
+  }>;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinGecko listed that this bot supports. */
@@ -424,6 +431,11 @@ function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
     // a contract that will not answer needs nothing at all.
     const described = unknown.map((s) => {
       const name = esc(chainName(s.chainKey));
+      // The chain's own words where the reader kept them. A generic "the
+      // contract will not give its supply" is the same sentence whether the
+      // coin type was wrong, the method was unsupported, or only the decimals
+      // were missing - three different fixes behind one line.
+      if (s.reason) return `${name} — ${esc(s.reason)}`;
       return s.unreadable ? `${name} (контракт не отдаёт выпуск)` : `${name} (узел не ответил)`;
     });
     lines.push(`Выпуск не прочитался: ${described.join(", ")}.`);

@@ -16,6 +16,22 @@ const TIMEOUT_MS = 10_000;
 
 export class SuiRpcError extends Error {}
 
+/**
+ * Whether an RPC error is about this node rather than about the request.
+ *
+ * The distinction decides whether trying the next endpoint can help. A node
+ * that does not implement a method, is rate-limiting, or is overloaded will
+ * be answered differently by the node beside it; a malformed argument will
+ * not. Treating every RPC error as final meant one endpoint's "method not
+ * found" ended the read for all three.
+ */
+export function isNodeLevelError(code: unknown, message: string): boolean {
+  if (code === -32601 || code === -32603 || code === -32000 || code === -32005) return true;
+  return /method not found|not supported|unsupported|rate ?limit|too many requests|overload|unavailable|try again/i.test(
+    message
+  );
+}
+
 /** Set by the caller when it wants a node other than the configured ones. */
 export function suiEndpoints(): string[] {
   return endpointsWithOverride(SUI_CHAIN.rpcEnvVar, [...SUI_CHAIN.defaultRpcUrls]);
@@ -55,7 +71,14 @@ export async function suiCall<T>(method: string, params: unknown[]): Promise<T> 
     }
 
     if (payload?.error) {
-      throw new SuiRpcError(String(payload.error.message ?? payload.error.code ?? "ошибка RPC"));
+      const message = String(payload.error.message ?? payload.error.code ?? "ошибка RPC");
+      // Only a request-level error is final. Anything that is a property of
+      // this particular node gets the next one a chance.
+      if (isNodeLevelError(payload.error.code, message)) {
+        lastTransportError = new SuiRpcError(message);
+        continue;
+      }
+      throw new SuiRpcError(message);
     }
     return payload?.result as T;
   }

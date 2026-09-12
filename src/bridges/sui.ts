@@ -90,6 +90,17 @@ export interface SuiSupply {
   decimals?: number;
   /** True when Sui answered and refused, rather than not answering at all. */
   unreadable?: boolean;
+  /**
+   * What Sui actually said, verbatim.
+   *
+   * A count of failures says a read did not work and nothing else, and this
+   * chain cannot be tried from a laptop the way an EVM node can - so without
+   * the node's own words the only way to find out why is to guess and
+   * redeploy. Two calls can fail here and they need different fixes: the
+   * supply refused means the coin type is wrong, the metadata refused means
+   * the amount cannot be scaled.
+   */
+  reason?: string;
 }
 
 /**
@@ -105,19 +116,39 @@ export async function readSuiSupply(coinType: string, symbol: string): Promise<S
 
   let amount: bigint | undefined;
   let unreadable = false;
+  let reason: string | undefined;
   try {
-    amount = parseSupply(await suiCall("suix_getTotalSupply", [coinType]));
-    if (amount === undefined) unreadable = true;
+    const raw = await suiCall("suix_getTotalSupply", [coinType]);
+    amount = parseSupply(raw);
+    if (amount === undefined) {
+      unreadable = true;
+      // The shape, not just "it failed". A field we did not expect is a
+      // different problem from a coin that does not exist, and the only way
+      // to tell from here is to see what came back.
+      reason = `выпуск пришёл в неожиданном виде: ${JSON.stringify(raw).slice(0, 120)}`;
+    }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     // Sui answering "no such coin" is a fact about the coin; a node that
     // could not be reached is a fact about the connection. The report says
     // different things about them, so they must not arrive as one.
-    if (!(err instanceof SuiRpcError)) return { chainKey: SUI_CHAIN.key, tokenAddress: coinType };
+    if (!(err instanceof SuiRpcError)) {
+      return { chainKey: SUI_CHAIN.key, tokenAddress: coinType, reason: message };
+    }
     unreadable = true;
+    reason = message;
   }
 
   const meta = await suiCoinMetadata(coinType);
   if (!suiSymbolAgrees(meta?.symbol, symbol)) return undefined;
+
+  // The supply read and the metadata read fail separately, and conflating
+  // them sent the report saying "the contract will not give its supply"
+  // about a supply that had been read perfectly well and only lacked the
+  // decimals needed to scale it.
+  if (!unreadable && amount !== undefined && meta?.decimals === undefined) {
+    reason = "выпуск прочитан, но монета не публикует decimals — масштабировать нечем";
+  }
 
   return {
     chainKey: SUI_CHAIN.key,
@@ -125,6 +156,7 @@ export async function readSuiSupply(coinType: string, symbol: string): Promise<S
     amount: unreadable ? undefined : amount,
     decimals: meta?.decimals,
     unreadable,
+    reason,
   };
 }
 

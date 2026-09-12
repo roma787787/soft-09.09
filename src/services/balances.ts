@@ -76,6 +76,8 @@ export interface ChainSupply {
   decimals?: number;
   /** The contract refused, as opposed to the node being unreachable. */
   unreadable?: boolean;
+  /** What the chain said, where the reader captured it. */
+  reason?: string;
 }
 
 /**
