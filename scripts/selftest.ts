@@ -104,7 +104,7 @@ import { SVM_CHAINS } from "../src/config/svmChains";
 import { OTHER_CHAINS } from "../src/config/otherChains";
 import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, classifyOft, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
-import { dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
+import { dedupeCustodians, protocolsReadableOn, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
 import {
   REGISTRY_CHAIN_IDS,
   candidatesFrom,
@@ -1602,6 +1602,20 @@ check("and neither is a missing object", parseCustodyAmount(null) === undefined)
 // are not - which is precisely why the report has to say which. Without the
 // line, "no bridge holds any of it here" would be covering for the ones that
 // were never asked; with the old wording it denied the check that does run.
+// Two lines of one report contradicted each other: /info TURBOS sui said
+// Hyperlane, LayerZero, Stargate, Across and CCIP had been checked on Sui
+// and found nothing, and four lines later that only Wormhole is read there.
+// None of the five has a reader for that chain, so none was ever asked.
+check("on Sui only the bridge with a reader counts as checked", protocolsReadableOn("sui").join() === "wormhole");
+check("TON is LayerZero's alone", protocolsReadableOn("ton").join() === "layerzero");
+check("Aptos has two", protocolsReadableOn("aptos").sort().join() === "layerzero,wormhole");
+check("Solana has four", protocolsReadableOn("solanamainnet").length === 4);
+// An EVM chain is asked by everything, and so is a report with no chain named.
+check("an EVM chain is asked by every bridge", protocolsReadableOn("ethereum").length === 6);
+check("and so is a report about no chain in particular", protocolsReadableOn().length === 6);
+// A chain nothing reads claims nothing, rather than claiming all six.
+check("a chain with no reader claims none", protocolsReadableOn("нет-такой-сети").length === 0);
+
 // A token whose only vault is on Sui. Both short replies in the report build
 // return before Sui is read - "no custody contracts found" and the
 // one-network "nothing here" - so the custody row has to exist by the time

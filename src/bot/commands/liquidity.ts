@@ -8,7 +8,13 @@ import {
   TokenSourceNotConfiguredError,
   TokenSourceRequestError,
 } from "../../services/coingecko";
-import { resolveCustodians, dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../../bridges";
+import {
+  resolveCustodians,
+  dedupeCustodians,
+  protocolsReadableOn,
+  tokenByChainFrom,
+  withCustodianTokens,
+} from "../../bridges";
 import { findVaultCustodians } from "../../bridges/vaults";
 import { findCcipCustodians } from "../../bridges/ccip";
 import { findStargateCustodians, stargateCoverage } from "../../bridges/stargate";
@@ -735,7 +741,11 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // Every bridge above is asked on every report, so the ones that
       // contributed nothing were asked too, and saying so is the difference
       // between "this bridge holds none of it" and "this bot ignores it".
-      checkedProtocols: BRIDGE_ORDER,
+      // Only the ones with a reader for the chain in question. Listing a
+      // bridge as checked where nothing can ask it is the one claim this
+      // report must never make - and it was making it four lines above the
+      // caveat that said the opposite.
+      checkedProtocols: protocolsReadableOn(chainFilter),
       // A chain the next report will cover must not be called unchecked in
       // this one; until the scan lands, the list is not something to make
       // claims from.

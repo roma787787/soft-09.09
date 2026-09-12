@@ -1,5 +1,12 @@
 import type { Address } from "viem";
-import type { Custodian } from "./types";
+import { BRIDGE_ORDER, type BridgeProtocol, type Custodian } from "./types";
+import { getChain } from "../config/chains";
+import { getSvmChain } from "../config/svmChains";
+import { getCosmosChain } from "../config/cosmosChains";
+import { getOtherChain } from "../config/otherChains";
+import { getPortalChain } from "../config/portalChains";
+import { TON_CHAIN } from "../config/tonChain";
+import { SUI_CHAIN } from "../config/suiChain";
 import { PORTAL_TOKEN_BRIDGE_BY_CHAIN } from "../protocols/addresses/portal";
 import { findHyperlaneCustodians } from "./hyperlane";
 import { findLayerZeroCustodians } from "./layerzero";
@@ -92,4 +99,33 @@ export function dedupeCustodians(custodians: Custodian[]): Custodian[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Which bridges the bot can actually read on a given chain.
+ *
+ * Without this the scope line and the per-chain caveat contradicted each
+ * other inside one report: /info TURBOS sui said Hyperlane, LayerZero,
+ * Stargate, Across and CCIP had been checked on Sui and found nothing, and
+ * four lines later that only Wormhole is read there. The second was true.
+ * None of the five has a reader for that chain, so none of them was asked,
+ * and listing them as checked is the one thing this report must never do.
+ *
+ * With no chain named the report covers everything, and every bridge is
+ * asked somewhere.
+ */
+export function protocolsReadableOn(chainKey?: string): BridgeProtocol[] {
+  if (!chainKey) return [...BRIDGE_ORDER];
+  if (getChain(chainKey)) return [...BRIDGE_ORDER];
+
+  // Solana is the one non-EVM chain with a reader for four of them.
+  if (chainKey === "solanamainnet") return ["wormhole", "hyperlane", "layerzero", "ccip"];
+  if (getSvmChain(chainKey)) return ["hyperlane", "layerzero"];
+  if (getCosmosChain(chainKey)) return ["wormhole", "hyperlane"];
+  if (chainKey === TON_CHAIN.key) return ["layerzero"];
+  if (chainKey === SUI_CHAIN.key) return ["wormhole"];
+  if (chainKey === "aptos") return ["wormhole", "layerzero"];
+  if (getPortalChain(chainKey)) return ["wormhole"];
+  if (getOtherChain(chainKey)) return ["hyperlane"];
+  return [];
 }
