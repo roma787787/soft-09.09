@@ -497,6 +497,10 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   if (lzAptosRead.mints) nativeOftChains.add("aptos");
 
   const solanaRows = chainFilter ? nonEvmAll.filter((r) => r.chainKey === chainFilter) : nonEvmAll;
+
+  /** Chains this report is allowed to talk about: all of them, or the one asked for. */
+  const inScope = (chains: Iterable<string>) =>
+    chainFilter ? [...chains].filter((c) => c === chainFilter) : [...chains];
   const solanaHasSomething = solanaRows.length > 0 || Object.keys(nonEvmFailures).length > 0;
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
@@ -580,17 +584,30 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     attemptsByChain: { ...attemptsByChain, ...nonEvmAttempts },
     notReadableByChain,
     failureReasons: nonEvmReasons,
-    nativeOftChains: [...nativeOftChains],
+    // Every list of chains is narrowed the way the balances already are.
+    //
+    // A report asked about one network is about that network. Left whole,
+    // these said things about the others - and worse than merely off-topic:
+    // the mint-only list is filtered against the chains that have a LayerZero
+    // row, and those come from the balances, which the filter has already
+    // cut down. So /info USDT ton called Arbitrum mint-only while the full
+    // report showed six million USDT in an adapter there. Two reports from
+    // one bot, contradicting each other, and the narrow one wrong.
+    nativeOftChains: inScope(nativeOftChains),
     mismatchedAdapters,
-    syntheticHyperlaneChains: findSyntheticHyperlaneChains(symbol),
+    syntheticHyperlaneChains: inScope(findSyntheticHyperlaneChains(symbol)),
     // A CCIP pool on Solana that turned out to be burn-mint. The account is
     // real and holds nothing by design, so it is said as "mints" rather than
     // left out - which is how it read before, indistinguishable from Solana
     // never having been checked.
-    mintsOnly: ccipSvmRead.mints ? [{ chainKey: SOLANA_KEY, protocol: "ccip" as const }] : [],
+    mintsOnly:
+      ccipSvmRead.mints && (!chainFilter || chainFilter === SOLANA_KEY)
+        ? [{ chainKey: SOLANA_KEY, protocol: "ccip" as const }]
+        : [],
     supplyOnly,
     scope: {
       supportedChains,
+      singleChain: chainFilter ? chainMeta(chainFilter)?.label ?? chainFilter : undefined,
       unsupportedPlatforms,
       // Said out loud, because the alternative reads as a failure. A chain's
       // own coin has no contract address anywhere, and every lookup here

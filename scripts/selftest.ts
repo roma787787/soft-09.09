@@ -2177,6 +2177,53 @@ check("a platform the bot does not support is left out", !listedBoth.includes("T
 // The whole point: nothing enters this line except what the price API said.
 check("a token listed nowhere claims nothing", listedChains({ platforms: [], otherPlatforms: [] }).length === 0);
 
+// -----------------------------------------------------------------------------
+// A report narrowed to one network is about that network. Left whole, its
+// chain lists spoke for the others - and the mint-only list is filtered
+// against the chains that have a LayerZero row, which come from the balances
+// the filter has already cut down. So /info USDT ton called Arbitrum
+// mint-only while the full report showed six million USDT in an adapter
+// there: two reports from one bot contradicting each other, the narrow one
+// wrong.
+// -----------------------------------------------------------------------------
+
+const narrowed = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [fakeBalance("ton", "layerzero", 2_018_260_742200n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  // What the caller now hands it: only the chain in scope.
+  nativeOftChains: [],
+  syntheticHyperlaneChains: [],
+  scope: {
+    supportedChains: [],
+    unsupportedPlatforms: [],
+    byProtocol: { layerzero: 1 },
+    checkedProtocols: ["wormhole", "hyperlane", "layerzero", "stargate", "across", "ccip"],
+    singleChain: "TON",
+  },
+});
+check("a one-network report says its gaps are that network's", /в этой сети \(TON\)/.test(narrowed), narrowed);
+check("and not a claim about the ticker everywhere", !/под этот тикер не нашлось/.test(narrowed));
+// The wide report keeps the wide wording, because there it is true.
+const wholeToken = renderLiquidityReport({
+  symbol: "USDT",
+  name: "Tether",
+  balances: [fakeBalance("ethereum", "layerzero", 1n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  scope: {
+    supportedChains: [],
+    unsupportedPlatforms: [],
+    byProtocol: { layerzero: 1 },
+    checkedProtocols: ["wormhole", "layerzero"],
+  },
+});
+check("a whole-token report still speaks for the token", /под этот тикер не нашлось/.test(wholeToken));
+
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
 // number at the wrong scale reads as real and is off by orders of magnitude.

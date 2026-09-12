@@ -240,6 +240,15 @@ export interface ReportInput {
     /** Why a checked bridge found nothing, where the reason is known. */
     notFoundNotes?: Partial<Record<BridgeProtocol, string>>;
     /**
+     * The one network this report was narrowed to, when it was.
+     *
+     * Every "not found" sentence then means "not found here", and saying it
+     * the wide way is a claim the report cannot support: /info USDC base
+     * announced that LayerZero had no vault for USDC while its adapter on
+     * Ethereum held one and three quarter million.
+     */
+    singleChain?: string;
+    /**
      * True when the price API lists no contract address for the token on any
      * chain at all.
      *
@@ -287,8 +296,14 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
     // does not carry the token, and for a token Stargate moves through its
     // LayerZero contract that is simply false - which is exactly how a
     // correct report got read as a missing one.
+    //
+    // And "под этот тикер" is a claim about the token everywhere, which a
+    // report about one network is in no position to make: /info USDC base
+    // said LayerZero had nothing for USDC while its adapter on Ethereum held
+    // one and three quarter million.
+    const where = scope.singleChain ? `в этой сети (${esc(scope.singleChain)})` : "под этот тикер";
     lines.push(
-      `Проверены, но своих хранилищ под этот тикер не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+      `Проверены, но своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
     );
     for (const p of notFound) {
       const note = scope.notFoundNotes?.[p];
