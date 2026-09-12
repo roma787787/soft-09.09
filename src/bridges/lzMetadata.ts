@@ -192,7 +192,7 @@ function urlsOf(value: unknown): string[] {
   return [...new Set(urls)];
 }
 
-let cache: { at: number; data: Map<string, number> } | undefined;
+let cache: { at: number } | undefined;
 let inFlight: Promise<Map<string, number>> | undefined;
 
 /**
@@ -232,7 +232,10 @@ export async function lzChainKeyIndex(): Promise<Map<string, string>> {
 }
 
 export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
-  if (cache && Date.now() - cache.at < TTL_MS) return cache.data;
+  // Rebuilt from the cached payload rather than returned from cache. The
+  // download is what the six-hour window is for; the mapping is cheap and
+  // depends on a chain table that keeps growing under it.
+  if (cache && Date.now() - cache.at < TTL_MS && haveEntries()) return indexEntries();
   if (inFlight) return inFlight;
 
   inFlight = (async () => {
@@ -244,12 +247,15 @@ export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = extractEids(await response.json());
-      cache = { at: Date.now(), data };
+      cache = { at: Date.now() };
       console.log(`[layerzero] eid из метаданных: ${data.size} сетей`);
       return data;
     } catch (err) {
       console.error("[layerzero] не удалось загрузить метаданные сетей:", err);
-      return cache?.data ?? new Map();
+      // A failed refresh falls back to the last payload read, re-indexed
+      // against the table as it stands - not to a mapping from whenever that
+      // payload arrived.
+      return haveEntries() ? indexEntries() : new Map();
     } finally {
       inFlight = undefined;
     }
@@ -265,29 +271,51 @@ export async function fetchLzEidsFromMetadata(): Promise<Map<string, number>> {
  * not yield a plausible V2 eid is skipped rather than guessed at.
  */
 export function extractEids(payload: unknown): Map<string, number> {
-  const found = new Map<string, number>();
-  if (!payload || typeof payload !== "object") return found;
+  if (!payload || typeof payload !== "object") return new Map();
   lastSeen = Object.keys(payload as Record<string, unknown>).length;
   lastEntries = [];
-  keyIndex = new Map();
   lastCandidates = candidatesFrom(payload);
+
+  for (const [rawKey, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    remember(rawKey, value as Record<string, any>);
+  }
+
+  return indexEntries();
+}
+
+/**
+ * The chain-key mapping, built from the stored facts against the table as it
+ * stands right now.
+ *
+ * Not once, when the payload arrives. The metadata is fetched at startup and
+ * cached for six hours, while the chain table is discovered in the
+ * background and takes minutes to fill - so a mapping frozen at parse time
+ * was built against forty chains and then answered for two hundred and
+ * fifty. Forty-eight chains had an eid sitting in the payload, under a name
+ * matching theirs, and no eid as far as the bot was concerned: /lzchains
+ * said "есть как «etherlink» с eid 30292 — сопоставление не сработало" and
+ * it was right, forty-eight times over. The peer walk cannot go where there
+ * is no eid, so every one of them was unreachable for six hours at a time.
+ *
+ * The facts in lastEntries do not depend on our table, so rebuilding costs
+ * a walk over five hundred small records and nothing else.
+ */
+function indexEntries(): Map<string, number> {
+  const found = new Map<string, number>();
+  keyIndex = new Map();
 
   const byNativeId = new Map<number, string>();
   for (const chain of CHAINS) byNativeId.set(chain.viemChain.id, chain.key);
 
-  for (const [rawKey, value] of Object.entries(payload as Record<string, unknown>)) {
-    if (!value || typeof value !== "object") continue;
-    const entry = value as Record<string, any>;
-    remember(rawKey, entry);
-
-    // The EVM chain id is a number both sides already agree on; the name is
-    // the fallback, and only where our own alias table recognises it.
-    const nativeId = Number(entry.chainDetails?.nativeChainId ?? entry.nativeChainId);
+  for (const entry of lastEntries) {
+    const rawKey = entry.key;
+    const nativeId = entry.nativeChainId;
     const chainKey =
-      (Number.isFinite(nativeId) ? byNativeId.get(nativeId) : undefined) ?? resolveChain(rawKey)?.key;
+      (nativeId !== undefined ? byNativeId.get(nativeId) : undefined) ?? resolveChain(rawKey)?.key;
     if (!chainKey) continue;
 
-    const eid = pickV2Eid(entry);
+    const eid = entry.eids.find((e) => e > 30000 && e < 31000);
 
     // A chain id is only unique among EVM chains. Aptos numbers its own
     // mainnet 1 - the number Ethereum uses - so matching on it alone filed
@@ -308,6 +336,11 @@ export function extractEids(payload: unknown): Map<string, number> {
   }
 
   return found;
+}
+
+/** True once a payload has been read, however the table looked at the time. */
+function haveEntries(): boolean {
+  return lastEntries.length > 0;
 }
 
 /**

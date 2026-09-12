@@ -2323,6 +2323,50 @@ check("but a whole segment still matches", /есть как «etherlink-mainnet�
 // The id is still the strongest signal and outranks any name.
 check("and the chain id wins over the name", /есть как «etherlink-mainnet»/.test(explainMissing("somethingelse", 42793)));
 
+// -----------------------------------------------------------------------------
+// The mapping is rebuilt against the table as it stands, not frozen when the
+// payload arrived. The metadata is fetched at startup and cached for six
+// hours while the chain table is discovered in the background and takes
+// minutes to fill - so a mapping built at parse time answered for two
+// hundred and fifty chains having been built against forty. Forty-eight
+// chains had an eid sitting in the payload, under a name matching theirs,
+// and no eid as far as the bot was concerned. The peer walk cannot go where
+// there is no eid.
+// -----------------------------------------------------------------------------
+
+// Its own number: 987_654_321 belongs to the registration test further down.
+const laterChainId = 912_345_678;
+const payloadWithLateChain = {
+  "latecomer-mainnet": { chainDetails: { nativeChainId: laterChainId }, deployments: [{ eid: 30999 }] },
+};
+
+// Parsed while the bot does not have the chain: nothing to map it to.
+check("a chain the table lacks gets no eid", extractEids(payloadWithLateChain).size === 0);
+
+// The chain arrives afterwards, the way discovery adds them.
+registerChain({
+  key: "latecomer",
+  label: "Latecomer",
+  viemChain: {
+    id: laterChainId,
+    name: "Latecomer",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: ["https://latecomer.example"] } },
+  } as never,
+  rpcEnvVar: "LATECOMER_RPC_URL",
+  defaultRpcUrls: ["https://latecomer.example"],
+  explorerTxUrl: () => "",
+  explorerAddressUrl: () => "",
+  aliases: ["latecomer"],
+  platformNames: ["Latecomer"],
+});
+
+// Without re-reading the payload, the same facts now resolve.
+check(
+  "and picks one up once the table has it, with no new download",
+  extractEids(payloadWithLateChain).get("latecomer") === 30999
+);
+
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
 // number at the wrong scale reads as real and is off by orders of magnitude.
