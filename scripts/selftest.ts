@@ -96,7 +96,7 @@ import {
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../src/config/suiChain";
-import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees, parseDynamicFields, suiTokenBridge, parseObjectShape, suiIdsIn } from "../src/bridges/sui";
+import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees, parseDynamicFields, suiTokenBridge, parseObjectShape, suiIdsIn, assetTypeParam, parseFieldPage, parseCustodyAmount } from "../src/bridges/sui";
 import { isNodeLevelError } from "../src/services/suiClient";
 import { helpText } from "../src/bot/commands/help";
 import { formatInfoCard } from "../src/bot/format";
@@ -1547,6 +1547,37 @@ check("a short hex is not mistaken for an object id", suiIdsIn({ a: "0x2" }).len
 // in a circle.
 const repeated = "0x" + "ab".repeat(32);
 check("the same id twice is one entry", suiIdsIn({ a: repeated, b: { c: repeated } }).length === 1);
+
+// The walk, as the chain actually answered it. The registry keys one field
+// per coin: NativeAsset<C> for what the bridge locked on Sui, WrappedAsset<C>
+// for what it minted here against collateral elsewhere. Counting the second
+// as custody would claim the money is on Sui when it is on the chain the
+// token came from.
+const SUI = "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI";
+const PKG = "0x26efee2b51c911237888e5dc6702868abca3c7ac12c53f76ef8eba0697695e3d";
+check("the coin a registry field is keyed by is read off its type", assetTypeParam(`${PKG}::native_asset::NativeAsset<${SUI}>`) === SUI);
+check("a type with no parameter yields nothing", assetTypeParam(`${PKG}::state::State`) === undefined);
+// Sui writes 0x2 short and everything published later at full width, and the
+// registry and the price API do not agree on which - so the comparison has
+// to go through the normaliser, not through string equality.
+check("the same coin written two ways still matches", sameSuiCoinType(assetTypeParam(`x::native_asset::NativeAsset<${SUI}>`)!, "0x2::sui::SUI"));
+
+const page = parseFieldPage({
+  data: [{ name: { value: { dummy_field: false } }, objectType: `${PKG}::native_asset::NativeAsset<${SUI}>`, objectId: "0xaa" }],
+  nextCursor: "0xbb",
+  hasNextPage: true,
+});
+check("a page of registry fields keeps its cursor", page.nextCursor === "0xbb" && page.hasNextPage);
+check("and the field type survives whole, since the coin is matched on it", page.fields[0]?.objectType.endsWith(">"));
+// A last page must end the walk rather than loop on a stale cursor.
+check("a last page says so", parseFieldPage({ data: [], hasNextPage: false }).hasNextPage === false);
+
+check("the custody balance is read off the asset object", parseCustodyAmount({ data: { content: { fields: { custody: "2939806490000" } } } }) === 2_939_806_490_000n);
+check("and also when Sui wraps it", parseCustodyAmount({ data: { content: { fields: { custody: { value: "42" } } } } }) === 42n);
+// Zero is a real answer; a shape nobody expected is not, and printing it as
+// zero would say "this vault is empty" about a vault nobody read.
+check("an unexpected shape is not read as an empty vault", parseCustodyAmount({ data: { content: { fields: {} } } }) === undefined);
+check("and neither is a missing object", parseCustodyAmount(null) === undefined);
 
 // Sui is in the chain table now, which is precisely why the report has to
 // say its vaults went unread: without the line, "no bridge holds any of it

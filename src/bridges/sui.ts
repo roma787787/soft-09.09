@@ -1,6 +1,6 @@
 import { contracts } from "@wormhole-foundation/sdk-base";
 import { suiCall, SuiRpcError } from "../services/suiClient";
-import { SUI_CHAIN, isSuiAddress, isSuiCoinType, normaliseSuiCoinType } from "../config/suiChain";
+import { SUI_CHAIN, isSuiAddress, isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../config/suiChain";
 
 /**
  * What can be read on Sui, and what deliberately is not.
@@ -11,14 +11,13 @@ import { SUI_CHAIN, isSuiAddress, isSuiCoinType, normaliseSuiCoinType } from "..
  *   - how much of a coin exists on Sui at all (`suix_getTotalSupply`), and
  *   - how much of it a named account holds (`suix_getBalance`).
  *
- * What is NOT here is walking a bridge's custody. On Sui the Wormhole token
- * bridge does not hold its collateral at an address; it holds it as a
- * `Balance<T>` inside a dynamic field of its own state object, reachable
- * only by traversing from the state id through the token registry. That is
- * real machinery, and shipping it unverified would put a number in the
- * report that nobody has ever checked against the chain - which is worse
- * than the honest gap. So the supply is read, the gap is stated, and the
- * custody walk comes when it can be tested.
+ * The third question - what a bridge holds - needs a walk rather than a
+ * call. Wormhole does not keep its collateral at an address here: the state
+ * object names a token registry, the registry keys a `NativeAsset<C>` per
+ * coin it locked, and the balance is a field of that object. Asking the
+ * bridge's own address for a balance returns zero and owns nothing, which is
+ * the same wrong answer the guess gave on Solana and on Aptos. Every step
+ * below was read off the chain before it was written.
  */
 
 /** `suix_getTotalSupply` returns the value as a decimal string. */
@@ -171,6 +170,115 @@ export async function readSuiBalance(owner: string, coinType: string): Promise<b
   }
 }
 
+/* --------------------------- Wormhole custody --------------------------- */
+
+/**
+ * Where Wormhole keeps what it locked on Sui.
+ *
+ * Nothing here is derived. The state object names its token registry, the
+ * registry's dynamic fields are typed `NativeAsset<C>` for what the bridge
+ * holds and `WrappedAsset<C>` for what it minted, and the asset object
+ * carries the balance. Every step was read off the chain before it was
+ * written, because the guess that a bridge holds its collateral at its own
+ * address was wrong here in exactly the way it was wrong on Solana and
+ * Aptos - the state answers zero and owns nothing.
+ */
+const NATIVE_ASSET = "::native_asset::NativeAsset<";
+
+/** Pages walked before giving up. Twenty fields a page, and it is one chain. */
+const MAX_REGISTRY_PAGES = 40;
+
+let registryId: string | undefined;
+let registryLookedUp = false;
+
+/** The token registry's table, read out of the bridge's own state object. */
+export async function suiTokenRegistryId(): Promise<string | undefined> {
+  if (registryLookedUp) return registryId;
+  registryLookedUp = true;
+
+  const bridge = suiTokenBridge();
+  if (!bridge) return undefined;
+
+  const shape = await probeSuiObject(bridge);
+  // By the path, not by position: the state carries three ids, and the
+  // emitter registry sits among them looking exactly like a table.
+  registryId = shape.ids.find((entry) => entry.path === "token_registry.fields.id.id")?.id;
+  return registryId;
+}
+
+export interface SuiCustody {
+  coinType: string;
+  /** The asset object the registry keys by this coin type. */
+  objectId: string;
+  amount: bigint;
+}
+
+/** `custody` is a `Balance<C>`, which Sui prints as a decimal string. */
+export function parseCustodyAmount(result: unknown): bigint | undefined {
+  const fields = (result as { data?: { content?: { fields?: unknown } } } | null)?.data?.content?.fields as
+    | Record<string, unknown>
+    | undefined;
+  const custody = fields?.custody;
+  if (typeof custody === "string" && /^\d+$/.test(custody)) return BigInt(custody);
+  if (typeof custody === "number" && Number.isSafeInteger(custody)) return BigInt(custody);
+  // A Balance sometimes arrives wrapped as { value: "…" }; the shape decides,
+  // and anything else is not a number this bot will print.
+  const value = (custody as { value?: unknown } | undefined)?.value;
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  return undefined;
+}
+
+/**
+ * The registry entry holding this coin, if the bridge holds it at all.
+ *
+ * A `WrappedAsset` entry is deliberately not accepted: that is a coin the
+ * bridge minted on Sui against collateral held elsewhere, and reporting its
+ * balance as custody would claim the money is here when it is on the chain
+ * the token came from.
+ */
+export async function findSuiNativeAsset(coinType: string): Promise<SuiDynamicField | undefined> {
+  const parent = await suiTokenRegistryId();
+  if (!parent) return undefined;
+
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_REGISTRY_PAGES; page++) {
+    let read: SuiFieldPage;
+    try {
+      read = parseFieldPage(await suiCall("suix_getDynamicFields", [parent, cursor ?? null, 50]));
+    } catch {
+      return undefined;
+    }
+
+    for (const field of read.fields) {
+      if (!field.objectType.includes(NATIVE_ASSET)) continue;
+      const held = assetTypeParam(field.objectType);
+      if (held && sameSuiCoinType(held, coinType)) return field;
+    }
+
+    if (!read.hasNextPage || !read.nextCursor) return undefined;
+    cursor = read.nextCursor;
+  }
+  return undefined;
+}
+
+/** What Wormhole's Token Bridge holds of this coin on Sui. */
+export async function readSuiWormholeCustody(coinType: string): Promise<SuiCustody | undefined> {
+  if (!isSuiCoinType(coinType)) return undefined;
+
+  const field = await findSuiNativeAsset(coinType);
+  if (!field) return undefined;
+
+  try {
+    const amount = parseCustodyAmount(
+      await suiCall("sui_getObject", [field.objectId, { showContent: true, showType: true }])
+    );
+    if (amount === undefined) return undefined;
+    return { coinType, objectId: field.objectId, amount };
+  } catch {
+    return undefined;
+  }
+}
+
 /* ------------------------------ diagnostics ----------------------------- */
 
 /** Wormhole's Sui Token Bridge, from Wormhole's own registry. */
@@ -207,7 +315,7 @@ export function parseDynamicFields(result: unknown): SuiDynamicField[] {
     const value = entry?.name?.value;
     fields.push({
       name: typeof value === "string" ? value : JSON.stringify(value ?? entry?.name?.type ?? "?").slice(0, 90),
-      objectType: String(entry?.objectType ?? "?").slice(0, 120),
+      objectType: String(entry?.objectType ?? "?"),
       objectId: String(entry?.objectId ?? "?"),
     });
   }
@@ -287,6 +395,29 @@ export async function probeSuiObject(id: string): Promise<SuiObjectShape> {
   } catch (err) {
     return { type: "?", fields: [], ids: [], note: `ошибка: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}` };
   }
+}
+
+export interface SuiFieldPage {
+  fields: SuiDynamicField[];
+  nextCursor?: string;
+  hasNextPage: boolean;
+}
+
+/** One page of a dynamic-field listing, cursor included. */
+export function parseFieldPage(result: unknown): SuiFieldPage {
+  const page = result as { nextCursor?: unknown; hasNextPage?: unknown } | null;
+  return {
+    fields: parseDynamicFields(result),
+    nextCursor: typeof page?.nextCursor === "string" ? page.nextCursor : undefined,
+    hasNextPage: page?.hasNextPage === true,
+  };
+}
+
+/** The coin type a `NativeAsset<C>` or `WrappedAsset<C>` field is keyed by. */
+export function assetTypeParam(objectType: string): string | undefined {
+  const open = objectType.indexOf("<");
+  if (open < 0 || !objectType.endsWith(">")) return undefined;
+  return objectType.slice(open + 1, -1).trim();
 }
 
 export interface SuiHolderProbe {

@@ -19,7 +19,7 @@ import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
 import { findPortalCosmosBalances } from "../../bridges/portalCosmos";
 import { findCcipSvmBalances, SOLANA_KEY } from "../../bridges/ccipSvm";
-import { readSuiSupply } from "../../bridges/sui";
+import { readSuiSupply, readSuiWormholeCustody, suiCoinMetadata } from "../../bridges/sui";
 import { SUI_CHAIN } from "../../config/suiChain";
 import { portalCosmosChain } from "../../config/portalCosmosChains";
 import { findTonBalances } from "../../bridges/ton";
@@ -639,9 +639,32 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // collateral is locked behind it anywhere, and the supply line says so.
   const suiPlatform = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key);
   const suiInScope = !!suiPlatform && (!chainFilter || chainFilter === SUI_CHAIN.key);
-  if (suiInScope && !withCustody.has(SUI_CHAIN.key)) {
-    const read = await readSuiSupply(suiPlatform!.tokenAddress, symbol);
-    if (read) supplyOnly.push(read);
+  const suiRows: BalanceRow[] = [];
+  if (suiInScope) {
+    // Wormhole's custody first: it is a balance, and a balance outranks a
+    // supply. What the registry types NativeAsset<C> is collateral locked on
+    // Sui; WrappedAsset<C> is a coin minted here against collateral
+    // elsewhere, and is deliberately not counted as custody.
+    const custody = await readSuiWormholeCustody(suiPlatform!.tokenAddress);
+    const meta = custody ? await suiCoinMetadata(suiPlatform!.tokenAddress) : undefined;
+    if (custody && meta?.decimals !== undefined) {
+      suiRows.push({
+        protocol: "wormhole",
+        chainKey: SUI_CHAIN.key,
+        custodyAddress: custody.objectId,
+        tokenAddress: custody.coinType,
+        note: "реестр токенов",
+        amount: custody.amount,
+        decimals: meta.decimals,
+      });
+    }
+    // The supply still answers the other question - how much of the coin is
+    // on Sui at all - and for one issued there, which USDC is, that is the
+    // whole answer: no bridge holds collateral behind it anywhere.
+    if (suiRows.length === 0 && !withCustody.has(SUI_CHAIN.key)) {
+      const read = await readSuiSupply(suiPlatform!.tokenAddress, symbol);
+      if (read) supplyOnly.push(read);
+    }
   }
 
   const supportedChains = listedChains(token);
@@ -655,8 +678,8 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   return renderLiquidityReport({
     symbol: token.symbol,
     name: token.name,
-    balances: [...balances, ...solanaRows],
-    checkedCount: scoped.length + solanaRows.length,
+    balances: [...balances, ...solanaRows, ...suiRows],
+    checkedCount: scoped.length + solanaRows.length + suiRows.length,
     failuresByChain: { ...failuresByChain, ...nonEvmFailures },
     attemptsByChain: { ...attemptsByChain, ...nonEvmAttempts },
     notReadableByChain,
@@ -690,7 +713,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // own coin has no contract address anywhere, and every lookup here
       // starts from one.
       noTokenAddresses: token.platforms.length === 0 && token.otherPlatforms.length === 0,
-      byProtocol: countByProtocol(scoped, solanaRows),
+      byProtocol: countByProtocol(scoped, [...solanaRows, ...suiRows]),
       // Every bridge above is asked on every report, so the ones that
       // contributed nothing were asked too, and saying so is the difference
       // between "this bridge holds none of it" and "this bot ignores it".
@@ -704,13 +727,13 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // Its supply is read; its bridge vaults are not, and without this line
       // every "no bridge holds any of it here" sentence would be covering
       // for a check that never ran.
-      bridgesUnread: suiInScope ? [SUI_CHAIN.key] : [],
+      bridgesUnread: suiInScope && suiRows.length === 0 ? [SUI_CHAIN.key] : [],
       // The walk asks the seed's node once per destination chain, so a slow
       // node can leave part of the list unasked. Reported rather than
       // silently dropped: LayerZero absent from a chain and LayerZero never
       // asked about it read identically otherwise.
       meshUnasked: inScope(mesh.unasked).length,
-      notFoundNotes: { stargate: stargateNote([...balances, ...solanaRows]) },
+      notFoundNotes: { stargate: stargateNote([...balances, ...solanaRows, ...suiRows]) },
     },
   });
 }

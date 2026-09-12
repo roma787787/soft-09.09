@@ -4,7 +4,7 @@ import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { probeSuiHolder, probeSuiObject, readSuiSupply, suiCoinMetadata, suiTokenBridge } from "../../bridges/sui";
 import { SUI_CHAIN, isSuiCoinType } from "../../config/suiChain";
 import { suiEndpoints } from "../../services/suiClient";
-import { capToTelegramLimit } from "../render";
+import { capToTelegramLimit, splitForTelegram } from "../render";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -117,9 +117,11 @@ export function registerSuiCommand(bot: Telegraf) {
       }
     }
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    // Split rather than cut: this reply exists to be read in full, and the
+    // one that mattered most ended on "отчёт обрезан" three ids short of the
+    // registry it was sent to find.
+    for (const part of splitForTelegram(lines.join("\n"))) {
+      await ctx.reply(part, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
+    }
   });
 }
