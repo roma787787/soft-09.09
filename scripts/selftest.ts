@@ -1536,6 +1536,46 @@ const supplyWithReason = renderLiquidityReport({
   supplyOnly: [{ chainKey: "sui", unreadable: true, reason: "Cannot find treasury cap" }],
 });
 check("an unread supply quotes what the chain said", supplyWithReason.includes("Cannot find treasury cap"));
+
+// Sui came back holding 289 million USDC and landed under "no tracked bridge
+// holds any of it here", followed by a conclusion deducing it must have
+// arrived by some route the bot does not follow. Both were drawn from a
+// check that never ran - Sui's vaults are not read - and both were
+// contradicted by a warning four lines further down, where nobody would
+// reconcile them.
+const suiSupplyUnverified = renderLiquidityReport({
+  symbol: "USDC",
+  name: "USDC",
+  balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
+  checkedCount: 3,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  supplyOnly: [
+    { chainKey: "sui", amount: 289_692_772_913900n, decimals: 6 },
+    { chainKey: "cronos", amount: 7_410_048_194800n, decimals: 6 },
+  ],
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { wormhole: 1 },
+    bridgesUnread: ["sui"],
+  },
+});
+check(
+  "a chain whose vaults went unread is kept out of the no-bridge-holds-it claim",
+  !/ни один отслеживаемый мост[^.]*Sui/.test(suiSupplyUnverified)
+);
+check(
+  "the chain that WAS checked still carries that claim",
+  /ни один отслеживаемый мост[^.]*Cronos/.test(suiSupplyUnverified)
+);
+check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("Сколько из этого лежит в мостах — неизвестно"));
+// The caveat now sits beside the number it qualifies, so repeating it in the
+// scope block put the same warning twice in one report.
+check(
+  "the warning is not repeated once the supply line carries it",
+  !suiSupplyUnverified.includes("читает только выпуск токена")
+);
 // Without a captured reason the old two-way split still stands.
 const supplyWithoutReason = renderLiquidityReport({
   symbol: "USDC",

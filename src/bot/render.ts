@@ -307,7 +307,7 @@ export interface ReportInput {
  * the chains CoinGecko knows the token on, the warp routes carrying that
  * ticker, and the adapters someone entered by hand.
  */
-function scopeLines(scope: ReportInput["scope"]): string[] {
+function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["supplyOnly"]): string[] {
   if (!scope) return [];
   // Each bridge names its own unit: a warp route, an adapter and a shared
   // vault are different things, and the difference is what explains why one
@@ -364,10 +364,20 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
         : `Этих сетей пока нет в таблице бота, поэтому они не проверялись: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}. Почему — <code>/chains</code>.`
     );
   }
-  if (scope.bridgesUnread && scope.bridgesUnread.length > 0) {
-    const named = scope.bridgesUnread.map(chainName).join(", ");
+  // Only the ones the supply group did not already speak for. A chain whose
+  // supply was read now carries the caveat on its own line, right beside the
+  // number it qualifies; repeating it here put the same warning twice in one
+  // report, several lines apart.
+  const spokenFor = new Set(
+    (supplyOnly ?? [])
+      .filter((s) => s.amount !== undefined && s.decimals !== undefined && s.amount > 0n)
+      .map((s) => s.chainKey)
+  );
+  const stillUnread = (scope.bridgesUnread ?? []).filter((c) => !spokenFor.has(c));
+  if (stillUnread.length > 0) {
+    const named = stillUnread.map(chainName).join(", ");
     lines.push(
-      `⚠️ В ${scope.bridgesUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} бот читает только выпуск токена, но не хранилища мостов — там они устроены иначе и пока не поддержаны. Сколько из этого выпуска лежит в мостах, не проверялось.`
+      `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} бот читает только выпуск токена, но не хранилища мостов — там они устроены иначе и пока не поддержаны. Сколько из этого выпуска лежит в мостах, не проверялось.`
     );
   }
 
@@ -393,8 +403,12 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
  * withdrawn through the ones it does. Separately, the first alone would read
  * as liquidity and the second alone as an oversight.
  */
-function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
+function supplyOnlyLines(
+  supplyOnly: ReportInput["supplyOnly"],
+  bridgesUnread: string[] = []
+): string[] {
   if (!supplyOnly || supplyOnly.length === 0) return [];
+  const unread = new Set(bridgesUnread);
 
   // Three different facts used to share one heading, and it read as a
   // contradiction: "the token is on these chains: Mantle (no supply)". LINK's
@@ -402,7 +416,15 @@ function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
   // ones that mattered - a billion on Moonriver, a billion on Harmony - were
   // buried among them. Each group now says only what is true of it, and the
   // group worth reading comes first.
-  const issued = supplyOnly.filter((s) => s.amount !== undefined && s.decimals !== undefined && s.amount > 0n);
+  const withSupply = supplyOnly.filter((s) => s.amount !== undefined && s.decimals !== undefined && s.amount > 0n);
+  // "No bridge holds any of it here" is a claim, and on a chain whose vaults
+  // cannot be read nothing checked it. Sui landed in this group carrying 289
+  // million, under a sentence saying no bridge holds it and a conclusion
+  // deducing that it must have arrived by some other route - both drawn from
+  // a check that never ran, and both contradicted by a warning four lines
+  // further down where nobody would reconcile them.
+  const issued = withSupply.filter((s) => !unread.has(s.chainKey));
+  const unverified = withSupply.filter((s) => unread.has(s.chainKey));
   const none = supplyOnly.filter((s) => s.amount === 0n);
   const unknown = supplyOnly.filter((s) => s.amount === undefined || s.decimals === undefined);
 
@@ -415,6 +437,17 @@ function supplyOnlyLines(supplyOnly: ReportInput["supplyOnly"]): string[] {
     lines.push(
       `ℹ️ Токен выпущен в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
       "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя."
+    );
+  }
+
+  if (unverified.length > 0) {
+    const described = unverified.map(
+      (s) => `${esc(chainName(s.chainKey))} — ${esc(formatAmount(s.amount!, s.decimals!))}`
+    );
+    lines.push(
+      `ℹ️ Столько токена выпущено в ${unverified.length === 1 ? "сети" : "сетях"} ${described.join(", ")}. ` +
+        "Сколько из этого лежит в мостах — неизвестно: хранилища мостов там устроены иначе и бот их пока не читает. " +
+        "Это не значит ни что они пусты, ни что их нет."
     );
   }
 
@@ -591,9 +624,9 @@ export function renderLiquidityReport(input: ReportInput): string {
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
-    const supplyText = supplyOnlyLines(input.supplyOnly);
+    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread);
     if (supplyText.length > 0) lines.push("", ...supplyText);
-    const scopeText = scopeLines(scope);
+    const scopeText = scopeLines(scope, input.supplyOnly);
     if (scopeText.length > 0) lines.push("", ...scopeText);
     return capToTelegramLimit(lines.join("\n"));
   }
@@ -770,9 +803,9 @@ export function renderLiquidityReport(input: ReportInput): string {
     );
   }
   const closingNotes = [
-    ...supplyOnlyLines(input.supplyOnly),
+    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread),
     `Всего проверено контрактов: ${checkedCount}.`,
-    ...scopeLines(scope),
+    ...scopeLines(scope, input.supplyOnly),
   ];
 
   // No budget any more: the report is rendered whole and split across
