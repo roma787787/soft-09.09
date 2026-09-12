@@ -48,6 +48,7 @@ import {
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { isOnVolume, verdictFrom } from "../src/services/storage";
+import { protocolsActuallyChecked } from "../src/bridges";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
 import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
@@ -4612,6 +4613,34 @@ check("a file that was there claims nothing yet", verdictFrom([], "abc", true) =
 // all - so the boots table cannot separate them, and the report called a
 // correctly mounted volume "похоже на контейнер без тома" minutes after it
 // was set up. The host is asked instead of guessed.
+// A bridge asked per chain, on a report where no chain reached it, was not
+// checked. /info TURBOS announced Hyperlane, LayerZero, Stargate, Across and
+// CCIP all checked and holding none of it - for a token that exists only on
+// Sui, where Across and CCIP were handed an empty list of chains and asked
+// nothing. Four lines down the same report said only Wormhole is read there.
+check(
+  "with no chain to look at, the per-chain bridges are not called checked",
+  !protocolsActuallyChecked(undefined, 0).includes("across") &&
+    !protocolsActuallyChecked(undefined, 0).includes("ccip")
+);
+// The registry searches happened regardless: they are looked up by ticker,
+// not per chain, so they are honestly reported as checked.
+check(
+  "the ticker-searched ones still are",
+  ["wormhole", "hyperlane", "layerzero", "stargate"].every((p) =>
+    protocolsActuallyChecked(undefined, 0).includes(p as any)
+  )
+);
+check(
+  "and with chains to look at, everything is checked again",
+  protocolsActuallyChecked(undefined, 12).length === 6
+);
+// Narrowing by chain still applies on top: Sui reads only Wormhole.
+check(
+  "a chain with one reader still reports only that one",
+  protocolsActuallyChecked("sui", 12).join(",") === "wormhole"
+);
+
 check("a database inside the mount is on the volume", isOnVolume("/data/bot.db", "/data"));
 check("and deeper inside it too", isOnVolume("/data/state/bot.db", "/data"));
 check("a database outside it is not", !isOnVolume("./data/bot.db", "/data"));

@@ -13,6 +13,7 @@ import {
 import { SUI_CHAIN, isSuiCoinType } from "../../config/suiChain";
 import { suiEndpoints } from "../../services/suiClient";
 import { replyInParts } from "../reply";
+import { formatAmount } from "../../services/balances";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -87,7 +88,18 @@ export function registerSuiCommand(bot: Telegraf) {
 
     const [supply, meta] = await Promise.all([readSuiSupply(coinType, symbol), suiCoinMetadata(coinType)]);
     lines.push(
-      `Выпуск: <code>${esc(supply?.amount !== undefined ? supply.amount.toString() : "—")}</code>` +
+      // Scaled, like every other amount this bot prints. Raw beside the
+      // decimals made the reader do the division: TURBOS came back as
+      // "Выпуск: 10000000000000000512 · знаков: 9", which is ten billion,
+      // and nothing on the line said so. The raw integer stays visible
+      // because this is a diagnostic and the exact value is the point.
+      `Выпуск: <code>${esc(
+        supply?.amount !== undefined && meta?.decimals !== undefined
+          ? `${formatAmount(supply.amount, meta.decimals)} (${supply.amount.toString()})`
+          : supply?.amount !== undefined
+            ? supply.amount.toString()
+            : "—"
+      )}</code>` +
         ` · знаков: <code>${esc(meta?.decimals !== undefined ? String(meta.decimals) : "—")}</code>` +
         ` · тикер монеты: <code>${esc(meta?.symbol ?? "—")}</code>`
     );

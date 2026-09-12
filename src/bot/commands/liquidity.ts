@@ -11,7 +11,7 @@ import {
 import {
   resolveCustodians,
   dedupeCustodians,
-  protocolsReadableOn,
+  protocolsActuallyChecked,
   tokenByChainFrom,
   withCustodianTokens,
 } from "../../bridges";
@@ -756,7 +756,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // bridge as checked where nothing can ask it is the one claim this
       // report must never make - and it was making it four lines above the
       // caveat that said the opposite.
-      checkedProtocols: protocolsReadableOn(chainFilter),
+      checkedProtocols: protocolsActuallyChecked(chainFilter, tokenByChain.size),
       // A chain the next report will cover must not be called unchecked in
       // this one; until the scan lands, the list is not something to make
       // claims from.
