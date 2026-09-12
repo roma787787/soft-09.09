@@ -265,10 +265,19 @@ export interface SuiIndexStats {
   wrapped: number;
   /** True when the walk reached the registry's last page. */
   complete: boolean;
+  /**
+   * A few of the coins it did find locked.
+   *
+   * Without them "not among the collateral" is unfalsifiable from outside:
+   * an index that found sixty assets and one that matched none of them
+   * produce the same sentence, and the only way to tell is to name one and
+   * go and ask about it.
+   */
+  sample: string[];
   reason?: string;
 }
 
-let indexStats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false };
+let indexStats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false, sample: [] };
 
 /**
  * What the last index walk did.
@@ -287,7 +296,7 @@ async function suiNativeAssetIndex(): Promise<Map<string, string>> {
   if (assetIndexInFlight) return assetIndexInFlight;
 
   assetIndexInFlight = (async () => {
-    const stats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false };
+    const stats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false, sample: [] };
     indexStats = stats;
 
     const byCoin = new Map<string, string>();
@@ -316,7 +325,10 @@ async function suiNativeAssetIndex(): Promise<Map<string, string>> {
         stats.native++;
         const held = assetTypeParam(field.objectType);
         const key = held ? normaliseSuiCoinType(held) : undefined;
-        if (key && !byCoin.has(key)) byCoin.set(key, field.objectId);
+        if (key && !byCoin.has(key)) {
+          byCoin.set(key, field.objectId);
+          if (stats.sample.length < 8) stats.sample.push(held!);
+        }
       }
 
       if (!read.hasNextPage || !read.nextCursor) {

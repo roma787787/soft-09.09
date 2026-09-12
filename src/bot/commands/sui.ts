@@ -90,11 +90,16 @@ export function registerSuiCommand(bot: Telegraf) {
       `  обход дошёл до конца: ${stats.complete ? "да" : "нет"}`
     );
     if (stats.reason) lines.push(`  <i>${esc(stats.reason)}</i>`);
-    lines.push(
-      custody
-        ? `  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(custody.amount.toString())}</code>`
-        : "  ❌ этой монеты среди залоговых записей нет"
-    );
+    if (custody) {
+      lines.push(`  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(custody.amount.toString())}</code>`);
+    } else {
+      lines.push("  ❌ этой монеты среди залоговых записей нет");
+      // Named, because "not among the collateral" is unfalsifiable on its
+      // own: an index that found sixty assets and one that matched none of
+      // them say the same thing, and the only way to tell is to go and ask
+      // about one it did find.
+      for (const held of stats.sample) lines.push(`  · залог есть под <code>${esc(held)}</code>`);
+    }
 
     // The two candidates worth asking: Wormhole's own state object, and
     // whatever LayerZero's registry names on this chain.
