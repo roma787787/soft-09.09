@@ -1,7 +1,15 @@
 import type { Telegraf, Context } from "telegraf";
 import { lookupToken } from "../../services/coingecko";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
-import { probeSuiHolder, probeSuiObject, readSuiSupply, suiCoinMetadata, suiTokenBridge } from "../../bridges/sui";
+import {
+  lastSuiIndexStats,
+  probeSuiHolder,
+  probeSuiObject,
+  readSuiSupply,
+  readSuiWormholeCustody,
+  suiCoinMetadata,
+  suiTokenBridge,
+} from "../../bridges/sui";
 import { SUI_CHAIN, isSuiCoinType } from "../../config/suiChain";
 import { suiEndpoints } from "../../services/suiClient";
 import { capToTelegramLimit, splitForTelegram } from "../render";
@@ -68,6 +76,25 @@ export function registerSuiCommand(bot: Telegraf) {
         ` · тикер монеты: <code>${esc(meta?.symbol ?? "—")}</code>`
     );
     if (supply?.reason) lines.push(`  <i>${esc(supply.reason)}</i>`);
+
+    // The walk the report actually runs, and its own account of itself.
+    // "Not in the registry" and "the walk never got there" are the same
+    // answer from outside, and they need opposite fixes.
+    const custody = await readSuiWormholeCustody(coinType);
+    const stats = lastSuiIndexStats();
+    lines.push(
+      "",
+      "<b>Обход реестра Wormhole</b>",
+      `  таблица: <code>${esc(stats.registryId ?? "не найдена")}</code>`,
+      `  страниц: ${stats.pages} · записей: ${stats.entries} · из них залог: ${stats.native}, выпущено мостом: ${stats.wrapped}`,
+      `  обход дошёл до конца: ${stats.complete ? "да" : "нет"}`
+    );
+    if (stats.reason) lines.push(`  <i>${esc(stats.reason)}</i>`);
+    lines.push(
+      custody
+        ? `  ✅ найдено: <code>${esc(custody.objectId)}</code> — <code>${esc(custody.amount.toString())}</code>`
+        : "  ❌ этой монеты среди залоговых записей нет"
+    );
 
     // The two candidates worth asking: Wormhole's own state object, and
     // whatever LayerZero's registry names on this chain.

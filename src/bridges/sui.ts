@@ -180,6 +180,7 @@ export async function readSuiSupply(coinType: string, symbol: string): Promise<S
  * Aptos - the state answers zero and owns nothing.
  */
 const NATIVE_ASSET = "::native_asset::NativeAsset<";
+const WRAPPED_ASSET = "::wrapped_asset::WrappedAsset<";
 
 /** Pages walked before giving up. Twenty fields a page, and it is one chain. */
 const MAX_REGISTRY_PAGES = 40;
@@ -256,37 +257,79 @@ const INDEX_TTL_MS = 60 * 60 * 1000;
  * registry would answer "no custody" for every coin in the half it never
  * saw, and keep doing it for an hour.
  */
+export interface SuiIndexStats {
+  registryId?: string;
+  pages: number;
+  entries: number;
+  native: number;
+  wrapped: number;
+  /** True when the walk reached the registry's last page. */
+  complete: boolean;
+  reason?: string;
+}
+
+let indexStats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false };
+
+/**
+ * What the last index walk did.
+ *
+ * "Not in the registry" and "the walk never got there" are the same answer
+ * from outside and need opposite fixes, and this chain cannot be tried from
+ * a laptop - so the walk keeps its own account of itself rather than leaving
+ * the only evidence to be a missing row.
+ */
+export function lastSuiIndexStats(): SuiIndexStats {
+  return indexStats;
+}
+
 async function suiNativeAssetIndex(): Promise<Map<string, string>> {
   if (assetIndex && Date.now() - assetIndex.at < INDEX_TTL_MS) return assetIndex.byCoin;
   if (assetIndexInFlight) return assetIndexInFlight;
 
   assetIndexInFlight = (async () => {
+    const stats: SuiIndexStats = { pages: 0, entries: 0, native: 0, wrapped: 0, complete: false };
+    indexStats = stats;
+
     const byCoin = new Map<string, string>();
     const parent = await suiTokenRegistryId();
-    if (!parent) return byCoin;
+    stats.registryId = parent;
+    if (!parent) {
+      stats.reason = "реестр токенов не найден в состоянии моста";
+      return byCoin;
+    }
 
     let cursor: string | undefined;
     for (let page = 0; page < MAX_REGISTRY_PAGES; page++) {
       let read: SuiFieldPage;
       try {
         read = parseFieldPage(await suiCall("suix_getDynamicFields", [parent, cursor ?? null, 50]));
-      } catch {
+      } catch (err) {
+        stats.reason = `страница ${page + 1}: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}`;
         return byCoin;
       }
 
+      stats.pages++;
+      stats.entries += read.fields.length;
       for (const field of read.fields) {
+        if (field.objectType.includes(WRAPPED_ASSET)) stats.wrapped++;
         if (!field.objectType.includes(NATIVE_ASSET)) continue;
+        stats.native++;
         const held = assetTypeParam(field.objectType);
         const key = held ? normaliseSuiCoinType(held) : undefined;
         if (key && !byCoin.has(key)) byCoin.set(key, field.objectId);
       }
 
       if (!read.hasNextPage || !read.nextCursor) {
+        stats.complete = true;
         assetIndex = { at: Date.now(), byCoin };
         return byCoin;
       }
       cursor = read.nextCursor;
     }
+    // Ran out of pages before the registry ran out of entries. Not cached:
+    // half an index answers "no custody" for every coin in the half it never
+    // saw, and would keep doing it for an hour.
+    stats.reason = `обход упёрся в предел в ${MAX_REGISTRY_PAGES} страниц`;
     return byCoin;
   })().finally(() => {
     assetIndexInFlight = undefined;
