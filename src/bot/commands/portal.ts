@@ -4,7 +4,7 @@ import { findPortalNonEvmBalances, describeAptosReads, aptosResources } from "..
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { lookupToken } from "../../services/coingecko";
 import { formatAmount } from "../../services/balances";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -48,7 +48,7 @@ export function registerPortalCommand(bot: Telegraf) {
     const token = await lookupToken(symbol);
     if (!token) {
       lines.push(`Тикер не найден на CoinGecko — спрашивать нечего.`);
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -67,7 +67,7 @@ export function registerPortalCommand(bot: Telegraf) {
           [...token.platforms, ...token.otherPlatforms].map((p) => p.platformName).join(", ") || "ничего"
         )}.`
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -129,9 +129,6 @@ export function registerPortalCommand(bot: Telegraf) {
       }
     }
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

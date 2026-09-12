@@ -4,7 +4,7 @@ import { SVM_CHAINS } from "../../config/svmChains";
 import { COSMOS_CHAINS } from "../../config/cosmosChains";
 import { OTHER_CHAINS } from "../../config/otherChains";
 import { PORTAL_CHAINS } from "../../config/portalChains";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 /**
  * Built per call, not once at import.
@@ -93,7 +93,7 @@ export function helpText(): string {
 
 export function registerHelpCommands(bot: Telegraf) {
   const send = (ctx: Context) =>
-    ctx.reply(capToTelegramLimit(helpText()), { parse_mode: "HTML" });
+    void replyInParts(ctx, helpText());
   bot.start(async (ctx: Context) => send(ctx));
   bot.help(async (ctx: Context) => send(ctx));
 }

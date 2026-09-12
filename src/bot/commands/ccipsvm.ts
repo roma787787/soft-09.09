@@ -3,7 +3,7 @@ import { CCIP_SOLANA } from "../../protocols/addresses/ccip.generated";
 import { ccipPoolCandidates, checkCcipCandidates, holdsCollateral, SOLANA_KEY } from "../../bridges/ccipSvm";
 import { lookupToken } from "../../services/coingecko";
 import { formatAmount } from "../../services/balances";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -52,13 +52,13 @@ export function registerCcipSvmCommand(bot: Telegraf) {
         const listed = token?.otherPlatforms.find((p) => p.chainKey === SOLANA_KEY)?.tokenAddress;
         if (!listed) {
           lines.push(`CoinGecko не знает адреса <b>${esc(argument.toUpperCase())}</b> на Solana — спрашивать не о чем.`);
-          await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+          await replyInParts(ctx, lines.join("\n"));
           return;
         }
         mint = listed;
       } catch (err) {
         lines.push(`Не удалось спросить CoinGecko: <code>${esc(err instanceof Error ? err.message : String(err))}</code>`);
-        await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+        await replyInParts(ctx, lines.join("\n"));
         return;
       }
     }
@@ -67,7 +67,7 @@ export function registerCcipSvmCommand(bot: Telegraf) {
     const candidates = ccipPoolCandidates(mint);
     if (candidates.length === 0) {
       lines.push("Ни один вариант адреса не вывелся — минт не разобрался как ключ Solana.");
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -113,9 +113,6 @@ export function registerCcipSvmCommand(bot: Telegraf) {
         "верным считается только тот, про который сеть сама сказала, что это токен-аккаунт этого минта."
     );
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

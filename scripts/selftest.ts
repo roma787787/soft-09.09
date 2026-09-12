@@ -3398,6 +3398,15 @@ check("every part is valid HTML on its own", wideParts.every(tagsBalanced));
 // A short report is still one message; splitting is not a new default shape.
 check("a report that fits stays a single message", splitForTelegram(smallReport).length === 1);
 
+// Every command splits now, not just the report. Thirteen of them cut the
+// tail off instead, on a bot whose chain table grows by itself - so the
+// newest chains were guaranteed to be the ones nobody ever saw. /help was
+// already at 3 381 of 4 000 characters: two more commands and the list of
+// commands would have started truncating itself.
+const helpParts = splitForTelegram(helpText());
+check("the help survives whole however long it grows", helpParts.join("\n") === helpText());
+check("and each of its parts fits a message", helpParts.every((p) => p.length < 4096));
+
 // Discovery only ever added chains to memory, so every restart began without
 // them and answered questions while it rebuilt the table. Two identical USDC
 // reports minutes apart differed by three networks and eighty-eight million

@@ -7,7 +7,7 @@ import {
   lastMetadataChainCount,
   explainMissing,
 } from "../../bridges/lzMetadata";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -115,9 +115,6 @@ export function registerLzChainsCommand(bot: Telegraf) {
       }
     }
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

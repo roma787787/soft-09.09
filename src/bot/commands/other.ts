@@ -1,7 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { OTHER_CHAINS } from "../../config/otherChains";
 import { findOtherRoutes, probeOtherRoute } from "../../bridges/others";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -47,9 +47,6 @@ export function registerOtherCommand(bot: Telegraf) {
 
     if (routes.length === 0) lines.push("По этому тикеру маршрутов на этих сетях нет.");
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

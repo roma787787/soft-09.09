@@ -1,7 +1,8 @@
 import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { discoverChains, lastDiscovery, type RejectedChain } from "../../services/chainDiscovery";
-import { capToTelegramLimit, plural } from "../render";
+import { plural } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -51,7 +52,7 @@ export function registerChainsCommand(bot: Telegraf) {
         `Список сетей у CoinGecko получить не удалось: <code>${esc(report.error)}</code>`,
         "Таблица работает, просто без пополнения."
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -131,9 +132,6 @@ export function registerChainsCommand(bot: Telegraf) {
         `Пересчёт раз в сутки; <code>/chains обнови</code> — прямо сейчас.`
     );
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

@@ -1,6 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
 import { checkKey } from "../../services/coingecko";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -43,7 +43,7 @@ export function registerGeckoCommand(bot: Telegraf) {
         "",
         "Дело не в ключе — до сервиса не доходит сам запрос."
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -56,7 +56,7 @@ export function registerGeckoCommand(bot: Telegraf) {
           "с чужими ботами — поэтому будут 429. Лечится бесплатным ключом: " +
           "coingecko.com → API → Demo, затем переменная <code>COINGECKO_API_KEY</code>."
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -71,7 +71,7 @@ export function registerGeckoCommand(bot: Telegraf) {
           "<code>api.coingecko.com</code>, ключ Pro — только с <code>pro-api.coingecko.com</code>. " +
           "При неверной паре CoinGecko не ругается, а молча игнорирует заголовок."
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -98,9 +98,6 @@ export function registerGeckoCommand(bot: Telegraf) {
       "<i>Один /info тратит до трёх запросов: поиск монеты, её сети и — раз в 12 часов — список сетей.</i>"
     );
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

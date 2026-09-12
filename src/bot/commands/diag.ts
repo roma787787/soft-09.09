@@ -2,10 +2,11 @@ import type { Telegraf, Context } from "telegraf";
 import { CHAINS } from "../../config/chains";
 import { hasCustomRpc, rpcUrlsFor } from "../../config/env";
 import { MAX_ENDPOINTS_PER_CHAIN } from "../../services/rpcClient";
-import { plural, capToTelegramLimit } from "../render";
+import { plural } from "../render";
 import { mapWithConcurrency } from "../../services/concurrency";
 import { healthSummary, orderedRpcUrls } from "../../services/rpcHealth";
 import { learnedSummary } from "../../services/extraEndpoints";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -436,9 +437,6 @@ export function registerDiagCommand(bot: Telegraf) {
     // Forty-two chains is close enough to the message limit that a few
     // multi-line failures would push it over, and a report Telegram refuses
     // looks to the user exactly like a bot that is down.
-    await ctx.reply(capToTelegramLimit(header + lines.join("\n") + footer), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, header + lines.join("\n") + footer);
   });
 }

@@ -6,7 +6,8 @@ import { scanAccounting, scanChainsForAddress } from "../../services/chainScan";
 import { getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
-import { capToTelegramLimit, plural } from "../render";
+import { plural } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -210,6 +211,6 @@ export function registerInfoCommand(bot: Telegraf) {
     // Capped, which it never was: this is the one report that grew with the
     // chain table, and a message Telegram refuses looks from the phone
     // exactly like a bot that is down.
-    await ctx.reply(capToTelegramLimit(message), REPLY_OPTS);
+    await replyInParts(ctx, message, REPLY_OPTS);
   });
 }

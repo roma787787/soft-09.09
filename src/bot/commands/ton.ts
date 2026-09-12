@@ -4,7 +4,7 @@ import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
 import { findTonBalances, jettonAddressFor, tonApiBase } from "../../bridges/ton";
 import { env } from "../../config/env";
 import { formatAmount } from "../../services/balances";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -52,7 +52,7 @@ export function registerTonCommand(bot: Telegraf) {
 
     if (deployments.length === 0) {
       lines.push("", "Этого тикера на TON реестр не знает.");
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -90,9 +90,6 @@ export function registerTonCommand(bot: Telegraf) {
       );
     }
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

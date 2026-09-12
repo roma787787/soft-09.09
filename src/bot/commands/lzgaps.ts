@@ -13,7 +13,7 @@ import { resolveCosmosChain } from "../../config/cosmosChains";
 import { resolveOtherChain } from "../../config/otherChains";
 import { resolvePortalChain } from "../../config/portalChains";
 import { TON_CHAIN } from "../../config/tonChain";
-import { capToTelegramLimit } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -108,10 +108,7 @@ export function registerLzGapsCommand(bot: Telegraf) {
 
     if (gaps.length === 0) {
       lines.push("", "Сетей с непрочитанными деплойментами нет.");
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-        parse_mode: "HTML",
-        link_preview_options: { is_disabled: true },
-      });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -149,9 +146,6 @@ export function registerLzGapsCommand(bot: Telegraf) {
       "Сырые данные по сети: <code>/lzprobe &lt;сеть&gt;</code>"
     );
 
-    await ctx.reply(capToTelegramLimit(lines.join("\n")), {
-      parse_mode: "HTML",
-      link_preview_options: { is_disabled: true },
-    });
+    await replyInParts(ctx, lines.join("\n"));
   });
 }

@@ -12,7 +12,7 @@ import {
 } from "../../bridges/sui";
 import { SUI_CHAIN, isSuiCoinType } from "../../config/suiChain";
 import { suiEndpoints } from "../../services/suiClient";
-import { capToTelegramLimit, splitForTelegram } from "../render";
+import { replyInParts } from "../reply";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -60,7 +60,7 @@ export function registerSuiCommand(bot: Telegraf) {
     // CoinGecko does know" - is empty and puzzling for the first.
     if (!token) {
       lines.push(`Тикер <b>${esc(symbol)}</b> не найден на CoinGecko. Проверьте написание.`);
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -73,7 +73,7 @@ export function registerSuiCommand(bot: Telegraf) {
           [...token.platforms, ...token.otherPlatforms].map((p) => p.platformName).join(", ") || "ничего"
         )}.`
       );
-      await ctx.reply(capToTelegramLimit(lines.join("\n")), { parse_mode: "HTML" });
+      await replyInParts(ctx, lines.join("\n"));
       return;
     }
 
@@ -183,11 +183,6 @@ export function registerSuiCommand(bot: Telegraf) {
       }
     }
 
-    // Split rather than cut: this reply exists to be read in full, and the
-    // one that mattered most ended on "отчёт обрезан" three ids short of the
-    // registry it was sent to find.
-    for (const part of splitForTelegram(lines.join("\n"))) {
-      await ctx.reply(part, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
-    }
+    await replyInParts(ctx, lines.join("\n"));
   });
 }
