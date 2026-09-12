@@ -26,6 +26,9 @@ export function registerLzChainsCommand(bot: Telegraf) {
   bot.command("lzchains", async (ctx: Context) => {
     await ctx.sendChatAction("typing");
 
+    const text = (ctx.message as { text?: string } | undefined)?.text ?? "";
+    const detailed = /\s(подробно|full|detail)\b/i.test(text);
+
     const [map, metadata] = await Promise.all([getLzEidMap(), fetchLzEidsFromMetadata()]);
 
     const known: string[] = [];
@@ -45,18 +48,38 @@ export function registerLzChainsCommand(bot: Telegraf) {
       known.push(`${chain.label} — ${eid} <i>(${source})</i>`);
     }
 
+    // The chains without an eid go first, and the ones with an eid are a
+    // list rather than a hundred and three lines.
+    //
+    // This report is opened to find out where the peer walk cannot go, and
+    // it was printing one line per resolved chain before getting to that -
+    // so at a hundred and three chains the answer fell off the end and the
+    // message said "обрезан". The same thing /chains was doing, for the same
+    // reason, and the fix is the same: whichever half a person can act on
+    // comes first.
     const lines = [
       `<b>Сети LayerZero: ${known.length} из ${CHAINS.length}</b>`,
       `В метаданных сетей: ${lastMetadataChainCount()}, из них сопоставлено с нашими: ${metadata.size}`,
-      "",
-      ...known.map((k) => `✅ ${esc(k).replace(/&lt;i&gt;/g, "<i>").replace(/&lt;\/i&gt;/g, "</i>")}`),
     ];
+
     if (missing.length > 0) {
       lines.push(
         "",
-        "<b>Без eid</b> — обход пиров туда не пойдёт:",
+        `<b>Без eid</b> — обход пиров туда не пойдёт (${missing.length}):`,
         ...missing.map((m) => `❌ ${esc(m)}`)
       );
+    }
+
+    if (known.length > 0) {
+      lines.push("", "<b>Известен eid</b>");
+      if (detailed) {
+        lines.push(
+          ...known.map((k) => `✅ ${esc(k).replace(/&lt;i&gt;/g, "<i>").replace(/&lt;\/i&gt;/g, "</i>")}`)
+        );
+      } else {
+        lines.push(esc(known.map((k) => k.split(" — ")[0]).join(", ")));
+        lines.push("<i>С eid и источником: /lzchains подробно</i>");
+      }
     }
 
     await ctx.reply(capToTelegramLimit(lines.join("\n")), {

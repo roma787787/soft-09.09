@@ -102,6 +102,7 @@ import { preferredRouteId } from "../src/bridges/hyperlane";
 import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
 import {
+  REGISTRY_CHAIN_IDS,
   candidatesFrom,
   extractEids,
   lastMetadataChainCount,
@@ -2283,6 +2284,26 @@ const messy = scanAccounting(
   ["c0", "c1"]
 );
 check("the sum holds with refusals, timeouts and silent chains together", messy.checked + messy.unchecked.length === messy.total, `${messy.checked}+${messy.unchecked.length}≠${messy.total}`);
+
+// LayerZero's two sources disagree: the OFT registry files deployments on
+// chains its own metadata does not describe, so the id lookup has nothing to
+// match on and the short names it uses are not what anyone else calls them.
+// Seven deployments the registry itself marks as holding collateral were
+// invisible in every report because of it - /lzgaps is what found them.
+// Each entry names a chain id, so it can only ever point at a chain the bot
+// already has, and it stops mattering the day the metadata publishes the name.
+for (const [name, chainId] of [
+  ["etherlink", 42793],
+  ["xdc", 50],
+  ["sanko", 1996],
+  ["apexfusionnexus", 9069],
+  ["goat", 2345],
+  ["iota", 8822],
+  ["glue", 1300],
+] as const) {
+  check(`the registry's name for ${name} carries its chain id`, REGISTRY_CHAIN_IDS[name] === chainId);
+}
+check("and every entry is a chain id, never a chain key", Object.values(REGISTRY_CHAIN_IDS).every((v) => typeof v === "number" && v > 0));
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

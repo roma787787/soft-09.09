@@ -13,9 +13,22 @@ import { LZ_V2_EID_BY_CHAIN } from "../protocols/addresses/layerzero";
  * chain key, so it can only ever name a chain the bot already has, and it
  * stops mattering on its own the day the metadata publishes the name.
  */
-const REGISTRY_CHAIN_IDS: Record<string, number> = {
+export const REGISTRY_CHAIN_IDS: Record<string, number> = {
   zkconsensys: 59144, // Linea
   zkpolygon: 1101, // Polygon zkEVM
+  // LayerZero's two sources disagree: its OFT registry files deployments on
+  // these seven chains and its own chain metadata describes none of them, so
+  // the id lookup had nothing to match on and the alias table had nothing
+  // either - the registry's short names are not what anyone else calls them.
+  // Seven deployments the registry itself marks as holding collateral were
+  // invisible in every report because of it. /lzgaps is what found them.
+  etherlink: 42793,
+  xdc: 50, // XDC Network
+  sanko: 1996,
+  apexfusionnexus: 9069, // Apex Fusion - Nexus
+  goat: 2345, // GOAT Network
+  iota: 8822, // IOTA EVM
+  glue: 1300,
 };
 
 /**
