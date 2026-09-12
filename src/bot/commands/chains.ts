@@ -59,8 +59,13 @@ export function aboutOneChain(query: string, report: ReturnType<typeof lastDisco
     return lines;
   }
 
-  const matches = (label: string) => label.toLowerCase().includes(query.toLowerCase());
-  const rejected = report.rejected.filter((c) => matches(c.label));
+  // By name or by chain id: a chain nobody has a settled name for is often
+  // easier to ask about by its number, and /lzgaps prints the number.
+  const wanted = query.toLowerCase();
+  const asNumber = Number(query);
+  const rejected = report.rejected.filter(
+    (c) => c.label.toLowerCase().includes(wanted) || c.chainId === asNumber
+  );
   if (rejected.length === 0) {
     lines.push(
       "И среди отклонённых её тоже нет: ни один источник её не назвал, так что бот о ней просто не знает.",
