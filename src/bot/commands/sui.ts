@@ -1,7 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { lookupToken } from "../../services/coingecko";
 import { findRegistryDeploymentsOnChain } from "../../bridges/layerzero";
-import { probeSuiHolder, readSuiSupply, suiCoinMetadata, suiTokenBridge } from "../../bridges/sui";
+import { probeSuiHolder, probeSuiObject, readSuiSupply, suiCoinMetadata, suiTokenBridge } from "../../bridges/sui";
 import { SUI_CHAIN, isSuiCoinType } from "../../config/suiChain";
 import { suiEndpoints } from "../../services/suiClient";
 import { capToTelegramLimit } from "../render";
@@ -82,13 +82,34 @@ export function registerSuiCommand(bot: Telegraf) {
       lines.push("", "Ни один реестр не называет держателя на Sui.");
     }
 
-    for (const holder of holders.slice(0, 4)) {
+    for (const holder of holders.slice(0, 3)) {
       lines.push("", `<b>${esc(holder.what)}</b>`, `<code>${esc(holder.address)}</code>`);
       const probe = await probeSuiHolder(holder.address, coinType);
       lines.push(`  баланс: <code>${esc(probe.balance)}</code>`);
-      if (probe.fieldsNote) lines.push(`  поля: <i>${esc(probe.fieldsNote)}</i>`);
-      for (const field of probe.fields.slice(0, 8)) {
+      if (probe.fieldsNote) lines.push(`  динамические поля: <i>${esc(probe.fieldsNote)}</i>`);
+      for (const field of probe.fields.slice(0, 6)) {
         lines.push(`  · <code>${esc(field.objectType)}</code>\n    имя: <code>${esc(field.name)}</code>`);
+      }
+
+      // No dynamic fields on the object itself does not mean it holds
+      // nothing: on Sui a registry is a field of the state and its table is
+      // an object of its own, so what the walk needs is one level in.
+      const shape = await probeSuiObject(holder.address);
+      lines.push(`  тип: <code>${esc(shape.type)}</code>`);
+      if (shape.note) lines.push(`  <i>${esc(shape.note)}</i>`);
+      if (shape.fields.length > 0) lines.push(`  поля объекта: ${esc(shape.fields.join(", "))}`);
+
+      for (const nested of shape.ids.slice(0, 3)) {
+        const inner = await probeSuiObject(nested);
+        const fields = await probeSuiHolder(nested, coinType);
+        lines.push(
+          `  ↳ <code>${esc(nested)}</code>`,
+          `      тип: <code>${esc(inner.type)}</code>` + (inner.fields.length ? ` · поля: ${esc(inner.fields.join(", "))}` : ""),
+          `      динамических полей: ${fields.fields.length}${fields.fieldsNote ? ` (${esc(fields.fieldsNote)})` : ""}`
+        );
+        for (const field of fields.fields.slice(0, 5)) {
+          lines.push(`      · <code>${esc(field.objectType)}</code>\n        имя: <code>${esc(field.name)}</code>`);
+        }
       }
     }
 

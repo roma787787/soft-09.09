@@ -214,6 +214,65 @@ export function parseDynamicFields(result: unknown): SuiDynamicField[] {
   return fields;
 }
 
+export interface SuiObjectShape {
+  type: string;
+  /** Top-level field names of the object's contents. */
+  fields: string[];
+  /**
+   * Object ids named anywhere inside, at any depth.
+   *
+   * The collateral is never at the top: Sui writes a table as `{ id: { id:
+   * "0x…" }, size }`, so the id that matters is always nested, and it is the
+   * one the next call has to ask about.
+   */
+  ids: string[];
+  note?: string;
+}
+
+/** Object ids written anywhere in a Sui object's contents. */
+export function suiIdsIn(value: unknown, depth = 0): string[] {
+  if (depth > 6 || !value || typeof value !== "object") return [];
+  const found: string[] = [];
+  for (const inner of Object.values(value as Record<string, unknown>)) {
+    if (typeof inner === "string" && /^0x[0-9a-f]{64}$/i.test(inner)) found.push(inner);
+    else found.push(...suiIdsIn(inner, depth + 1));
+  }
+  return [...new Set(found)];
+}
+
+/** Pure half of the object read, so the shape is covered without a live call. */
+export function parseObjectShape(result: unknown): SuiObjectShape | undefined {
+  const content = (result as { data?: { content?: unknown } } | null)?.data?.content as
+    | { type?: unknown; fields?: unknown }
+    | undefined;
+  if (!content) return undefined;
+  const fields = content.fields && typeof content.fields === "object" ? content.fields : undefined;
+  return {
+    type: String(content.type ?? "?").slice(0, 140),
+    fields: fields ? Object.keys(fields) : [],
+    ids: suiIdsIn(fields),
+  };
+}
+
+/**
+ * What one Sui object is made of.
+ *
+ * The dynamic fields of the token bridge's state came back empty, which does
+ * not mean it holds nothing - it means the collateral hangs off something
+ * inside it rather than off the object itself. The registry is a field of
+ * the state and its table is an object of its own, so the walk is: read the
+ * state, find the id, ask again. Printed rather than assumed, because that
+ * assumption is exactly what has been wrong twice before.
+ */
+export async function probeSuiObject(id: string): Promise<SuiObjectShape> {
+  try {
+    const raw = await suiCall("sui_getObject", [id, { showContent: true, showType: true }]);
+    return parseObjectShape(raw) ?? { type: "?", fields: [], ids: [], note: `не разобрано: ${JSON.stringify(raw).slice(0, 120)}` };
+  } catch (err) {
+    return { type: "?", fields: [], ids: [], note: `ошибка: ${(err instanceof Error ? err.message : String(err)).slice(0, 90)}` };
+  }
+}
+
 export interface SuiHolderProbe {
   owner: string;
   /** What suix_getBalance said, verbatim. */

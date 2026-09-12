@@ -96,7 +96,7 @@ import {
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
 import { isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../src/config/suiChain";
-import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees, parseDynamicFields, suiTokenBridge } from "../src/bridges/sui";
+import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees, parseDynamicFields, suiTokenBridge, parseObjectShape, suiIdsIn } from "../src/bridges/sui";
 import { isNodeLevelError } from "../src/services/suiClient";
 import { helpText } from "../src/bot/commands/help";
 import { formatInfoCard } from "../src/bot/format";
@@ -1517,6 +1517,28 @@ check("and neither does an empty answer", parseDynamicFields(null).length === 0)
 // Wormhole publishes the Sui bridge itself, so the walk needs no address
 // written down here.
 check("Wormhole names its own Sui bridge", (suiTokenBridge() ?? "").startsWith("0x"));
+
+// The bridge object came back with no dynamic fields at all, which does not
+// mean it holds nothing: on Sui a registry is a field of the state and its
+// table is an object of its own. The id that matters is therefore never at
+// the top - Sui writes a table as { id: { id: "0x…" }, size } - and it is
+// the one the next call has to ask about.
+const stateShape = parseObjectShape({
+  data: {
+    content: {
+      type: "0xc575::state::State",
+      fields: {
+        governance_chain: 1,
+        token_registry: { type: "0xc575::token_registry::TokenRegistry", fields: { coin_types: { id: { id: "0xdeadbeef".padEnd(66, "0") }, size: "42" } } },
+      },
+    },
+  },
+});
+check("the object states its own type", stateShape?.type.includes("state::State"));
+check("its top-level fields are listed", stateShape?.fields.includes("token_registry"));
+check("and the nested table id is pulled out of the depths", stateShape?.ids.length === 1);
+check("an object with no content is not invented", parseObjectShape({ data: {} }) === undefined);
+check("a short hex is not mistaken for an object id", suiIdsIn({ a: "0x2" }).length === 0);
 
 // Sui is in the chain table now, which is precisely why the report has to
 // say its vaults went unread: without the line, "no bridge holds any of it
