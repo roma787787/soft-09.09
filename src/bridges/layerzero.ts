@@ -13,6 +13,17 @@ import { bytes32ToAddress, isEvmAddressBytes32 } from "../protocols/util";
 const OAPP_ABI = [
   { type: "function", name: "endpoint", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "token", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  // The one on-chain question that separates a vault from a mint-burn
+  // deployment. Both name a separate ERC-20 in token(), so token() cannot
+  // tell them apart - the registry's type string was the only evidence, and
+  // the peer walk reaches chains no registry lists at all.
+  //
+  // IOFT declares it, and the two implementations answer differently by
+  // construction: a locking adapter pulls the token with transferFrom and
+  // needs an allowance, so it answers true. A mint-burn adapter burns from
+  // the sender directly and needs none, so it answers false, exactly as a
+  // native OFT does. That is the same distinction, asked of the contract.
+  { type: "function", name: "approvalRequired", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const;
 
 /**
@@ -42,6 +53,15 @@ export interface OftProbe {
    * answer from "this token is not bridged".
    */
   kind: "adapter" | "native";
+  /**
+   * Whether the contract confirmed it locks what it names.
+   *
+   * Only meaningful for an adapter. `true` means approvalRequired() said so;
+   * `false` means it denied it, which makes this a mint-burn deployment that
+   * holds nothing by design; undefined means the question could not be asked
+   * - V1 has no such function - and the old assumption stands.
+   */
+  locks?: boolean;
   /** The ERC-20 an adapter locks. */
   wrappedToken?: Address;
   /** Which generation of the protocol this contract belongs to. */
@@ -57,6 +77,26 @@ export interface OftProbe {
  * decides whether "no custody balance" means no liquidity or means the
  * design has no custody contract at all.
  */
+/**
+ * What a contract is, given the two things it can be asked.
+ *
+ * Split out because the decision is the whole point and the reads around it
+ * need a live node: naming a separate ERC-20 makes a contract an adapter
+ * only until it is asked whether it needs an allowance, and a mint-burn
+ * deployment answers that question the way a native OFT does.
+ */
+export function classifyOft(
+  self: Address,
+  wrapped: Address | undefined,
+  locks: boolean | undefined
+): "adapter" | "native" {
+  if (!wrapped || wrapped.toLowerCase() === self.toLowerCase()) return "native";
+  // Only a denial overrules token(). Silence - V1, or a contract that does
+  // not implement it - leaves the old reading in place, so a vault is never
+  // written off on the strength of a question that went unanswered.
+  return locks === false ? "native" : "adapter";
+}
+
 export async function probeLayerZeroToken(
   chainKey: string,
   tokenAddress: Address
@@ -78,9 +118,30 @@ export async function probeLayerZeroToken(
   // OFT.sol returns address(this); OFTAdapter.sol returns what it locks.
   // V1's ProxyOFT behaves the same way, which is why one check covers both.
   const isAdapter = !!wrapped && wrapped.toLowerCase() !== tokenAddress.toLowerCase();
-  return isAdapter
-    ? { chainKey, kind: "adapter", wrappedToken: wrapped, version }
-    : { chainKey, kind: "native", version };
+  if (!isAdapter) return { chainKey, kind: "native", version };
+
+  // Naming a separate ERC-20 is where the old test stopped, and it is not
+  // enough: a mint-burn adapter names one too. Asked outright, and only of
+  // V2 - V1 predates the function, so there it stays unknown and the
+  // contract keeps the benefit of the doubt rather than being written off.
+  let locks: boolean | undefined;
+  if (version === "v2") {
+    try {
+      locks = (await getClient(chainKey).readContract({
+        address: tokenAddress,
+        abi: OAPP_ABI,
+        functionName: "approvalRequired",
+      })) as boolean;
+    } catch {
+      locks = undefined;
+    }
+  }
+
+  // A denial is definite: this contract mints and burns, so nothing is held
+  // here and an empty balance is the design rather than an empty vault.
+  return classifyOft(tokenAddress, wrapped, locks) === "native"
+    ? { chainKey, kind: "native", locks, version }
+    : { chainKey, kind: "adapter", locks, wrappedToken: wrapped, version };
 }
 
 /**

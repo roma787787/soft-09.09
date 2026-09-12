@@ -100,7 +100,7 @@ import { formatInfoCard } from "../src/bot/format";
 import { SVM_CHAINS } from "../src/config/svmChains";
 import { OTHER_CHAINS } from "../src/config/otherChains";
 import { preferredRouteId } from "../src/bridges/hyperlane";
-import { extractDeployments, aliasKeysFor, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
+import { extractDeployments, aliasKeysFor, classifyOft, type RegistryDeploymentInfo } from "../src/bridges/layerzero";
 import { dedupeCustodians, tokenByChainFrom, withCustodianTokens } from "../src/bridges";
 import {
   REGISTRY_CHAIN_IDS,
@@ -2914,6 +2914,44 @@ async function asyncChecks(): Promise<void> {
   check("the preconfigured one is counted as preconfigured", mixedRegistry.accounting.preconfigured === 1);
   check("and the adapter still becomes a custodian", mixedRegistry.custodians.length === 1);
 }
+
+// -----------------------------------------------------------------------------
+// A contract that names a separate ERC-20 is not yet a vault.
+//
+// The peer walk reaches chains no registry lists, so the registry's type
+// string - the only thing that told a locking adapter from a mint-burn one -
+// is not available there. token() cannot tell them apart: both name a token
+// other than themselves. Nine adapters found this way came back holding
+// nothing and were reported as empty vaults, which is the opposite of the
+// truth: a mint-burn deployment never holds anything at all, so there is no
+// vault to fill.
+// -----------------------------------------------------------------------------
+
+const SELF = "0x1111111111111111111111111111111111111111" as const;
+const OTHER = "0x2222222222222222222222222222222222222222" as const;
+
+check("a contract naming itself mints, whatever else it says", classifyOft(SELF, SELF, true) === "native");
+check("naming nothing is the same answer", classifyOft(SELF, undefined, true) === "native");
+check(
+  "naming another token and needing an allowance is a vault",
+  classifyOft(SELF, OTHER, true) === "adapter"
+);
+check(
+  "naming another token and needing none is mint-burn, not an empty vault",
+  classifyOft(SELF, OTHER, false) === "native"
+);
+// V1 has no approvalRequired(), and a contract that will not answer must not
+// be written off: an unanswered question is not a denial.
+check(
+  "a question that went unanswered leaves the vault reading in place",
+  classifyOft(SELF, OTHER, undefined) === "adapter"
+);
+// Checksum casing differs between registries and RPC replies, and comparing
+// them raw would call an OFT an adapter locking itself.
+check(
+  "the self comparison ignores case",
+  classifyOft(SELF, SELF.toUpperCase().replace("0X", "0x") as typeof SELF, undefined) === "native"
+);
 
 // -----------------------------------------------------------------------------
 // The same contract arrives from the registry and from probing the token

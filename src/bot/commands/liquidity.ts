@@ -131,11 +131,15 @@ export async function resolveRegistryDeployments(
     // label and the contract say "holds nothing" is the chain mint-only.
     //
     // Except when the registry says mint-burn outright. Such an adapter does
-    // name a separate ERC-20 - it was granted mint and burn on one - so the
-    // contract probe reads it exactly like a locking adapter and the balance
-    // comes back zero, which is then reported as a vault standing empty.
-    // Nothing on-chain separates the two, so the label is taken at its word
-    // here, and only here.
+    // name a separate ERC-20 - it was granted mint and burn on one - so
+    // token() reads it exactly like a locking adapter and the balance comes
+    // back zero, which is then reported as a vault standing empty.
+    //
+    // The label is taken at its word here because it is the cheapest
+    // evidence available and the registry states it plainly. Where there is
+    // no registry entry to read - every chain the peer walk reaches - the
+    // contract is asked approvalRequired() instead, which distinguishes the
+    // two on-chain.
     if (deployment.mintsAndBurns || (!onChain && !deployment.locksCollateral)) {
       nativeOftChains.add(deployment.chainKey);
       minting++;
@@ -341,9 +345,14 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     if (!probe) continue;
     const platform = token.platforms.find((p) => p.chainKey === probe.chainKey);
 
-    // Only V2 contracts are useful as seeds: the peer walk asks peers(eid),
-    // which V1 does not implement. A V1 hit still contributes its own row.
-    if (platform && probe.version === "v2") {
+    // Both generations seed the walk. This used to admit V2 only, on the
+    // grounds that V1 does not implement peers(eid) - true, but the walk
+    // stopped depending on it: it asks a V1 seed trustedRemoteLookup with
+    // the eid converted to a V1 chain id. Registry deployments were already
+    // seeded regardless of generation, so the restriction only ever silenced
+    // the probe path, and a token whose live deployment is V1 and absent
+    // from the registry never seeded the walk at all.
+    if (platform) {
       seeds.push({ chainKey: probe.chainKey, oapp: platform.tokenAddress });
     }
 
