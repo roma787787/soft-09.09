@@ -1579,9 +1579,40 @@ check("and also when Sui wraps it", parseCustodyAmount({ data: { content: { fiel
 check("an unexpected shape is not read as an empty vault", parseCustodyAmount({ data: { content: { fields: {} } } }) === undefined);
 check("and neither is a missing object", parseCustodyAmount(null) === undefined);
 
-// Sui is in the chain table now, which is precisely why the report has to
-// say its vaults went unread: without the line, "no bridge holds any of it
-// here" would be covering for a check that never ran.
+// Sui is in the chain table now, and one of its bridges is read and the rest
+// are not - which is precisely why the report has to say which. Without the
+// line, "no bridge holds any of it here" would be covering for the ones that
+// were never asked; with the old wording it denied the check that does run.
+// A token whose only vault is on Sui. Both short replies in the report build
+// return before Sui is read - "no custody contracts found" and the
+// one-network "nothing here" - so the custody row has to exist by the time
+// they are reached, or a real balance is answered with "nothing found".
+const suiOnly = renderLiquidityReport({
+  symbol: "SUI",
+  name: "Sui",
+  balances: [
+    {
+      protocol: "wormhole",
+      chainKey: "sui",
+      custodyAddress: "0xf0147adcfbf7b3270aac16b35f1f1474fb75c178ad8ba04da28c866b8d337691",
+      tokenAddress: "0x2::sui::SUI",
+      note: "реестр токенов",
+      amount: 2_939_806_490_000n,
+      decimals: 9,
+    } as any,
+  ],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: {},
+  scope: { supportedChains: [], unsupportedPlatforms: [], byProtocol: { wormhole: 1 }, bridgesUnread: ["sui"] },
+});
+check("a vault that exists only on Sui is reported", suiOnly.includes("Сеть: <b>Sui</b>"));
+check("with the amount scaled by the coin's own decimals", suiOnly.includes("2 939,8064 SUI"));
+check("and linked to the object holding it", suiOnly.includes("suiscan.xyz/mainnet/object/0xf0147adc"));
+// Wormhole is read there; the rest are not, and the report says which even
+// when it found something.
+check("the partial-coverage caveat survives a found balance", suiOnly.includes("проверен только Wormhole"));
+
 const suiKnownButUnread = renderLiquidityReport({
   symbol: "USDC",
   name: "USDC",
@@ -1596,7 +1627,8 @@ const suiKnownButUnread = renderLiquidityReport({
     bridgesUnread: ["sui"],
   },
 });
-check("a chain whose vaults cannot be read says so", suiKnownButUnread.includes("не хранилища мостов"));
+check("a chain whose bridges are only partly read says so", suiKnownButUnread.includes("проверен только Wormhole"));
+check("and does not deny the check that does run", !suiKnownButUnread.includes("не хранилища мостов"));
 check("and names it", /Sui/.test(suiKnownButUnread));
 
 // A node that does not implement a method, or is rate-limiting, will be
@@ -1655,12 +1687,15 @@ check(
   "the chain that WAS checked still carries that claim",
   /ни один отслеживаемый мост[^.]*Cronos/.test(suiSupplyUnverified)
 );
-check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("Сколько из этого лежит в мостах — неизвестно"));
+check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("Сколько лежит в остальных, неизвестно"));
+// Named, not hand-waved: Wormhole IS read there, and the coin simply is not
+// in its registry. "No vault is read here" would be the old lie in reverse.
+check("it names the bridge that was checked", suiSupplyUnverified.includes("проверен только Wormhole"));
 // The caveat now sits beside the number it qualifies, so repeating it in the
 // scope block put the same warning twice in one report.
 check(
   "the warning is not repeated once the supply line carries it",
-  !suiSupplyUnverified.includes("читает только выпуск токена")
+  suiSupplyUnverified.split("проверен только Wormhole").length === 2
 );
 // Without a captured reason the old two-way split still stands.
 const supplyWithoutReason = renderLiquidityReport({

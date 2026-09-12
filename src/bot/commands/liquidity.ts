@@ -551,6 +551,35 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
 
   const all = dedupeCustodians([...custodians, ...found, ...vaults, ...ccip, ...stargate]);
 
+  // Read before the two short replies below, not after them. Both return
+  // early on "nothing found", and Sui's custody is not among the custodians
+  // they count - so a token whose only vault is on Sui was answered "no
+  // custody contracts found" while the balance sat there unread, and
+  // /info SUI sui said the same about the one chain it was asked about.
+  //
+  // Wormhole's custody is a balance, and a balance outranks a supply. What
+  // the registry types NativeAsset<C> is collateral locked on Sui;
+  // WrappedAsset<C> is a coin minted here against collateral elsewhere, and
+  // is deliberately not counted as custody.
+  const suiPlatform = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key);
+  const suiInScope = !!suiPlatform && (!chainFilter || chainFilter === SUI_CHAIN.key);
+  const suiRows: BalanceRow[] = [];
+  if (suiInScope) {
+    const custody = await readSuiWormholeCustody(suiPlatform!.tokenAddress);
+    const meta = custody ? await suiCoinMetadata(suiPlatform!.tokenAddress) : undefined;
+    if (custody && meta?.decimals !== undefined) {
+      suiRows.push({
+        protocol: "wormhole",
+        chainKey: SUI_CHAIN.key,
+        custodyAddress: custody.objectId,
+        tokenAddress: custody.coinType,
+        note: "реестр токенов",
+        amount: custody.amount,
+        decimals: meta.decimals,
+      });
+    }
+  }
+
   // "Nothing was found" is a claim, and a truncated walk cannot support it.
   // Both short replies below end the report before the scope section that
   // would have said so, so they carry the caveat themselves.
@@ -561,7 +590,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       ? ""
       : `\n\nНо обход пиров LayerZero не успел спросить ${unasked.length} ${plural(unasked.length, "сеть", "сети", "сетей")} — узел зацепки отвечал слишком медленно. Повторите команду, ответ может оказаться другим.`;
 
-  if (all.length === 0 && !solanaHasSomething) {
+  if (all.length === 0 && !solanaHasSomething && suiRows.length === 0) {
     const lines = [`<b>${esc(token.name)} (${esc(token.symbol)})</b>`, "", "Контрактов-хранилищ по этому токену не найдено."];
     if (nativeOftChains.size > 0) {
       lines.push(
@@ -591,7 +620,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // Solana rows are counted here too: narrowing to Solana finds nothing
   // among the EVM custodians by definition, and saying "nothing here" while
   // holding its balances would be the report contradicting itself.
-  if (chainFilter && scoped.length === 0 && solanaRows.length === 0) {
+  if (chainFilter && scoped.length === 0 && solanaRows.length === 0 && suiRows.length === 0) {
     const label = chainMeta(chainFilter)?.label ?? chainFilter;
     return (
       `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
@@ -600,7 +629,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // without that reads as a checked, empty chain. This reply returns
       // before the supply is ever read, so it carries the caveat itself.
       (chainFilter === SUI_CHAIN.key
-        ? " Хранилища мостов на Sui бот пока не читает — они там устроены иначе, — так что это не значит, что их нет."
+        ? " Из мостов на Sui проверен только Wormhole — этой монеты в его реестре нет; остальные там устроены иначе и пока не читаются."
         : "") +
       meshCaveat(inScope(mesh.unasked)) +
       `\n\nБез указания сети: <code>/info ${esc(token.symbol)}</code>`
@@ -637,34 +666,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   // an address - so what can be said is how much of the coin exists there.
   // For a token issued on Sui, which USDC is, that IS the answer: no
   // collateral is locked behind it anywhere, and the supply line says so.
-  const suiPlatform = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key);
-  const suiInScope = !!suiPlatform && (!chainFilter || chainFilter === SUI_CHAIN.key);
-  const suiRows: BalanceRow[] = [];
-  if (suiInScope) {
-    // Wormhole's custody first: it is a balance, and a balance outranks a
-    // supply. What the registry types NativeAsset<C> is collateral locked on
-    // Sui; WrappedAsset<C> is a coin minted here against collateral
-    // elsewhere, and is deliberately not counted as custody.
-    const custody = await readSuiWormholeCustody(suiPlatform!.tokenAddress);
-    const meta = custody ? await suiCoinMetadata(suiPlatform!.tokenAddress) : undefined;
-    if (custody && meta?.decimals !== undefined) {
-      suiRows.push({
-        protocol: "wormhole",
-        chainKey: SUI_CHAIN.key,
-        custodyAddress: custody.objectId,
-        tokenAddress: custody.coinType,
-        note: "реестр токенов",
-        amount: custody.amount,
-        decimals: meta.decimals,
-      });
-    }
-    // The supply still answers the other question - how much of the coin is
-    // on Sui at all - and for one issued there, which USDC is, that is the
-    // whole answer: no bridge holds collateral behind it anywhere.
-    if (suiRows.length === 0 && !withCustody.has(SUI_CHAIN.key)) {
-      const read = await readSuiSupply(suiPlatform!.tokenAddress, symbol);
-      if (read) supplyOnly.push(read);
-    }
+  // Sui's supply answers the other question - how much of the coin is on Sui
+  // at all - and for one issued there, which USDC is, that is the whole
+  // answer: no bridge holds collateral behind it anywhere.
+  if (suiInScope && suiRows.length === 0 && !withCustody.has(SUI_CHAIN.key)) {
+    const read = await readSuiSupply(suiPlatform!.tokenAddress, symbol);
+    if (read) supplyOnly.push(read);
   }
 
   const supportedChains = listedChains(token);
@@ -727,7 +734,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // Its supply is read; its bridge vaults are not, and without this line
       // every "no bridge holds any of it here" sentence would be covering
       // for a check that never ran.
-      bridgesUnread: suiInScope && suiRows.length === 0 ? [SUI_CHAIN.key] : [],
+      bridgesUnread: suiInScope ? [SUI_CHAIN.key] : [],
       // The walk asks the seed's node once per destination chain, so a slow
       // node can leave part of the list unasked. Reported rather than
       // silently dropped: LayerZero absent from a chain and LayerZero never

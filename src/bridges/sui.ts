@@ -1,6 +1,6 @@
 import { contracts } from "@wormhole-foundation/sdk-base";
 import { suiCall, SuiRpcError } from "../services/suiClient";
-import { SUI_CHAIN, isSuiAddress, isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../config/suiChain";
+import { SUI_CHAIN, isSuiCoinType, normaliseSuiCoinType } from "../config/suiChain";
 
 /**
  * What can be read on Sui, and what deliberately is not.
@@ -72,14 +72,20 @@ const metadataCache = new Map<string, SuiCoinMetadata | undefined>();
 
 export async function suiCoinMetadata(coinType: string): Promise<SuiCoinMetadata | undefined> {
   const key = normaliseSuiCoinType(coinType) ?? coinType;
-  if (metadataCache.has(key)) return metadataCache.get(key);
+  const cached = metadataCache.get(key);
+  if (cached) return cached;
+
   let meta: SuiCoinMetadata | undefined;
   try {
     meta = parseCoinMetadata(await suiCall("suix_getCoinMetadata", [coinType]));
   } catch {
     meta = undefined;
   }
-  metadataCache.set(key, meta);
+  // Only an answer is remembered. A coin's decimals do not change, but a node
+  // that refused once would otherwise cost this coin its decimals for the
+  // life of the process - and without them the amount cannot be scaled at
+  // all, so the row disappears.
+  if (meta) metadataCache.set(key, meta);
   return meta;
 }
 
@@ -160,16 +166,6 @@ export async function readSuiSupply(coinType: string, symbol: string): Promise<S
   };
 }
 
-/** How much of a coin one Sui account holds, for a custody address we know. */
-export async function readSuiBalance(owner: string, coinType: string): Promise<bigint | undefined> {
-  if (!isSuiAddress(owner) || !isSuiCoinType(coinType)) return undefined;
-  try {
-    return parseBalance(await suiCall("suix_getBalance", [owner, coinType]));
-  } catch {
-    return undefined;
-  }
-}
-
 /* --------------------------- Wormhole custody --------------------------- */
 
 /**
@@ -188,13 +184,17 @@ const NATIVE_ASSET = "::native_asset::NativeAsset<";
 /** Pages walked before giving up. Twenty fields a page, and it is one chain. */
 const MAX_REGISTRY_PAGES = 40;
 
+/**
+ * Cached only once it is known. The id is a property of a deployed contract
+ * and never changes, but a node that would not answer is a property of the
+ * minute - remembering that as "no registry" would leave the chain unread
+ * until the next deploy.
+ */
 let registryId: string | undefined;
-let registryLookedUp = false;
 
 /** The token registry's table, read out of the bridge's own state object. */
 export async function suiTokenRegistryId(): Promise<string | undefined> {
-  if (registryLookedUp) return registryId;
-  registryLookedUp = true;
+  if (registryId) return registryId;
 
   const bridge = suiTokenBridge();
   if (!bridge) return undefined;
@@ -236,44 +236,85 @@ export function parseCustodyAmount(result: unknown): bigint | undefined {
  * balance as custody would claim the money is here when it is on the chain
  * the token came from.
  */
-export async function findSuiNativeAsset(coinType: string): Promise<SuiDynamicField | undefined> {
-  const parent = await suiTokenRegistryId();
-  if (!parent) return undefined;
+let assetIndex: { at: number; byCoin: Map<string, string> } | undefined;
+let assetIndexInFlight: Promise<Map<string, string>> | undefined;
 
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_REGISTRY_PAGES; page++) {
-    let read: SuiFieldPage;
-    try {
-      read = parseFieldPage(await suiCall("suix_getDynamicFields", [parent, cursor ?? null, 50]));
-    } catch {
-      return undefined;
+/** The registry is a deployed table; it gains a coin now and then, not hourly. */
+const INDEX_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Every coin Wormhole locked on Sui, by coin type.
+ *
+ * Built once and reused. Walking the registry per token would put four to
+ * ten requests on Sui's public node for every report that so much as
+ * mentions a coin listed there - including every report where the answer is
+ * "not in the registry", which walks every page before it can say so. That
+ * node rate-limits by IP, and a chain that drops out of a report reads as
+ * "no liquidity here".
+ *
+ * A walk that did not reach the last page is not cached: a half-read
+ * registry would answer "no custody" for every coin in the half it never
+ * saw, and keep doing it for an hour.
+ */
+async function suiNativeAssetIndex(): Promise<Map<string, string>> {
+  if (assetIndex && Date.now() - assetIndex.at < INDEX_TTL_MS) return assetIndex.byCoin;
+  if (assetIndexInFlight) return assetIndexInFlight;
+
+  assetIndexInFlight = (async () => {
+    const byCoin = new Map<string, string>();
+    const parent = await suiTokenRegistryId();
+    if (!parent) return byCoin;
+
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_REGISTRY_PAGES; page++) {
+      let read: SuiFieldPage;
+      try {
+        read = parseFieldPage(await suiCall("suix_getDynamicFields", [parent, cursor ?? null, 50]));
+      } catch {
+        return byCoin;
+      }
+
+      for (const field of read.fields) {
+        if (!field.objectType.includes(NATIVE_ASSET)) continue;
+        const held = assetTypeParam(field.objectType);
+        const key = held ? normaliseSuiCoinType(held) : undefined;
+        if (key && !byCoin.has(key)) byCoin.set(key, field.objectId);
+      }
+
+      if (!read.hasNextPage || !read.nextCursor) {
+        assetIndex = { at: Date.now(), byCoin };
+        return byCoin;
+      }
+      cursor = read.nextCursor;
     }
+    return byCoin;
+  })().finally(() => {
+    assetIndexInFlight = undefined;
+  });
 
-    for (const field of read.fields) {
-      if (!field.objectType.includes(NATIVE_ASSET)) continue;
-      const held = assetTypeParam(field.objectType);
-      if (held && sameSuiCoinType(held, coinType)) return field;
-    }
+  return assetIndexInFlight;
+}
 
-    if (!read.hasNextPage || !read.nextCursor) return undefined;
-    cursor = read.nextCursor;
-  }
-  return undefined;
+/** The asset object holding this coin, if the bridge locked any of it. */
+export async function findSuiNativeAsset(coinType: string): Promise<string | undefined> {
+  const key = normaliseSuiCoinType(coinType);
+  if (!key) return undefined;
+  return (await suiNativeAssetIndex()).get(key);
 }
 
 /** What Wormhole's Token Bridge holds of this coin on Sui. */
 export async function readSuiWormholeCustody(coinType: string): Promise<SuiCustody | undefined> {
   if (!isSuiCoinType(coinType)) return undefined;
 
-  const field = await findSuiNativeAsset(coinType);
-  if (!field) return undefined;
+  const objectId = await findSuiNativeAsset(coinType);
+  if (!objectId) return undefined;
 
   try {
     const amount = parseCustodyAmount(
-      await suiCall("sui_getObject", [field.objectId, { showContent: true, showType: true }])
+      await suiCall("sui_getObject", [objectId, { showContent: true, showType: true }])
     );
     if (amount === undefined) return undefined;
-    return { coinType, objectId: field.objectId, amount };
+    return { coinType, objectId, amount };
   } catch {
     return undefined;
   }
@@ -309,8 +350,12 @@ export function parseDynamicFields(result: unknown): SuiDynamicField[] {
   const data = (result as { data?: unknown } | null)?.data;
   if (!Array.isArray(data)) return [];
 
+  // Not truncated here. The walk pages this fifty at a time and matches the
+  // coin against every entry; a cap meant for a diagnostic's screen would
+  // have silently dropped thirty of every fifty and answered "no custody"
+  // for a coin sitting in the registry. The callers that print cut instead.
   const fields: SuiDynamicField[] = [];
-  for (const raw of data.slice(0, 20)) {
+  for (const raw of data) {
     const entry = raw as { name?: { type?: unknown; value?: unknown }; objectType?: unknown; objectId?: unknown };
     const value = entry?.name?.value;
     fields.push({
