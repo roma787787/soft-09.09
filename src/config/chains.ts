@@ -148,6 +148,7 @@ import { COSMOS_CHAINS, resolveCosmosChain } from "./cosmosChains";
 import { OTHER_CHAINS, resolveOtherChain } from "./otherChains";
 import { PORTAL_CHAINS, resolvePortalChain } from "./portalChains";
 import { TON_CHAIN } from "./tonChain";
+import { SUI_CHAIN } from "./suiChain";
 
 /**
  * Every EVM chain the bot knows how to talk to.
@@ -1895,6 +1896,10 @@ export function chainMeta(chainKey: string): { label: string; explorerAddressUrl
     return { label: TON_CHAIN.label, explorerAddressUrl: TON_CHAIN.explorerAddressUrl };
   }
 
+  if (chainKey === SUI_CHAIN.key) {
+    return { label: SUI_CHAIN.label, explorerAddressUrl: SUI_CHAIN.explorerAddressUrl };
+  }
+
   return undefined;
 }
 
@@ -1926,6 +1931,9 @@ export function resolveAnyChain(name: string): { key: string; label: string } | 
   const wanted = name.trim().toLowerCase();
   if (TON_CHAIN.key === wanted || (TON_CHAIN.aliases as readonly string[]).includes(wanted)) {
     return { key: TON_CHAIN.key, label: TON_CHAIN.label };
+  }
+  if (SUI_CHAIN.key === wanted || (SUI_CHAIN.aliases as readonly string[]).includes(wanted)) {
+    return { key: SUI_CHAIN.key, label: SUI_CHAIN.label };
   }
 
   return undefined;

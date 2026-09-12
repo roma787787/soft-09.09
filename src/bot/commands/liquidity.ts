@@ -19,6 +19,8 @@ import { findOtherBalances } from "../../bridges/others";
 import { findPortalNonEvmBalances } from "../../bridges/portalNonEvm";
 import { findPortalCosmosBalances } from "../../bridges/portalCosmos";
 import { findCcipSvmBalances, SOLANA_KEY } from "../../bridges/ccipSvm";
+import { readSuiSupply } from "../../bridges/sui";
+import { SUI_CHAIN } from "../../config/suiChain";
 import { portalCosmosChain } from "../../config/portalCosmosChains";
 import { findTonBalances } from "../../bridges/ton";
 import type { NonEvmReadResult } from "../../bridges/types";
@@ -594,6 +596,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     return (
       `<b>${esc(token.name)} (${esc(token.symbol)})</b>\n\n` +
       `В сети ${esc(label)} контрактов-хранилищ по этому токену не найдено.` +
+      // On Sui there is no such thing to find yet, and saying "not found"
+      // without that reads as a checked, empty chain. This reply returns
+      // before the supply is ever read, so it carries the caveat itself.
+      (chainFilter === SUI_CHAIN.key
+        ? " Хранилища мостов на Sui бот пока не читает — они там устроены иначе, — так что это не значит, что их нет."
+        : "") +
       meshCaveat(inScope(mesh.unasked)) +
       `\n\nБез указания сети: <code>/info ${esc(token.symbol)}</code>`
     );
@@ -621,6 +629,20 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
     )
     .map((p) => ({ chainKey: p.chainKey!, tokenAddress: p.tokenAddress }));
   const supplyOnly = supplyTargets.length > 0 ? await readChainSupplies(supplyTargets) : [];
+
+  // Sui asked separately, because its deployment arrives as a Move coin type
+  // rather than an address and so lives in otherPlatforms, which the loop
+  // above never looks at. No bridge on Sui is readable yet - the Wormhole
+  // custody sits in a dynamic field of the bridge's own state object, not at
+  // an address - so what can be said is how much of the coin exists there.
+  // For a token issued on Sui, which USDC is, that IS the answer: no
+  // collateral is locked behind it anywhere, and the supply line says so.
+  const suiPlatform = token.otherPlatforms.find((p) => p.chainKey === SUI_CHAIN.key);
+  const suiInScope = !!suiPlatform && (!chainFilter || chainFilter === SUI_CHAIN.key);
+  if (suiInScope && !withCustody.has(SUI_CHAIN.key)) {
+    const read = await readSuiSupply(suiPlatform!.tokenAddress, symbol);
+    if (read) supplyOnly.push(read);
+  }
 
   const supportedChains = listedChains(token);
   const unsupportedPlatforms = [
@@ -677,6 +699,12 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // this one; until the scan lands, the list is not something to make
       // claims from.
       chainListIncomplete: !lastDiscovery(),
+      // Sui is in the table now, so it no longer appears as a network the
+      // bot does not cover - and that is exactly why this has to be said.
+      // Its supply is read; its bridge vaults are not, and without this line
+      // every "no bridge holds any of it here" sentence would be covering
+      // for a check that never ran.
+      bridgesUnread: suiInScope ? [SUI_CHAIN.key] : [],
       // The walk asks the seed's node once per destination chain, so a slow
       // node can leave part of the list unasked. Reported rather than
       // silently dropped: LayerZero absent from a chain and LayerZero never

@@ -33,6 +33,10 @@ export function helpText(): string {
   // TON counted here too. The line below adds it to the breakdown and this
   // sum did not, so the total came out one short of its own parts - and one
   // short of what /sources reports for the same tables.
+  // The + 1 is TON. Sui is deliberately NOT counted: this total means
+  // "chains whose bridge vaults are read", and on Sui only the token's own
+  // supply is. Counting it would inflate the number with a chain that
+  // cannot answer the question the bot exists to answer.
   const total =
     CHAINS.length + SVM_CHAINS.length + COSMOS_CHAINS.length + OTHER_CHAINS.length + PORTAL_CHAINS.length + 1;
   return `🌉 <b>Bridge Liquidity Tracker</b>
@@ -46,6 +50,8 @@ export function helpText(): string {
 • <b>Portal</b> — Wormhole Token Bridge (сам мост и токены, которые он выпустил)
 • <b>Stargate</b> — пулы Stargate, включая нативные
 • <b>Across</b> — SpokePool, одно хранилище на сеть
+
+На <b>Sui</b> бот читает только выпуск токена — сколько его там есть. Хранилища мостов там устроены иначе (не баланс по адресу, а объект внутри состояния моста) и пока не читаются.
 
 <b>Команды:</b>
 <code>/info &lt;тикер&gt;</code> — сколько токена лежит в хранилищах мостов по всем сетям. Пример: <code>/info ARB</code>

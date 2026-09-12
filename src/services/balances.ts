@@ -64,7 +64,13 @@ async function readDecimals(chainKey: string, token: Address): Promise<number> {
 
 export interface ChainSupply {
   chainKey: string;
-  tokenAddress: Address;
+  /**
+   * Widened from an EVM address because Sui names a coin with a Move type
+   * tag - `0x…::usdc::USDC` - and not with an address at all. Only ever
+   * displayed and compared, never passed to a contract call, so the narrower
+   * type bought nothing here and excluded a whole chain.
+   */
+  tokenAddress: string;
   /** Undefined when the chain or the contract would not answer. */
   amount?: bigint;
   decimals?: number;

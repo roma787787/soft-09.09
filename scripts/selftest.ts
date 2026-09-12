@@ -95,6 +95,8 @@ import {
   CHAINS,
 } from "../src/config/chains";
 import { capToTelegramLimit, renderLiquidityReport, splitForTelegram } from "../src/bot/render";
+import { isSuiCoinType, normaliseSuiCoinType, sameSuiCoinType } from "../src/config/suiChain";
+import { parseSupply, parseBalance, parseCoinMetadata, suiSymbolAgrees } from "../src/bridges/sui";
 import { helpText } from "../src/bot/commands/help";
 import { formatInfoCard } from "../src/bot/format";
 import { SVM_CHAINS } from "../src/config/svmChains";
@@ -1444,6 +1446,71 @@ const wholeMesh = renderLiquidityReport({
   },
 });
 check("a walk that finished says nothing about time", !wholeMesh.includes("не успел спросить"));
+
+// -----------------------------------------------------------------------------
+// Sui. A coin there is a Move type tag, not an address, and a balance is a
+// set of objects rather than a mapping inside a contract - so none of the
+// EVM machinery applies and the parsing is its own.
+// -----------------------------------------------------------------------------
+
+check("a full coin type is recognised", isSuiCoinType("0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC"));
+// Sui writes its framework types short; both spellings name one coin.
+check("and the chain's own short-form coin too", isSuiCoinType("0x2::sui::SUI"));
+check("a bare address is not a coin type", !isSuiCoinType("0x2"));
+check("nor is an EVM address", !isSuiCoinType("0xdAC17F958D2ee523a2206206994597C13D831ec7"));
+
+check(
+  "a short package id normalises to the same coin as its padded form",
+  sameSuiCoinType("0x2::sui::SUI", `0x${"0".repeat(63)}2::sui::SUI`)
+);
+// The module and struct names are Move identifiers, so case is meaning:
+// lowercasing USDC would name a type that does not exist.
+check(
+  "the struct name keeps its case",
+  normaliseSuiCoinType("0x2::coin::COIN")?.endsWith("::coin::COIN") === true
+);
+check("two different coins do not collapse", !sameSuiCoinType("0x2::sui::SUI", "0x2::sui::WSUI"));
+
+check("a supply comes back as a bigint", parseSupply({ value: "74309012673600" }) === 74_309_012_673_600n);
+// Anything but a decimal string is a shape we did not expect, and guessing
+// zero would print "nothing is issued here" about a chain we failed to read.
+check("an unexpected shape is not read as zero", parseSupply({ value: null }) === undefined);
+check("and neither is a missing field", parseSupply({}) === undefined);
+
+check("a balance comes back as a bigint", parseBalance({ totalBalance: "1500000" }) === 1_500_000n);
+check("an unreadable balance is not zero", parseBalance({ totalBalance: {} }) === undefined);
+
+check("coin metadata yields decimals", parseCoinMetadata({ decimals: 6, symbol: "USDC" })?.decimals === 6);
+// Decimals are what turns a raw integer into an amount; without them the
+// number would be printed a million times too large.
+check("metadata without decimals is refused", parseCoinMetadata({ symbol: "USDC" }) === undefined);
+
+check("a matching symbol is accepted", suiSymbolAgrees("USDC", "USDC"));
+check("a wrapped variant of the same ticker is accepted", suiSymbolAgrees("wUSDC", "USDC"));
+check("another project's coin is rejected", !suiSymbolAgrees("CETUS", "USDC"));
+// A coin with no metadata published is still evidence: the type tag came
+// from the price API, and refusing on silence would hide real supply.
+check("a coin that publishes no symbol is not refused", suiSymbolAgrees(undefined, "USDC"));
+
+// Sui is in the chain table now, which is precisely why the report has to
+// say its vaults went unread: without the line, "no bridge holds any of it
+// here" would be covering for a check that never ran.
+const suiKnownButUnread = renderLiquidityReport({
+  symbol: "USDC",
+  name: "USDC",
+  balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
+  checkedCount: 5,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { wormhole: 1 },
+    bridgesUnread: ["sui"],
+  },
+});
+check("a chain whose vaults cannot be read says so", suiKnownButUnread.includes("не хранилища мостов"));
+check("and names it", /Sui/.test(suiKnownButUnread));
 
 // Stargate's row is labelled "пул LayerZero" because that is what it is, so
 // a chain whose own OFT route mints and whose Stargate pool holds 356 000

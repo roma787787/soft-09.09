@@ -278,6 +278,19 @@ export interface ReportInput {
      * the report must not let a clock that ran out pass for an answer.
      */
     meshUnasked?: number;
+    /**
+     * Chains the bot knows but whose bridge vaults it cannot read yet.
+     *
+     * The most dangerous position a chain can occupy. Outside the table it
+     * is honestly named as unchecked; with a working reader it is honestly
+     * measured. In between - known, listed, and with only its token supply
+     * read - every "no bridge holds any of it here" sentence in this report
+     * becomes a claim nothing checked. Sui is there now: its Wormhole
+     * custody is a Balance inside a dynamic field of the bridge's state
+     * object rather than a balance at an address, so the supply is readable
+     * and the vaults are not.
+     */
+    bridgesUnread?: string[];
   };
 }
 
@@ -344,6 +357,13 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
         : `Этих сетей пока нет в таблице бота, поэтому они не проверялись: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}. Почему — <code>/chains</code>.`
     );
   }
+  if (scope.bridgesUnread && scope.bridgesUnread.length > 0) {
+    const named = scope.bridgesUnread.map(chainName).join(", ");
+    lines.push(
+      `⚠️ В ${scope.bridgesUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} бот читает только выпуск токена, но не хранилища мостов — там они устроены иначе и пока не поддержаны. Сколько из этого выпуска лежит в мостах, не проверялось.`
+    );
+  }
+
   if (scope.meshUnasked && scope.meshUnasked > 0) {
     // Named as a limit on this report rather than as a fact about the token.
     // The walk asks one question per destination chain and they all land on
