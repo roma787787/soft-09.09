@@ -356,6 +356,22 @@ function haveEntries(): boolean {
 }
 
 /**
+ * The mapping as of right now, from the payload already in hand.
+ *
+ * Callers that await several things before rendering should ask for it at
+ * the end rather than keep what an await handed them. The table fills in
+ * the background and the gap is largest exactly when someone is looking:
+ * the first command after a restart parses the metadata against a table of
+ * a hundred and forty chains, spends seconds on the other awaits while
+ * discovery finishes, and then prints against a table of two hundred and
+ * fifty. That is 98 chains with an eid where the payload holds 144, and it
+ * looked like the rebuild had not worked at all.
+ */
+export function lzEidsNow(): Map<string, number> {
+  return haveEntries() ? indexEntries() : new Map();
+}
+
+/**
  * The deployments of one chain entry. Usually an array; Boba's entry is not,
  * and a shape this reader does not accept is indistinguishable from a chain
  * with nothing deployed on it - which is the wrong conclusion to draw

@@ -107,6 +107,7 @@ import {
   candidatesFrom,
   extractEids,
   lastMetadataChainCount,
+  lzEidsNow,
   explainMissing,
   normaliseLzKey,
 } from "../src/bridges/lzMetadata";
@@ -2397,6 +2398,35 @@ check("and stale once the table has grown under it", isFresh(built, 1_000_500, 2
 check("stale on the clock as before", isFresh(built, 9_000_000, 142, 60_000) === false);
 // A map from before the count was recorded must not be trusted either.
 check("and a map that never recorded a count is stale", isFresh({ builtAt: 1_000_000 }, 1_000_500, 142, 60_000) === false);
+
+// And the mapping asked for at the moment of use, not kept from whatever an
+// await handed back. The first command after a restart parses the metadata
+// against a table of a hundred and forty chains, spends seconds on its other
+// awaits while discovery fills the table, and then prints against two
+// hundred and fifty - which is how 144 chains with an eid were reported as
+// 98 three runs in a row, each run being the first after a deploy.
+registerChain({
+  key: "arrivedlate",
+  label: "Arrived Late",
+  viemChain: {
+    id: 913_579_246,
+    name: "Arrived Late",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: ["https://late.example"] } },
+  } as never,
+  rpcEnvVar: "ARRIVEDLATE_RPC_URL",
+  defaultRpcUrls: ["https://late.example"],
+  explorerTxUrl: () => "",
+  explorerAddressUrl: () => "",
+  aliases: ["arrivedlate"],
+  platformNames: ["Arrived Late"],
+});
+check(
+  "the mapping asked for now covers a chain added since the payload was read",
+  lzEidsNow().get("arrivedlate") === undefined
+);
+extractEids({ "arrivedlate-mainnet": { chainDetails: { nativeChainId: 913_579_246 }, deployments: [{ eid: 30888 }] } });
+check("and answers from the payload in hand without another download", lzEidsNow().get("arrivedlate") === 30888);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

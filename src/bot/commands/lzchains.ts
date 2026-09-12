@@ -3,6 +3,7 @@ import { CHAINS } from "../../config/chains";
 import { getLzEidMap } from "../../services/idMaps";
 import {
   fetchLzEidsFromMetadata,
+  lzEidsNow,
   lastMetadataChainCount,
   explainMissing,
 } from "../../bridges/lzMetadata";
@@ -29,12 +30,22 @@ export function registerLzChainsCommand(bot: Telegraf) {
     const text = (ctx.message as { text?: string } | undefined)?.text ?? "";
     const detailed = /\s(подробно|full|detail)\b/i.test(text);
 
-    const [map, metadata] = await Promise.all([getLzEidMap(), fetchLzEidsFromMetadata()]);
+    const [map] = await Promise.all([getLzEidMap(), fetchLzEidsFromMetadata()]);
+    // Asked after both awaits, not taken from one of them: the chain table
+    // fills in the background, and the seconds spent waiting here are
+    // exactly when it grows.
+    const metadata = lzEidsNow();
 
     const known: string[] = [];
     const missing: string[] = [];
     for (const chain of CHAINS) {
-      const eid = map.chainKeyToId.get(chain.key);
+      // The fresh index first, the built map second. The map is assembled
+      // over the chain table as it stood when the build began, and the build
+      // is the slow part of this command - so right after a restart it
+      // answers for a table of a hundred and forty while the report prints
+      // against two hundred and fifty. The map still contributes the chains
+      // whose eid came from asking the endpoint rather than from metadata.
+      const eid = metadata.get(chain.key) ?? map.chainKeyToId.get(chain.key);
       if (eid === undefined) {
         // Naming the reason, not just the chain: absent from the source,
         // listed under a name we do not recognise, and deployed on V1 only
