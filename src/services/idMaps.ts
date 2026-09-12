@@ -25,6 +25,17 @@ interface CachedMap {
 
 interface CacheSlot {
   builtAt: number;
+  /**
+   * How many chains the table held when this map was built.
+   *
+   * The map is a function of two things - the published metadata and our
+   * chain table - and the clock only covers the first. The table is
+   * discovered in the background and takes minutes to fill, so a map built
+   * during startup answered for every chain added afterwards: /lzchains
+   * reported 98 chains with an eid where the payload had 144, having been
+   * built before those chains existed. Rebuilt when the table has moved.
+   */
+  chainCount?: number;
   value?: CachedMap;
   /** Set while a build is in progress, so concurrent callers share one build. */
   inFlight?: Promise<CachedMap>;
@@ -81,6 +92,25 @@ async function buildMap(
  * these maps. Without sharing the in-flight promise, that first call would
  * kick off dozens of duplicate builds and hammer rate-limited public RPCs.
  */
+/**
+ * Whether a cached map still answers for the world it was built in.
+ *
+ * Two inputs, so two ways to go stale: the clock, for a published registry
+ * that changes on its own, and the size of the chain table, which is
+ * discovered in the background and takes minutes to fill. Checking only the
+ * clock meant a map built during startup kept answering for every chain
+ * added afterwards - /lzchains reported 98 chains with an eid where the
+ * payload held 144, because the map predated them.
+ */
+export function isFresh(
+  slot: { builtAt: number; chainCount?: number },
+  now: number,
+  chainCount: number,
+  ttlMs: number = TTL_MS
+): boolean {
+  return now - slot.builtAt < ttlMs && slot.chainCount === chainCount;
+}
+
 async function cachedMap(
   key: string,
   fetcher: (chainKey: string) => Promise<number | undefined>,
@@ -92,13 +122,14 @@ async function cachedMap(
     slots.set(key, slot);
   }
 
-  if (slot.value && Date.now() - slot.builtAt < TTL_MS) return slot.value;
+  if (slot.value && isFresh(slot, Date.now(), CHAINS.length)) return slot.value;
   if (slot.inFlight) return slot.inFlight;
 
   const build = buildMap(fetcher, fallback)
     .then((map) => {
       slot!.value = map;
       slot!.builtAt = Date.now();
+      slot!.chainCount = CHAINS.length;
       return map;
     })
     .finally(() => {

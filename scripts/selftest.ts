@@ -26,6 +26,7 @@ import { mapWithConcurrency } from "../src/services/concurrency";
 import { scanAccounting, scanShortfall } from "../src/services/chainScan";
 import { isFragile, isUnreachable, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
+import { isFresh } from "../src/services/idMaps";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
 import { PORTAL_CHAINS, portalCustodyAddress } from "../src/config/portalChains";
 import { TON_CHAIN, toTonAddress } from "../src/config/tonChain";
@@ -2383,6 +2384,19 @@ const fromMainnetEntry = extractEids({
   "somewhere-mainnet": { chainDetails: { nativeChainId: laterChainId }, deployments: [{ eid: 30777 }] },
 });
 check("while a mainnet entry for the same chain is", fromMainnetEntry.get("latecomer") === 30777);
+
+// The same staleness one layer up, sitting on top of the fix below it. The
+// eid map is a function of two things - the published metadata and our chain
+// table - and only the clock was being checked. A map built during startup
+// kept answering for every chain discovered afterwards, so /lzchains
+// reported 98 chains with an eid where the payload held 144. Four cached
+// maps share this.
+const built = { builtAt: 1_000_000, chainCount: 142 };
+check("a map is fresh while the clock and the table both hold", isFresh(built, 1_000_500, 142, 60_000));
+check("and stale once the table has grown under it", isFresh(built, 1_000_500, 253, 60_000) === false);
+check("stale on the clock as before", isFresh(built, 9_000_000, 142, 60_000) === false);
+// A map from before the count was recorded must not be trusted either.
+check("and a map that never recorded a count is stale", isFresh({ builtAt: 1_000_000 }, 1_000_500, 142, 60_000) === false);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
