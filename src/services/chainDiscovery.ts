@@ -58,6 +58,15 @@ export interface RejectedChain {
   label: string;
   chainId: number;
   reason: string;
+  /**
+   * What every endpoint answered, not only the sentence made of them.
+   *
+   * The grouped reason is what fits in a report about sixty chains; when the
+   * question is one chain - "why is Sanko not here" - the answer is the list
+   * of addresses tried and what each said, and reconstructing that meant
+   * another deploy. Absent where the chain never got as far as being probed.
+   */
+  probed?: ProbeOutcome[];
 }
 
 export interface DiscoveryReport {
@@ -786,6 +795,7 @@ async function runDiscovery(): Promise<DiscoveryReport> {
           label: candidate.name,
           chainId: candidate.chainId,
           reason: reasonForChain(outcomes),
+          probed: outcomes,
         } as RejectedChain);
   });
 
@@ -899,23 +909,56 @@ export function defFromDiscovered(entry: unknown): ChainDef | undefined {
  * anything, so the first report of a deploy covers as much as the last one
  * of the deploy before it.
  */
+/**
+ * What the last boot managed to restore, and whether there was anything to
+ * restore from.
+ *
+ * Worth keeping because the two failures look identical from the outside: a
+ * table of a hundred and forty chains after a deploy is either a file that
+ * was never there - the container's disk is thrown away without a volume -
+ * or a file that was there and could not be read. The first is a setting,
+ * the second is a bug, and only this tells them apart.
+ */
+export interface RestoreReport {
+  fileFound: boolean;
+  stored: number;
+  restored: number;
+  path: string;
+  error?: string;
+}
+
+let restore: RestoreReport = { fileFound: false, stored: 0, restored: 0, path: "" };
+
+export function lastRestore(): RestoreReport {
+  return restore;
+}
+
 export function loadDiscoveredChains(): number {
+  restore = { fileFound: false, stored: 0, restored: 0, path: discoveredPath() };
+
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(discoveredPath(), "utf8"));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      restore.error = err instanceof Error ? err.message : String(err);
       console.error("[chains] не удалось прочитать сохранённые сети:", err);
     }
     return 0;
   }
-  if (!Array.isArray(raw)) return 0;
+  restore.fileFound = true;
+  if (!Array.isArray(raw)) {
+    restore.error = "файл есть, но в нём не список сетей";
+    return 0;
+  }
+  restore.stored = raw.length;
 
   let added = 0;
   for (const entry of raw) {
     const def = defFromDiscovered(entry);
     if (def && registerChain(def)) added++;
   }
+  restore.restored = added;
   return added;
 }
 

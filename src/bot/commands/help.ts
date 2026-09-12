@@ -73,6 +73,7 @@ export function helpText(): string {
 <code>/ton &lt;тикер&gt;</code> — то же для TON, где единственный мост — LayerZero.
 <code>/diag</code> — проверить связь с нодами всех сетей.
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
+<code>/chains sanko</code> — одна сеть: есть ли она в таблице, а если нет — что ответил каждый её узел.
 <code>/gecko</code> — работает ли ключ CoinGecko и сколько квоты осталось.
 <code>/lzprobe &lt;тикер|сеть&gt;</code> — сырой ответ реестра LayerZero: по тикеру или по сети.
 

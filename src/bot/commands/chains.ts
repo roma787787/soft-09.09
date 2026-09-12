@@ -1,6 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
-import { CHAINS } from "../../config/chains";
-import { discoverChains, lastDiscovery, type RejectedChain } from "../../services/chainDiscovery";
+import { CHAINS, resolveChain } from "../../config/chains";
+import { rpcUrlsFor } from "../../config/env";
+import { discoverChains, lastDiscovery, lastRestore, type RejectedChain } from "../../services/chainDiscovery";
 import { plural } from "../render";
 import { replyInParts } from "../reply";
 
@@ -27,6 +28,66 @@ export function reasonClass(reason: string): string {
 }
 
 /**
+ * Everything known about one chain, named the way a person would name it.
+ *
+ * Answers in the order the question is usually meant: is it in the table at
+ * all, and if not, was it even considered - and then what each of its
+ * addresses said when asked. The last part is what decides the next step,
+ * and it is the part no grouped report has room for.
+ */
+export function aboutOneChain(query: string, report: ReturnType<typeof lastDiscovery>): string[] {
+  const lines: string[] = [`🌐 <b>${esc(query)}</b>`, ""];
+
+  const known = resolveChain(query);
+  if (known) {
+    const urls = rpcUrlsFor(known.key);
+    lines.push(
+      `✅ В таблице: <b>${esc(known.label)}</b>, id ${known.viemChain.id}.`,
+      `Узел: <code>${esc(urls[0] ?? "нет")}</code>` +
+        (urls.length > 1 ? ` <i>и ещё ${urls.length - 1}</i>` : ""),
+      `Свой адрес задаётся переменной <code>${esc(known.rpcEnvVar)}</code>.`,
+      "",
+      "Отвечает ли он сейчас — /diag."
+    );
+    return lines;
+  }
+
+  lines.push("❌ В таблице её нет.", "");
+
+  if (!report) {
+    lines.push("Поиск сетей ещё не отработал в этом запуске — <code>/chains обнови</code>.");
+    return lines;
+  }
+
+  const matches = (label: string) => label.toLowerCase().includes(query.toLowerCase());
+  const rejected = report.rejected.filter((c) => matches(c.label));
+  if (rejected.length === 0) {
+    lines.push(
+      "И среди отклонённых её тоже нет: ни один источник её не назвал, так что бот о ней просто не знает.",
+      "",
+      "Источники — реестр токенов CoinGecko и метаданные LayerZero. Сеть, которой нет ни там, ни там, добавляется только руками."
+    );
+    return lines;
+  }
+
+  for (const chain of rejected) {
+    lines.push(`Рассматривалась и отклонена: <b>${esc(chain.label)}</b> <i>(id ${chain.chainId})</i>`, `Причина: ${esc(chain.reason)}`);
+    if (chain.probed && chain.probed.length > 0) {
+      lines.push("", "Что ответил каждый адрес:");
+      for (const probe of chain.probed) {
+        lines.push(`  ${probe.ok ? "✅" : "❌"} <code>${esc(probe.url)}</code>\n     ${esc(probe.reason ?? "ответил")}`);
+      }
+    } else {
+      lines.push("<i>До опроса узлов дело не дошло — причина выше сработала раньше.</i>");
+    }
+    lines.push("");
+  }
+
+  lines.push("Если у вас есть рабочий адрес узла — его можно задать переменной окружения для этой сети.");
+  return lines;
+}
+
+/**
  * Shows which networks the bot added on its own, and which it refused.
  *
  * The refusals are the point. "The bot supports 200 chains" is a claim; this
@@ -44,7 +105,37 @@ export function registerChainsCommand(bot: Telegraf) {
     const detailed = /\s(подробно|full|detail)\b/i.test(text);
     const report = rescan || !lastDiscovery() ? await discoverChains() : lastDiscovery()!;
 
+    // One chain, asked by name. The grouped report is right for sixty
+    // refusals and useless for the question people actually arrive with -
+    // "why is Sanko not here" - which was answered by finding a name inside
+    // a comma-separated list of fifty-nine and still not knowing which
+    // address failed or what it said.
+    const asked = text.trim().split(/\s+/).slice(1).filter((w) => !/^(обнови|refresh|scan|подробно|full|detail)$/i.test(w)).join(" ");
+    if (asked) {
+      await replyInParts(ctx, aboutOneChain(asked, report).join("\n"));
+      return;
+    }
+
     const lines: string[] = [`🌐 <b>Сети</b>: ${CHAINS.length} EVM в таблице`];
+
+    // What the boot found on disk. A table of a hundred and forty chains
+    // after a deploy and one of two hundred and fifty look the same in every
+    // other line of this report, and the difference is whether the file the
+    // last scan wrote was still there.
+    const restore = lastRestore();
+    if (restore.restored > 0) {
+      lines.push(`При запуске восстановлено ${restore.restored} из ${restore.stored} сохранённых — файл на месте.`);
+    } else if (restore.fileFound) {
+      lines.push(
+        `⚠️ Файл сохранённых сетей есть (${restore.stored} ${plural(restore.stored, "запись", "записи", "записей")}), ` +
+          `но из него не восстановилось ничего${restore.error ? `: ${esc(restore.error)}` : ""}.`
+      );
+    } else {
+      lines.push(
+        `⚠️ При запуске сохранённых сетей не было — таблица собиралась заново. ` +
+          `Так и будет каждый деплой, пока у сервиса нет тома: <code>DB_PATH=/data/bot.db</code>.`
+      );
+    }
 
     if (report.error) {
       lines.push(
