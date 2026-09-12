@@ -7,6 +7,9 @@ import { verdictFrom, type StorageReport } from "./storage";
 const dir = path.dirname(env.dbPath);
 if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
+// Read before the file is opened, because opening it creates it.
+const dbFileExisted = fs.existsSync(env.dbPath);
+
 export const db = new Database(env.dbPath);
 db.pragma("journal_mode = WAL");
 
@@ -43,7 +46,7 @@ const firstBoot = db.prepare(`SELECT at FROM boots ORDER BY id LIMIT 1`).get() a
 const storage: StorageReport = {
   previousBoots: priorBoots.length,
   firstBootAt: firstBoot?.at,
-  verdict: verdictFrom(priorBoots, env.commitSha),
+  verdict: verdictFrom(priorBoots, env.commitSha, dbFileExisted),
   buildKnown: env.commitSha !== "",
 };
 db.prepare(`INSERT INTO boots (sha) VALUES (?)`).run(env.commitSha || null);

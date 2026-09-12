@@ -4535,7 +4535,13 @@ check("either source alone works", mergeCandidates([], [bridgeOnly]).length === 
 // The whole point is that "no volume" and "volume" look identical from the
 // inside on the first boot, and only the second boot tells them apart. So the
 // first boot must not claim either.
-check("a fresh file claims nothing", verdictFrom([], "abc") === "unknown");
+// The two ways to have no boots recorded are opposite answers: a container
+// that came up with an empty filesystem is the missing volume this looks for,
+// while the first run of the check on storage that was there all along proves
+// nothing. Reading them as one would have raised a false alarm on the very
+// deploy that introduced the check.
+check("a file that was not there is a new file", verdictFrom([], "abc", false) === "new-file");
+check("a file that was there claims nothing yet", verdictFrom([], "abc", true) === "unknown");
 check(
   "a boot from another build proves the file outlived it",
   verdictFrom([{ sha: "old" }, { sha: "abc" }], "abc") === "survived-deploy"

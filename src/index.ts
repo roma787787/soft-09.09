@@ -16,7 +16,9 @@ async function main() {
         ? `переживает деплой, прошлых запусков: ${storage.previousBoots}`
         : storage.verdict === "survived-restart"
           ? "пережила перезапуск, деплой ещё не проверялся"
-          : "создана заново: тома, похоже, нет"
+          : storage.verdict === "new-file"
+            ? "файла не было, создана заново — похоже на контейнер без тома"
+            : "файл был, но это первый запуск с этой проверкой"
     }`
   );
   console.log(`[startup] сборка: ${env.commitSha ? env.commitSha.slice(0, 7) : "коммит не передан"}${env.gitBranch ? ` (${env.gitBranch})` : ""}`);

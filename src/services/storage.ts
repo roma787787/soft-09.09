@@ -20,7 +20,7 @@ export interface StorageReport {
   previousBoots: number;
   /** The first of them, so the reader can see how far back the file goes. */
   firstBootAt?: string;
-  verdict: "survived-deploy" | "survived-restart" | "unknown";
+  verdict: "survived-deploy" | "survived-restart" | "unknown" | "new-file";
   /**
    * Whether the build is identifiable at all. Without it "survived a
    * restart" is all this check can ever say, however many deploys pass.
@@ -28,11 +28,20 @@ export interface StorageReport {
   buildKnown: boolean;
 }
 
+/**
+ * @param fileExisted whether the database file was already on disk when this
+ *   process opened it. It separates the two ways of having no boots recorded:
+ *   a container that started with an empty filesystem, which is the answer
+ *   the reader is after, and the first run of this check itself on storage
+ *   that has been there all along - which proves nothing either way and must
+ *   not be reported as a missing volume.
+ */
 export function verdictFrom(
   previous: { sha: string | null }[],
-  currentSha: string
+  currentSha: string,
+  fileExisted = false
 ): StorageReport["verdict"] {
-  if (previous.length === 0) return "unknown";
+  if (previous.length === 0) return fileExisted ? "unknown" : "new-file";
   // A build other than this one wrote into this file, so the file is older
   // than the build: only a mounted volume does that. Without a commit sha
   // in the environment there is nothing to compare, and every deploy looks
