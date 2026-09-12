@@ -225,19 +225,35 @@ export interface SuiObjectShape {
    * "0x…" }, size }`, so the id that matters is always nested, and it is the
    * one the next call has to ask about.
    */
-  ids: string[];
+  ids: SuiNestedId[];
   note?: string;
 }
 
-/** Object ids written anywhere in a Sui object's contents. */
-export function suiIdsIn(value: unknown, depth = 0): string[] {
+export interface SuiNestedId {
+  /** Where it sits, so the answer names the field rather than a bare id. */
+  path: string;
+  id: string;
+}
+
+/**
+ * Object ids written anywhere in a Sui object's contents, each with the
+ * field path it was found at.
+ *
+ * The path is the point. The token bridge's state carries eight fields and
+ * three of them hold an id; a bare list of ids made the emitter registry and
+ * the token registry indistinguishable, and the first walk followed the
+ * wrong one.
+ */
+export function suiIdsIn(value: unknown, depth = 0, prefix = ""): SuiNestedId[] {
   if (depth > 6 || !value || typeof value !== "object") return [];
-  const found: string[] = [];
-  for (const inner of Object.values(value as Record<string, unknown>)) {
-    if (typeof inner === "string" && /^0x[0-9a-f]{64}$/i.test(inner)) found.push(inner);
-    else found.push(...suiIdsIn(inner, depth + 1));
+  const found: SuiNestedId[] = [];
+  for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (typeof inner === "string" && /^0x[0-9a-f]{64}$/i.test(inner)) found.push({ path, id: inner });
+    else found.push(...suiIdsIn(inner, depth + 1, path));
   }
-  return [...new Set(found)];
+  const seen = new Set<string>();
+  return found.filter((entry) => !seen.has(entry.id) && seen.add(entry.id));
 }
 
 /** Pure half of the object read, so the shape is covered without a live call. */

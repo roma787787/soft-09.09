@@ -99,15 +99,19 @@ export function registerSuiCommand(bot: Telegraf) {
       if (shape.note) lines.push(`  <i>${esc(shape.note)}</i>`);
       if (shape.fields.length > 0) lines.push(`  поля объекта: ${esc(shape.fields.join(", "))}`);
 
-      for (const nested of shape.ids.slice(0, 3)) {
-        const inner = await probeSuiObject(nested);
-        const fields = await probeSuiHolder(nested, coinType);
+      // Every id, with the field it came from. The state carries three, and
+      // a bare list made the emitter registry and the token registry
+      // indistinguishable - the first walk followed the wrong one.
+      for (const nested of shape.ids.slice(0, 8)) {
+        const inner = await probeSuiObject(nested.id);
+        const fields = await probeSuiHolder(nested.id, coinType);
         lines.push(
-          `  ↳ <code>${esc(nested)}</code>`,
+          `  ↳ <b>${esc(nested.path)}</b> <code>${esc(nested.id)}</code>`,
           `      тип: <code>${esc(inner.type)}</code>` + (inner.fields.length ? ` · поля: ${esc(inner.fields.join(", "))}` : ""),
           `      динамических полей: ${fields.fields.length}${fields.fieldsNote ? ` (${esc(fields.fieldsNote)})` : ""}`
         );
-        for (const field of fields.fields.slice(0, 5)) {
+        if (inner.note) lines.push(`      <i>${esc(inner.note)}</i>`);
+        for (const field of fields.fields.slice(0, 4)) {
           lines.push(`      · <code>${esc(field.objectType)}</code>\n        имя: <code>${esc(field.name)}</code>`);
         }
       }

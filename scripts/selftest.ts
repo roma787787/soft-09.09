@@ -1537,8 +1537,16 @@ const stateShape = parseObjectShape({
 check("the object states its own type", stateShape?.type.includes("state::State"));
 check("its top-level fields are listed", stateShape?.fields.includes("token_registry"));
 check("and the nested table id is pulled out of the depths", stateShape?.ids.length === 1);
+// Named by where it sits, not as a bare id. The token bridge's state holds
+// three ids and the first walk followed the wrong one - the emitter registry
+// and the token registry are indistinguishable without the path.
+check("the id is named by the field it came from", stateShape?.ids[0]?.path === "token_registry.fields.coin_types.id.id");
 check("an object with no content is not invented", parseObjectShape({ data: {} }) === undefined);
 check("a short hex is not mistaken for an object id", suiIdsIn({ a: "0x2" }).length === 0);
+// One entry per id: a state that names itself must not send the walk round
+// in a circle.
+const repeated = "0x" + "ab".repeat(32);
+check("the same id twice is one entry", suiIdsIn({ a: repeated, b: { c: repeated } }).length === 1);
 
 // Sui is in the chain table now, which is precisely why the report has to
 // say its vaults went unread: without the line, "no bridge holds any of it
