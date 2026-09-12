@@ -23,7 +23,7 @@ import {
   type AssetPlatform,
 } from "../src/services/coingecko";
 import { mapWithConcurrency } from "../src/services/concurrency";
-import { scanShortfall } from "../src/services/chainScan";
+import { scanAccounting, scanShortfall } from "../src/services/chainScan";
 import { isFragile, isUnreachable, orderEndpoints } from "../src/services/rpcHealth";
 import { attemptsFor, concurrencyFor } from "../src/services/balances";
 import { EXTRA_RPC_URLS_BY_CHAIN_ID } from "../src/config/rpcs.generated";
@@ -2258,6 +2258,31 @@ check(
     scanShortfall({ perChain: answered(223), reachable: 228, timedOut: names(5), unreachable: names(22), total: 250 })
   )
 );
+
+// The report's own arithmetic. Its numerator came from the scan and its
+// denominator from the chain table as it stood when the message was built -
+// and the table is discovered in the background and keeps growing, so
+// "checked 121 of 252" appeared above a list naming twenty-one unchecked
+// chains, leaving a hundred and ten networks accounted for nowhere. There
+// were 142 chains when that sweep began.
+const scan142 = {
+  perChain: answered(142),
+  reachable: 142,
+  timedOut: [] as string[],
+  unreachable: [] as string[],
+  total: 142,
+};
+const acc = scanAccounting(scan142, ["c0", "c1", "c2"]);
+check("what was checked and what was not add up to the table", acc.checked + acc.unchecked.length === acc.total, `${acc.checked}+${acc.unchecked.length}≠${acc.total}`);
+check("the denominator is the table the sweep walked", acc.total === 142);
+check("a chain that refused counts as unchecked", acc.unchecked.includes("c0") && acc.checked === 139);
+
+// And with every kind of shortfall at once, the sum still holds.
+const messy = scanAccounting(
+  { perChain: answered(200), reachable: 220, timedOut: names(20), unreachable: names(30), total: 250 },
+  ["c0", "c1"]
+);
+check("the sum holds with refusals, timeouts and silent chains together", messy.checked + messy.unchecked.length === messy.total, `${messy.checked}+${messy.unchecked.length}≠${messy.total}`);
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a

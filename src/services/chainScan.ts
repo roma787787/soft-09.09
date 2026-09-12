@@ -102,6 +102,33 @@ export async function scanChainsForAddress(address: `0x${string}`): Promise<Chai
  * covered everything. "Not found" and "not looked at" are different answers,
  * and only one of them means the address is not there.
  */
+/**
+ * What the sweep covered and what it did not, from one set of numbers.
+ *
+ * Taken from different places they drift. The table is discovered in the
+ * background and keeps growing, so reading its size when the message was
+ * built put a denominator from after the scan beside a numerator from
+ * during it: "checked 121 of 252" above a list naming twenty-one unchecked
+ * chains, with a hundred and ten networks accounted for nowhere. There were
+ * 142 chains when that sweep began.
+ *
+ * The three numbers come from the same object now, and they add up by
+ * construction - which is the only way a report can promise that they do.
+ */
+export interface ScanAccounting {
+  /** Chains that answered, whatever they answered. */
+  checked: number;
+  /** Chains not looked at, by key: refused, timed out, or known silent. */
+  unchecked: string[];
+  /** The table as it stood when the sweep began. */
+  total: number;
+}
+
+export function scanAccounting(scan: ChainScanResult, failedChainKeys: string[]): ScanAccounting {
+  const unchecked = [...failedChainKeys, ...scan.timedOut, ...scan.unreachable];
+  return { checked: scan.perChain.length - failedChainKeys.length, unchecked, total: scan.total };
+}
+
 export function scanShortfall(scan: ChainScanResult): string {
   if (scan.unreachable.length === 0 && scan.timedOut.length === 0) return "";
   return (

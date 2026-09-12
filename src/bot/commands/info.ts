@@ -2,8 +2,8 @@ import type { Telegraf, Context } from "telegraf";
 import { parseAddressChainArgs } from "../parse";
 import { formatInfoCard } from "../format";
 import { detectOnChain } from "../../protocols/registry";
-import { scanChainsForAddress } from "../../services/chainScan";
-import { CHAINS, getChain, resolveChain, resolveAnyChain } from "../../config/chains";
+import { scanAccounting, scanChainsForAddress } from "../../services/chainScan";
+import { getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
 import { replyWithLiquidity } from "./liquidity";
 import { capToTelegramLimit, plural } from "../render";
@@ -168,9 +168,8 @@ export function registerInfoCommand(bot: Telegraf) {
       return;
     }
 
-    const checked = perChain
-      .filter((p) => !p.outcome.rpcError)
-      .map((p) => getChain(p.chain)?.label ?? p.chain);
+    // Both numbers from one object, so they cannot come from two moments.
+    const coverage = scanAccounting(scan, failed.map((p) => p.chain));
 
     // A count, not two hundred and twenty-nine names. The list was written
     // when the table held forty-two chains and it was reassuring; at this
@@ -179,7 +178,7 @@ export function registerInfoCommand(bot: Telegraf) {
     let message =
       `🔎 <code>${address}</code>\n\n` +
       `Ни на одной сети этот адрес не относится к LayerZero, Hyperlane, Transporter или Portal.\n\n` +
-      `Проверено ${checked.length} ${plural(checked.length, "сеть", "сети", "сетей")} из ${CHAINS.length}.`;
+      `Проверено ${coverage.checked} ${plural(coverage.checked, "сеть", "сети", "сетей")} из ${coverage.total}.`;
 
     if (contractFoundOn.length > 0) {
       message +=
@@ -194,14 +193,9 @@ export function registerInfoCommand(bot: Telegraf) {
     // checked - the node refused, the deadline ran out, the chain was known
     // silent before the sweep began - are one fact to whoever is reading:
     // this address was not looked for there.
-    const unchecked = [
-      ...failed.map((p) => p.chain),
-      ...scan.timedOut,
-      ...scan.unreachable,
-    ].map((key) => getChain(key)?.label ?? key);
-
-    if (unchecked.length > 0) {
-      message += `\n\n⚠️ Не ответили и остались непроверенными: ${unchecked.join(", ")}. Подробности: /diag`;
+    if (coverage.unchecked.length > 0) {
+      const named = coverage.unchecked.map((key) => getChain(key)?.label ?? key);
+      message += `\n\n⚠️ Не ответили и остались непроверенными: ${named.join(", ")}. Подробности: /diag`;
     }
 
     // Capped, which it never was: this is the one report that grew with the
