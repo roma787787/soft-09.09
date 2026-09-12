@@ -152,9 +152,11 @@ export function registerInfoCommand(bot: Telegraf) {
     }
 
     const failed = perChain.filter((p) => p.outcome.rpcError);
+    // Kept as chain keys, not labels: the example command below has to name
+    // one of them, and a label is not what /info takes.
     const contractFoundOn = perChain
       .filter((p) => !p.outcome.rpcError && !p.outcome.noContract)
-      .map((p) => getChain(p.chain)?.label ?? p.chain);
+      .map((p) => p.chain);
 
     // Every chain we could actually reach came back empty - but say so only
     // about the chains that answered.
@@ -182,8 +184,15 @@ export function registerInfoCommand(bot: Telegraf) {
 
     if (contractFoundOn.length > 0) {
       message +=
-        `\n\nКонтракт по этому адресу есть (${contractFoundOn.join(", ")}). ` +
-        `Чтобы посмотреть, что это, укажите сеть явно: <code>/info ${address} ${contractFoundOn.length === 1 ? (getChain(perChain.find((p) => !p.outcome.rpcError && !p.outcome.noContract)!.chain)?.key ?? "ethereum") : "bsc"}</code>`;
+        `\n\nКонтракт по этому адресу есть (${contractFoundOn
+          .map((key) => getChain(key)?.label ?? key)
+          .join(", ")}). ` +
+        // The example names a chain the contract was actually found on.
+        // It used to say "bsc" whenever there was more than one - so a
+        // report that had just listed Ethereum and PulseChain went on to
+        // suggest a third network, which is where the reader would have
+        // found nothing.
+        `Чтобы посмотреть, что это, укажите сеть явно: <code>/info ${address} ${contractFoundOn[0]}</code>`;
     }
 
     // Everything the scan did not finish, in one list rather than in a count
