@@ -1720,7 +1720,12 @@ check(
   "the chain that WAS checked still carries that claim",
   /ни один отслеживаемый мост[^.]*Cronos/.test(suiSupplyUnverified)
 );
-check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("Сколько лежит в остальных, неизвестно"));
+// Four of the five other bridges are not merely unread on Sui - Hyperlane,
+// Stargate, Across and CCIP are not deployed there at all, and LayerZero's
+// OFT registry holds nothing on it either. Saying "the rest are unread"
+// invented five gaps where there is one: the chain's own bridges.
+check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("собственные мосты сети"));
+check("it does not invent bridges that are not there", !suiSupplyUnverified.includes("Сколько лежит в остальных"));
 // Named, not hand-waved: Wormhole IS read there, and the coin simply is not
 // in its registry. "No vault is read here" would be the old lie in reverse.
 check("it names the bridge that was checked", suiSupplyUnverified.includes("проверен только Wormhole"));

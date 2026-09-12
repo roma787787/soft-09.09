@@ -83,7 +83,14 @@ export function registerLzProbeCommand(bot: Telegraf) {
       // before anyone sees its shape. Building a reader for a chain means
       // first seeing what the registry actually holds for it, and every
       // non-EVM family here was built that way.
+      // Whether the chain scan ran, so the reply can say what was tried. A
+      // word that is neither a ticker nor a chain got "SUI is not in the
+      // registry" and a sample of some other token - and the fact that
+      // mattered, that the registry holds nothing on Sui at all, was the one
+      // thing the answer did not say.
+      let scannedAsChain = false;
       if (wanted && data[wanted] === undefined) {
+        scannedAsChain = true;
         const sample = deploymentsOnChain(data, wanted);
         if (sample.found > 0) {
           const shownRows = sample.rows.slice(0, 12).join("\n");
@@ -116,7 +123,11 @@ export function registerLzProbeCommand(bot: Telegraf) {
       await ctx.reply(
         `🔬 Реестр OFT LayerZero\n\n` +
           `Тикеров всего: ${keys.length}\n` +
-          `Показан: <b>${esc(pick!)}</b>${wanted && !data[wanted] ? ` (запрошенного ${esc(wanted)} в реестре нет)` : ""}\n\n` +
+          `Показан: <b>${esc(pick!)}</b>${
+            wanted && !data[wanted]
+              ? ` (${esc(wanted)} в реестре нет${scannedAsChain ? " — ни как тикера, ни как сети: деплоев там ноль" : ""})`
+              : ""
+          }\n\n` +
           `<pre>${esc(shown)}</pre>\n\n` +
           `Пришлите это — по структуре я напишу разбор. Другой тикер: /lzprobe USDT`,
         { parse_mode: "HTML", link_preview_options: { is_disabled: true } }
