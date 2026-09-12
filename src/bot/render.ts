@@ -307,10 +307,17 @@ function scopeLines(scope: ReportInput["scope"]): string[] {
     lines.push(`CoinGecko знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
   }
   if (scope.unsupportedPlatforms.length > 0) {
+    // A claim about the table, not about the bot. "The bot does not check
+    // Energi" reads as a permanent property, and it is not one: the table is
+    // discovered and grows, so one report said that about Energi while
+    // another, after the next scan, read its supply. Saying "not in the
+    // table yet" is true in both, and /chains says why a given network is
+    // missing - dead nodes, no registry describing it, or simply not reached
+    // yet.
     lines.push(
       scope.chainListIncomplete
         ? `Эти сети пока не в списке — он ещё достраивается, спросите через пару минут: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
-        : `Ещё в этих сетях бот их не проверяет: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
+        : `Этих сетей пока нет в таблице бота, поэтому они не проверялись: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}. Почему — <code>/chains</code>.`
     );
   }
   return lines;
@@ -472,16 +479,22 @@ export function renderLiquidityReport(input: ReportInput): string {
       );
     }
     if (nativeOftChains.length === 0 && syntheticHyperlaneChains.length === 0 && unreachable.length === 0 && partial.length === 0) {
+      // Written for whoever is reading the report, which is not whoever runs
+      // the bot. The old version ended "add the address to
+      // config/layerzero-lockboxes.json" - a repository this reader does not
+      // have, on a screen they opened to ask whether they can withdraw. The
+      // steps that are theirs to take stay; the one that is the operator's
+      // is named as the operator's.
       lines.push(
         "Через известные боту мосты этот токен не заведён.",
         "",
-        "<b>Если он ходит через LayerZero</b>, но в реестре OFT его нет, адрес адаптера ищется вручную:",
+        "<b>Если он всё-таки ходит через LayerZero</b>, но в реестре OFT его нет, адаптер можно найти руками:",
         "1. Открыть токен в эксплорере, вкладка Holders.",
-        "2. Найти контракт с самым большим балансом — обычно это и есть адаптер, он держит заблокированный запас.",
-        "3. Проверить его: <code>/info &lt;адрес&gt; &lt;сеть&gt;</code>. Бот подтвердит, что это OFT Adapter, и покажет связанные сети.",
-        "4. Добавить адрес в <code>config/layerzero-lockboxes.json</code>.",
+        "2. Контракт с самым большим балансом — обычно и есть адаптер: он держит заблокированный запас.",
+        "3. Проверить его: <code>/info &lt;адрес&gt; &lt;сеть&gt;</code> — бот скажет, адаптер это или нет, сколько в нём лежит и в какие сети он связан.",
         "",
-        "Альтернатива — layerzeroscan.com, раздел Applications, и документация самого проекта."
+        "Третий шаг уже отвечает на исходный вопрос. Чтобы тикер находился сам, адрес добавляет владелец бота — пришлите ему найденный контракт.",
+        "Ещё посмотреть: layerzeroscan.com, раздел Applications, и документация самого проекта."
       );
     }
     if (unreachable.length > 0) {

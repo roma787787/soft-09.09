@@ -1487,7 +1487,11 @@ const trulyNothing = renderLiquidityReport({
   attemptsByChain: {},
 });
 check("a token with no bridge at all still says so plainly", trulyNothing.includes("не заведён"));
-check("and points at the manual LayerZero config", trulyNothing.includes("layerzero-lockboxes.json"));
+// It used to end by telling the reader to edit config/layerzero-lockboxes.json.
+// The reader of this report is whoever asked whether they can withdraw; the
+// repository belongs to whoever runs the bot.
+check("and shows how to check a suspected adapter", trulyNothing.includes("/info"));
+check("without sending anyone into the source tree", !trulyNothing.includes("layerzero-lockboxes.json"));
 
 // "Checked 2 contracts" with no explanation invites exactly one question,
 // so the report answers it before it is asked.
@@ -2087,6 +2091,38 @@ check(
   adapterCard
 );
 check("and the locked balance earns its place on the card", adapterCard.includes("Заблокировано"));
+
+// The fallback advice is read by whoever asked whether they can withdraw,
+// not by whoever runs the bot. It used to end "add the address to
+// config/layerzero-lockboxes.json" - a repository that reader does not have.
+const nothingFound = renderLiquidityReport({
+  symbol: "ZRX",
+  name: "0x Protocol",
+  balances: [],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 2 },
+});
+check("the advice does not send a trader into the repository", !/lockboxes\.json/.test(nothingFound), nothingFound);
+check("but still shows them how to check a contract themselves", /\/info/.test(nothingFound));
+check("and says who makes it permanent", /владелец бота/.test(nothingFound));
+
+// "The bot does not check Energi" reads as a permanent property of the bot.
+// It is a property of a table that is discovered and grows: one report said
+// exactly that about Energi while another, after the next scan, read its
+// supply.
+const unchecked = renderLiquidityReport({
+  symbol: "UNI",
+  name: "Uniswap",
+  balances: [fakeBalance("ethereum", "wormhole", 1n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: { supportedChains: ["Ethereum"], unsupportedPlatforms: ["Energi", "Sora"], byProtocol: { wormhole: 1 } },
+});
+check("an absent chain is described as absent from the table", /нет в таблице/.test(unchecked), unchecked);
+check("and never as something the bot refuses to check", !/бот их не проверяет/.test(unchecked));
+check("with a command that explains why", /\/chains/.test(unchecked));
 
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
