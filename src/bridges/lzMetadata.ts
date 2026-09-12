@@ -345,7 +345,18 @@ export function explainMissing(chainKey: string, evmChainId: number): string {
   if (lastEntries.length === 0) return "метаданные не загружены";
 
   const byId = lastEntries.filter((e) => e.nativeChainId === evmChainId);
-  const byName = lastEntries.filter((e) => e.key.toLowerCase().includes(chainKey.toLowerCase()));
+  // On a segment of the name, not on a substring of it. A raw includes()
+  // matched ENI Mainnet against "plumephoenix" - the letters e-n-i sit
+  // inside "phoenix" - and the report then said ENI has eid 30370 and the
+  // matching is fixable, about Plume. A wrong lead in a diagnostic is worse
+  // than none: it is the one the reader will follow.
+  const wanted = chainKey.toLowerCase();
+  const byName = lastEntries.filter((e) =>
+    e.key
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .some((part) => part === wanted || part === `${wanted}mainnet`)
+  );
   const hits = byId.length > 0 ? byId : byName;
 
   if (hits.length === 0) return "в метаданных этой сети нет — LayerZero туда не развёрнут";

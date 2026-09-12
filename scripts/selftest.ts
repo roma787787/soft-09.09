@@ -2305,6 +2305,24 @@ for (const [name, chainId] of [
 }
 check("and every entry is a chain id, never a chain key", Object.values(REGISTRY_CHAIN_IDS).every((v) => typeof v === "number" && v > 0));
 
+// A raw includes() matched ENI Mainnet against "plumephoenix" - the letters
+// e-n-i sit inside "phoenix" - and the report then said ENI has eid 30370
+// and the matching is fixable, about Plume. A wrong lead in a diagnostic is
+// worse than none: it is the one the reader will follow.
+extractEids({
+  "plumephoenix-mainnet": { chainDetails: { nativeChainId: 98866 }, deployments: [{ eid: 30370 }] },
+});
+check(
+  "a name is not matched on a substring inside another word",
+  /в метаданных этой сети нет/.test(explainMissing("eni", 999111)),
+  explainMissing("eni", 999111)
+);
+// The segment match still has to work, or every explanation becomes "absent".
+extractEids({ "etherlink-mainnet": { chainDetails: { nativeChainId: 42793 }, deployments: [{ eid: 30292 }] } });
+check("but a whole segment still matches", /есть как «etherlink-mainnet»/.test(explainMissing("etherlink", 999111)));
+// The id is still the strongest signal and outranks any name.
+check("and the chain id wins over the name", /есть как «etherlink-mainnet»/.test(explainMissing("somethingelse", 42793)));
+
 // A CW20 has its own ledger and has to be asked; the decimals come from the
 // same contract, and a balance without them cannot be printed at all - a
 // number at the wrong scale reads as real and is off by orders of magnitude.

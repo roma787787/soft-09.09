@@ -63,11 +63,33 @@ export function registerLzChainsCommand(bot: Telegraf) {
     ];
 
     if (missing.length > 0) {
-      lines.push(
-        "",
-        `<b>Без eid</b> — обход пиров туда не пойдёт (${missing.length}):`,
-        ...missing.map((m) => `❌ ${esc(m)}`)
-      );
+      // Grouped by what the answer means, because one answer means nothing
+      // to do. A hundred and forty-eight lines, and a hundred and forty of
+      // them said "LayerZero is not deployed there" - which is not a gap,
+      // it is the ordinary state of most chains. The handful that say "we
+      // have this chain under another name and failed to match it" are the
+      // whole reason to open this report, and they were buried among them
+      // and then cut off the end.
+      const deployed: string[] = [];
+      const notDeployed: string[] = [];
+      for (const m of missing) {
+        (/LayerZero туда не развёрнут/.test(m) ? notDeployed : deployed).push(m);
+      }
+
+      if (deployed.length > 0) {
+        lines.push(
+          "",
+          `<b>Есть в метаданных, но eid не определился</b> — ${deployed.length}:`,
+          ...deployed.map((m) => `❌ ${esc(m)}`)
+        );
+      }
+      if (notDeployed.length > 0) {
+        lines.push(
+          "",
+          `<b>LayerZero туда не развёрнут</b> — ${notDeployed.length}. Это не пробел, а обычное состояние большинства сетей:`,
+          esc(notDeployed.map((m) => m.split(" — ")[0]).join(", "))
+        );
+      }
     }
 
     if (known.length > 0) {
