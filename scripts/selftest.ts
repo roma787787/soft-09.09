@@ -18,6 +18,8 @@ import {
   explainBody,
   parseKeyResponse,
   pickCoin,
+  parseCoinsList,
+  parseMarketCapRanks,
   resolveEvmPlatform,
   resolveNonEvmPlatform,
   type AssetPlatform,
@@ -1124,6 +1126,31 @@ check(
 );
 check("an unknown ticker resolves to nothing", pickCoin({ coins: [] }, "NOPE") === undefined);
 check("a malformed search answer resolves to nothing", pickCoin({}, "NOPE") === undefined);
+
+// /search is a capped fuzzy search that can drop a small-cap coin whose
+// ticker is also a substring of bigger names - /coins/list is the fallback,
+// and it has no such cap, so its own parser is checked the same way.
+const coinsListBody = [
+  { id: "ai-network", symbol: "ain", name: "AI Network" },
+  { id: "chainlink", symbol: "link", name: "Chainlink" },
+  { symbol: "no-id", name: "Missing id" },
+  { id: "no-symbol", name: "Missing symbol" },
+];
+check(
+  "the full coin list keeps only well-formed entries",
+  parseCoinsList(coinsListBody).length === 2 && parseCoinsList(coinsListBody)[0]?.id === "ai-network"
+);
+check("a malformed coin list resolves to nothing", parseCoinsList({}).length === 0);
+
+const marketsBody = [
+  { id: "tether", market_cap_rank: 3 },
+  { id: "another-usdt", market_cap_rank: null },
+  { symbol: "no-id", market_cap_rank: 4210 },
+];
+const ranks = parseMarketCapRanks(marketsBody);
+check("market cap ranks are read for ranked coins", ranks.get("tether") === 3);
+check("an unranked coin is left out rather than given a fake rank", !ranks.has("another-usdt"));
+check("a malformed markets answer resolves to nothing", parseMarketCapRanks({}).size === 0);
 
 
 // --- amount formatting -------------------------------------------------------
