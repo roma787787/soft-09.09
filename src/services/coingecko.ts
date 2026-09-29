@@ -427,7 +427,17 @@ async function coinIdFor(symbol: string): Promise<string | undefined> {
   const missedAt = coinIdMisses.get(key);
   if (missedAt !== undefined && Date.now() - missedAt < COIN_ID_MISS_TTL_MS) return undefined;
 
-  const id = pickCoin(await get("/api/v3/search", { query: key }), key);
+  let id = pickCoin(await get("/api/v3/search", { query: key }), key);
+
+  // /search is a fuzzy text search over name and symbol together, ranked by
+  // market cap and capped in how many coins it returns - not a ticker index.
+  // A small-cap coin whose ticker is also a substring of bigger names (AIN
+  // inside "Chainlink", "Maintain") can be pushed out of that cap entirely,
+  // even though its own ticker is an exact, unique match. The full coin list
+  // has no such cap, so it is asked next - but only on a miss, since it is a
+  // multi-megabyte response the common case never needs.
+  if (!id) id = await coinIdFromFullList(key);
+
   if (id) {
     coinIdHits.set(key, id);
     coinIdMisses.delete(key);
@@ -435,6 +445,128 @@ async function coinIdFor(symbol: string): Promise<string | undefined> {
     coinIdMisses.set(key, Date.now());
   }
   return id;
+}
+
+interface CoinListEntry {
+  id: string;
+  symbol: string;
+  name: string;
+}
+
+/** Parses /api/v3/coins/list, split out so it can be tested offline. */
+export function parseCoinsList(body: unknown): CoinListEntry[] {
+  if (!Array.isArray(body)) return [];
+  return body
+    .map((c) => ({
+      id: (c as { id?: unknown })?.id,
+      symbol: (c as { symbol?: unknown })?.symbol,
+      name: (c as { name?: unknown })?.name,
+    }))
+    .filter((c): c is CoinListEntry => typeof c.id === "string" && typeof c.symbol === "string" && typeof c.name === "string");
+}
+
+const COINS_LIST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+let coinsListCache: { at: number; list: CoinListEntry[] } | undefined;
+let coinsListInFlight: Promise<CoinListEntry[]> | undefined;
+
+function coinsListCachePath(): string {
+  return path.join(path.dirname(env.dbPath), "coingecko-coins-list.json");
+}
+
+function readCoinsListCache(): CoinListEntry[] | undefined {
+  try {
+    const list = parseCoinsList(JSON.parse(fs.readFileSync(coinsListCachePath(), "utf8")));
+    return list.length > 0 ? list : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCoinsListCache(list: CoinListEntry[]): void {
+  try {
+    fs.mkdirSync(path.dirname(coinsListCachePath()), { recursive: true });
+    fs.writeFileSync(coinsListCachePath(), JSON.stringify(list), "utf8");
+  } catch {
+    // Read-only disk, no volume mounted: the bot works, it just re-fetches.
+  }
+}
+
+/**
+ * Every coin CoinGecko lists, id/symbol/name only - no market cap, but also
+ * no cap on how many it returns. Cached like the platform list: the same
+ * answer for everyone, and worth keeping on disk so a redeploy does not have
+ * to pay for it again right when the free tier is least likely to allow it.
+ */
+async function coinsList(): Promise<CoinListEntry[]> {
+  const fresh = coinsListCache && Date.now() - coinsListCache.at < COINS_LIST_CACHE_TTL_MS;
+  if (fresh) return coinsListCache!.list;
+  if (coinsListInFlight) return coinsListInFlight;
+
+  coinsListInFlight = (async () => {
+    try {
+      const list = parseCoinsList(await get("/api/v3/coins/list"));
+      if (list.length > 0) {
+        coinsListCache = { at: Date.now(), list };
+        writeCoinsListCache(list);
+      }
+      return coinsListCache?.list ?? list;
+    } catch (err) {
+      if (coinsListCache) return coinsListCache.list;
+      const saved = readCoinsListCache();
+      if (saved) {
+        coinsListCache = { at: 0, list: saved };
+        return saved;
+      }
+      throw err;
+    } finally {
+      coinsListInFlight = undefined;
+    }
+  })();
+  return coinsListInFlight;
+}
+
+/** Parses /api/v3/coins/markets into id -> market_cap_rank, for breaking ties among full-list matches. */
+export function parseMarketCapRanks(body: unknown): Map<string, number> {
+  const ranks = new Map<string, number>();
+  if (!Array.isArray(body)) return ranks;
+  for (const entry of body) {
+    const id = (entry as { id?: unknown })?.id;
+    const rank = (entry as { market_cap_rank?: unknown })?.market_cap_rank;
+    if (typeof id === "string" && typeof rank === "number") ranks.set(id, rank);
+  }
+  return ranks;
+}
+
+async function coinIdFromFullList(symbol: string): Promise<string | undefined> {
+  let list: CoinListEntry[];
+  try {
+    list = await coinsList();
+  } catch (err) {
+    console.error("[coingecko] полный список монет недоступен:", err);
+    return undefined;
+  }
+
+  const wanted = normalise(symbol);
+  const matches = list.filter((c) => normalise(c.symbol) === wanted);
+  if (matches.length === 0) return undefined;
+  if (matches.length === 1) return matches[0].id;
+
+  // More than one coin uses this ticker. The full list carries no market cap
+  // to settle it, so the same tie-breaker /search already applies is asked
+  // for directly, just for these few candidates.
+  try {
+    const ranks = parseMarketCapRanks(
+      await get("/api/v3/coins/markets", { vs_currency: "usd", ids: matches.map((c) => c.id).join(",") })
+    );
+    const best = matches
+      .map((c) => ({ id: c.id, rank: ranks.get(c.id) ?? Number.POSITIVE_INFINITY }))
+      .sort((a, b) => a.rank - b.rank)[0];
+    return best.rank !== Number.POSITIVE_INFINITY ? best.id : undefined;
+  } catch (err) {
+    console.error("[coingecko] не удалось сравнить капитализацию омонимов тикера:", err);
+    return undefined;
+  }
 }
 
 /**

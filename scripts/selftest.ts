@@ -18,6 +18,8 @@ import {
   explainBody,
   parseKeyResponse,
   pickCoin,
+  parseCoinsList,
+  parseMarketCapRanks,
   resolveEvmPlatform,
   resolveNonEvmPlatform,
   type AssetPlatform,
@@ -47,7 +49,8 @@ import {
   symbolsAgree,
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
-import { verdictFrom } from "../src/services/storage";
+import { isOnVolume, verdictFrom } from "../src/services/storage";
+import { protocolsActuallyChecked } from "../src/bridges";
 import { parseReportArgs } from "../src/bot/commands/liquidity";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
@@ -1267,6 +1270,31 @@ check(
 check("an unknown ticker resolves to nothing", pickCoin({ coins: [] }, "NOPE") === undefined);
 check("a malformed search answer resolves to nothing", pickCoin({}, "NOPE") === undefined);
 
+// /search is a capped fuzzy search that can drop a small-cap coin whose
+// ticker is also a substring of bigger names - /coins/list is the fallback,
+// and it has no such cap, so its own parser is checked the same way.
+const coinsListBody = [
+  { id: "ai-network", symbol: "ain", name: "AI Network" },
+  { id: "chainlink", symbol: "link", name: "Chainlink" },
+  { symbol: "no-id", name: "Missing id" },
+  { id: "no-symbol", name: "Missing symbol" },
+];
+check(
+  "the full coin list keeps only well-formed entries",
+  parseCoinsList(coinsListBody).length === 2 && parseCoinsList(coinsListBody)[0]?.id === "ai-network"
+);
+check("a malformed coin list resolves to nothing", parseCoinsList({}).length === 0);
+
+const marketsBody = [
+  { id: "tether", market_cap_rank: 3 },
+  { id: "another-usdt", market_cap_rank: null },
+  { symbol: "no-id", market_cap_rank: 4210 },
+];
+const ranks = parseMarketCapRanks(marketsBody);
+check("market cap ranks are read for ranked coins", ranks.get("tether") === 3);
+check("an unranked coin is left out rather than given a fake rank", !ranks.has("another-usdt"));
+check("a malformed markets answer resolves to nothing", parseMarketCapRanks({}).size === 0);
+
 
 // --- amount formatting -------------------------------------------------------
 
@@ -1665,9 +1693,9 @@ check("with the amount scaled by the coin's own decimals", suiOnly.includes("2 9
 check("and linked to the object holding it", suiOnly.includes("suiscan.xyz/mainnet/object/0xf0147adc"));
 // Wormhole is read there; the rest are not, and the report says which even
 // when it found something.
-check("the partial-coverage caveat survives a found balance", suiOnly.includes("проверен только Wormhole"));
+check("the partial-coverage caveat survives a found balance", suiOnly.includes("только Wormhole"));
 
-const suiKnownButUnread = renderLiquidityReport({
+const suiKnownButUnreadInput = {
   symbol: "USDC",
   name: "USDC",
   balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
@@ -1680,10 +1708,19 @@ const suiKnownButUnread = renderLiquidityReport({
     byProtocol: { wormhole: 1 },
     bridgesUnread: ["sui"],
   },
-});
-check("a chain whose bridges are only partly read says so", suiKnownButUnread.includes("проверен только Wormhole"));
+};
+const suiKnownButUnread = renderLiquidityReport(suiKnownButUnreadInput);
+const suiKnownButUnreadLong = renderLiquidityReport({ ...suiKnownButUnreadInput, verbose: true });
+check("a chain whose bridges are only partly read says so", suiKnownButUnread.includes("только Wormhole"));
 check("and does not deny the check that does run", !suiKnownButUnread.includes("не хранилища мостов"));
 check("and names it", /Sui/.test(suiKnownButUnread));
+// LayerZero IS deployed on Sui - /sui prints its registry's contracts for a
+// ticker that has them - so "the other bridges are not there at all" was a
+// claim about the chain, and a false one. What is true is about the bot.
+check("it does not claim the other bridges are absent from the chain", !suiKnownButUnread.includes("нет вовсе"));
+check("and says the gap is the bot's own reader", suiKnownButUnreadLong.includes("читателя под эту сеть"));
+// The short report makes the same point in one clause rather than losing it.
+check("the short form still puts the gap on the bot", suiKnownButUnread.includes("не читаются"), suiKnownButUnread);
 
 // A node that does not implement a method, or is rate-limiting, will be
 // answered differently by the node beside it. Treating every RPC error as
@@ -1715,7 +1752,7 @@ check("an unread supply quotes what the chain said", supplyWithReason.includes("
 // check that never ran - Sui's vaults are not read - and both were
 // contradicted by a warning four lines further down, where nobody would
 // reconcile them.
-const suiSupplyUnverified = renderLiquidityReport({
+const suiSupplyUnverifiedInput = {
   symbol: "USDC",
   name: "USDC",
   balances: [fakeBalance("ethereum", "wormhole", 8_529_291_000000n)],
@@ -1732,7 +1769,9 @@ const suiSupplyUnverified = renderLiquidityReport({
     byProtocol: { wormhole: 1 },
     bridgesUnread: ["sui"],
   },
-});
+};
+const suiSupplyUnverified = renderLiquidityReport(suiSupplyUnverifiedInput);
+const suiSupplyUnverifiedLong = renderLiquidityReport({ ...suiSupplyUnverifiedInput, verbose: true });
 check(
   "a chain whose vaults went unread is kept out of the no-bridge-holds-it claim",
   !/мостами из отчёта не держится[^\n]*Sui/.test(suiSupplyUnverified)
@@ -1745,13 +1784,40 @@ check(
 // Stargate, Across and CCIP are not deployed there at all, and LayerZero's
 // OFT registry holds nothing on it either. Saying "the rest are unread"
 // invented five gaps where there is one: the chain's own bridges.
-check("and the unread one says what is actually unknown", suiSupplyUnverified.includes("собственные мосты сети"));
+check("and the unread one says what is actually unknown", suiSupplyUnverifiedLong.includes("собственные мосты сети"));
+check("and the short one does not claim they were checked", suiSupplyUnverified.includes("не читаются"), suiSupplyUnverified);
 check("it does not invent bridges that are not there", !suiSupplyUnverified.includes("Сколько лежит в остальных"));
 // Named, not hand-waved: Wormhole IS read there, and the coin simply is not
 // in its registry. "No vault is read here" would be the old lie in reverse.
 check("it names the bridge that was checked", suiSupplyUnverified.includes("проверен только Wormhole"));
 // The caveat now sits beside the number it qualifies, so repeating it in the
 // scope block put the same warning twice in one report.
+// A registry walk that stopped early produces the same empty result as a coin
+// that genuinely is not locked - and the report said the second out loud.
+const suiHalfReadInput = {
+  symbol: "TURBOS",
+  name: "Turbos",
+  balances: [fakeBalance("ethereum", "wormhole", 1_000_000n)],
+  checkedCount: 2,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  supplyOnly: [{ chainKey: "sui", amount: 500_000_000000n, decimals: 6 }],
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { wormhole: 1 },
+    bridgesUnread: ["sui"],
+    suiIndexIncomplete: true,
+  },
+};
+const suiHalfRead = renderLiquidityReport(suiHalfReadInput);
+const suiHalfReadLong = renderLiquidityReport({ ...suiHalfReadInput, verbose: true });
+check("a half-read registry does not claim the coin is absent from it", !suiHalfRead.includes("этой монеты в его реестре токенов нет"));
+check("and says the question is open instead", suiHalfReadLong.includes("осталось невыясненным"));
+// "The registry says no" and "the registry did not finish loading" are
+// different answers, and the short report must not merge them.
+check("the short form keeps that open too", suiHalfRead.includes("неизвестно"), suiHalfRead);
+
 check(
   "the warning is not repeated once the supply line carries it",
   suiSupplyUnverified.split("проверен только Wormhole").length === 2
@@ -4658,6 +4724,56 @@ check("synonyms are accepted", parseReportArgs(["full"]).verbose && parseReportA
 // deploy that introduced the check.
 check("a file that was not there is a new file", verdictFrom([], "abc", false) === "new-file");
 check("a file that was there claims nothing yet", verdictFrom([], "abc", true) === "unknown");
+
+// A volume mounted for the first time is empty, exactly like no volume at
+// all - so the boots table cannot separate them, and the report called a
+// correctly mounted volume "похоже на контейнер без тома" minutes after it
+// was set up. The host is asked instead of guessed.
+// A bridge asked per chain, on a report where no chain reached it, was not
+// checked. /info TURBOS announced Hyperlane, LayerZero, Stargate, Across and
+// CCIP all checked and holding none of it - for a token that exists only on
+// Sui, where Across and CCIP were handed an empty list of chains and asked
+// nothing. Four lines down the same report said only Wormhole is read there.
+check(
+  "with no chain to look at, the per-chain bridges are not called checked",
+  !protocolsActuallyChecked(undefined, 0).includes("across") &&
+    !protocolsActuallyChecked(undefined, 0).includes("ccip")
+);
+// The registry searches happened regardless: they are looked up by ticker,
+// not per chain, so they are honestly reported as checked.
+check(
+  "the ticker-searched ones still are",
+  ["wormhole", "hyperlane", "layerzero", "stargate"].every((p) =>
+    protocolsActuallyChecked(undefined, 0).includes(p as any)
+  )
+);
+check(
+  "and with chains to look at, everything is checked again",
+  protocolsActuallyChecked(undefined, 12).length === 6
+);
+// Narrowing by chain still applies on top: Sui reads only Wormhole.
+check(
+  "a chain with one reader still reports only that one",
+  protocolsActuallyChecked("sui", 12).join(",") === "wormhole"
+);
+
+check("a database inside the mount is on the volume", isOnVolume("/data/bot.db", "/data"));
+check("and deeper inside it too", isOnVolume("/data/state/bot.db", "/data"));
+check("a database outside it is not", !isOnVolume("./data/bot.db", "/data"));
+// Segment comparison alone would call the relative "data/bot.db" a match for
+// a mount at "/data": both split to the same segments once the leading empty
+// one is dropped. A relative path is resolved against the working directory,
+// which is inside the container, so it is never on the volume.
+check("a relative path is never on an absolute mount", !isOnVolume("data/bot.db", "/data"));
+// A prefix test would accept /database for a mount at /data, and report a
+// container without a volume as having one.
+check("a longer name that merely starts the same is not a match", !isOnVolume("/database/bot.db", "/data"));
+check("a trailing slash on the mount changes nothing", isOnVolume("/data/bot.db", "/data/"));
+// No mount path in the environment means the host said nothing, which is
+// not the same as saying no - but it is all the claim this can support.
+check("no mount path means no claim", !isOnVolume("/data/bot.db", ""));
+// The file cannot BE the mount point: that would be a directory.
+check("the mount point itself is not a database on it", !isOnVolume("/data", "/data"));
 check(
   "a boot from another build proves the file outlived it",
   verdictFrom([{ sha: "old" }, { sha: "abc" }], "abc") === "survived-deploy"

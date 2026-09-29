@@ -102,6 +102,38 @@ export function dedupeCustodians(custodians: Custodian[]): Custodian[] {
 }
 
 /**
+ * The bridges that are searched by ticker, wherever the token turns out to be.
+ *
+ * Hyperlane's warp routes, LayerZero's OFT registry and Stargate's pool list
+ * are all looked up by symbol against a published registry, so they are
+ * genuinely consulted on every report. The rest are asked per chain, and a
+ * report where no chain reached them has not checked them at all.
+ */
+const ASKED_BY_TICKER: BridgeProtocol[] = ["wormhole", "hyperlane", "layerzero", "stargate"];
+
+/**
+ * Which bridges this report actually asked.
+ *
+ * `protocolsReadableOn` narrows by chain, which is right when a chain was
+ * named and useless when one was not: /info TURBOS announced that Hyperlane,
+ * LayerZero, Stargate, Across and CCIP had been checked and held none of it,
+ * for a token that exists only on Sui - where Across and CCIP were handed an
+ * empty list of chains and asked nothing at all. Four lines further down the
+ * same report said only Wormhole is read there.
+ *
+ * @param chainsWithTokens how many chains had an address for the per-chain
+ *   bridges to look at. Zero means those bridges were called with nothing.
+ */
+export function protocolsActuallyChecked(
+  chainKey: string | undefined,
+  chainsWithTokens: number
+): BridgeProtocol[] {
+  return protocolsReadableOn(chainKey).filter(
+    (p) => chainsWithTokens > 0 || ASKED_BY_TICKER.includes(p)
+  );
+}
+
+/**
  * Which bridges the bot can actually read on a given chain.
  *
  * Without this the scope line and the per-chain caveat contradicted each
@@ -111,8 +143,8 @@ export function dedupeCustodians(custodians: Custodian[]): Custodian[] {
  * None of the five has a reader for that chain, so none of them was asked,
  * and listing them as checked is the one thing this report must never do.
  *
- * With no chain named the report covers everything, and every bridge is
- * asked somewhere.
+ * With no chain named this answers for everywhere, which is why it is not
+ * enough on its own - see protocolsActuallyChecked.
  */
 export function protocolsReadableOn(chainKey?: string): BridgeProtocol[] {
   if (!chainKey) return [...BRIDGE_ORDER];

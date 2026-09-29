@@ -317,6 +317,14 @@ export interface ReportInput {
      * and the vaults are not.
      */
     bridgesUnread?: string[];
+    /**
+     * True when Wormhole's Sui registry could not be read to the end.
+     *
+     * Then "this coin is not among its collateral" was never established -
+     * the walk produces the same empty result for a coin that is not there
+     * and for the half of the registry it never reached.
+     */
+    suiIndexIncomplete?: boolean;
   };
 }
 
@@ -408,9 +416,15 @@ function scopeLines(
   if (stillUnread.length > 0) {
     const named = stillUnread.map(chainName).join(", ");
     lines.push(
+      // "The other bridges are not there at all" is a claim about the chain,
+      // and it is wrong: LayerZero is deployed on Sui - /sui prints its
+      // registry's contracts for a ticker that has them. What is true is
+      // about the bot, not the chain: it has no reader for them there. The
+      // short form says the same thing in one clause rather than dropping
+      // the distinction.
       verbose
-        ? `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов проверен только Wormhole — его реестр токенов бот читает. Остальных мостов из списка бота там нет вовсе, а собственные мосты сети он пока не читает.`
-        : `⚠️ ${esc(named)}: проверен только Wormhole, собственные мосты сети бот не читает.`
+        ? `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов бот читает только Wormhole — его реестр залогов. LayerZero там тоже развёрнут, но его хранилища бот не читает, как и собственные мосты сети; для остальных мостов из своего списка читателя под эту сеть у него нет.`
+        : `⚠️ ${esc(named)}: бот читает только Wormhole — залоги остальных мостов там не читаются.`
     );
   }
 
@@ -439,6 +453,7 @@ function scopeLines(
 function supplyOnlyLines(
   supplyOnly: ReportInput["supplyOnly"],
   bridgesUnread: string[] = [],
+  indexIncomplete = false,
   verbose = false
 ): string[] {
   if (!supplyOnly || supplyOnly.length === 0) return [];
@@ -483,10 +498,17 @@ function supplyOnlyLines(
     lines.push(
       verbose
         ? `ℹ️ Столько токена выпущено в ${unverified.length === 1 ? "сети" : "сетях"} ${described.join(", ")}. ` +
-            "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. " +
-            "Остальных мостов из списка бота там нет вовсе, но есть собственные мосты сети, и их бот пока не читает."
-        : `ℹ️ Выпущено: ${described.join(", ")}. Из мостов проверен только Wormhole — монеты в его реестре нет; ` +
-            "собственные мосты сети бот не читает."
+            (indexIncomplete
+              ? "Из мостов там читается только Wormhole, но его реестр залогов прочитался не целиком — есть там эта монета или нет, осталось невыясненным. "
+              : "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. ") +
+            "LayerZero там тоже развёрнут, но его хранилища бот не читает, как и собственные мосты сети; для остальных мостов из своего списка читателя под эту сеть у него нет."
+        : `ℹ️ Выпущено: ${described.join(", ")}. ` +
+            // The distinction survives the trim: "the registry says no" and
+            // "the registry did not finish loading" are different answers,
+            // and only one of them is an answer.
+            (indexIncomplete
+              ? "Из мостов читается только Wormhole, и его реестр прочитался не целиком — есть ли там монета, неизвестно."
+              : "Из мостов проверен только Wormhole — монеты в его реестре нет; залоги остальных мостов там не читаются.")
     );
   }
 
@@ -698,7 +720,12 @@ export function renderLiquidityReport(input: ReportInput): string {
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
-    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, verbose);
+    const supplyText = supplyOnlyLines(
+      input.supplyOnly,
+      input.scope?.bridgesUnread,
+      input.scope?.suiIndexIncomplete,
+      verbose
+    );
     if (supplyText.length > 0) lines.push("", ...supplyText);
     const scopeText = scopeLines(scope, input.supplyOnly, verbose);
     if (scopeText.length > 0) lines.push("", ...scopeText);
@@ -903,7 +930,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     ? ` (${scopeText.shift()!.slice("Откуда взялись контракты: ".length).replace(/\.$/, "")})`
     : "";
   const closingNotes = [
-    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, verbose),
+    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, input.scope?.suiIndexIncomplete, verbose),
     `Всего проверено контрактов: ${checkedCount}${sources}.`,
     ...scopeText,
     // Every sentence the short report drops was there for a reason, and the

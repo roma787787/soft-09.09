@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env";
-import { verdictFrom, type StorageReport } from "./storage";
+import { isOnVolume, verdictFrom, type StorageReport } from "./storage";
 
 const dir = path.dirname(env.dbPath);
 if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -48,6 +48,7 @@ const storage: StorageReport = {
   firstBootAt: firstBoot?.at,
   verdict: verdictFrom(priorBoots, env.commitSha, dbFileExisted),
   buildKnown: env.commitSha !== "",
+  onVolume: isOnVolume(env.dbPath, env.volumeMountPath),
 };
 db.prepare(`INSERT INTO boots (sha) VALUES (?)`).run(env.commitSha || null);
 

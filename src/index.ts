@@ -17,7 +17,12 @@ async function main() {
         : storage.verdict === "survived-restart"
           ? "пережила перезапуск, деплой ещё не проверялся"
           : storage.verdict === "new-file"
-            ? "файла не было, создана заново — похоже на контейнер без тома"
+            ? storage.onVolume
+              // The host says a volume is mounted here, so an empty
+              // directory means a volume being used for the first time -
+              // not the missing one the old wording announced.
+              ? "том смонтирован, файл создан впервые — переживёт ли деплой, покажет следующий"
+              : "файла не было, создана заново — тома нет, при деплое всё сотрётся"
             : "файл был, но это первый запуск с этой проверкой"
     }`
   );

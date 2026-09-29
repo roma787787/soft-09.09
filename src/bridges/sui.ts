@@ -182,8 +182,22 @@ export async function readSuiSupply(coinType: string, symbol: string): Promise<S
 const NATIVE_ASSET = "::native_asset::NativeAsset<";
 const WRAPPED_ASSET = "::wrapped_asset::WrappedAsset<";
 
-/** Pages walked before giving up. Twenty fields a page, and it is one chain. */
+/** Pages walked before giving up. Fifty fields a page, and it is one chain. */
 const MAX_REGISTRY_PAGES = 40;
+
+/**
+ * Wall-clock ceiling on the registry walk.
+ *
+ * The walk sits in the report's critical path: any /info for a ticker listed
+ * on Sui waits for it, and the cache is in memory, so every deploy pays for
+ * it again. Forty pages go one after another and each can spend up to ten
+ * seconds per endpoint across three of them, which is minutes of a command
+ * showing nothing - the same shape as the peer walk before it was bounded.
+ *
+ * Generous on purpose: it exists to stop the pathological case, not to cut
+ * short a walk that is working. A registry this size finishes well inside it.
+ */
+const REGISTRY_BUDGET_MS = 45_000;
 
 /**
  * Cached only once it is known. The id is a property of a deployed contract
@@ -336,7 +350,15 @@ async function suiNativeAssetIndex(): Promise<Map<string, string>> {
     }
 
     let cursor: string | undefined;
+    const deadline = Date.now() + REGISTRY_BUDGET_MS;
     for (let page = 0; page < MAX_REGISTRY_PAGES; page++) {
+      if (Date.now() > deadline) {
+        // Left incomplete rather than cached, like the page cap below: half
+        // an index answers "not among the collateral" for every coin in the
+        // half it never saw.
+        stats.reason = `обход не уложился в ${Math.round(REGISTRY_BUDGET_MS / 1000)} с — узел Sui отвечал слишком медленно`;
+        return byCoin;
+      }
       let read: SuiFieldPage;
       try {
         read = parseFieldPage(await suiCall("suix_getDynamicFields", [parent, cursor ?? null, 50]));
@@ -388,6 +410,11 @@ export async function findSuiNativeAsset(coinType: string): Promise<string | und
 export interface SuiCustodyResult {
   custody?: SuiCustody;
   /**
+   * True when the registry walk did not finish, so "this coin is not locked
+   * here" was never actually established.
+   */
+  incompleteIndex?: boolean;
+  /**
    * Why there is no balance, when the coin was in the registry after all.
    *
    * "Not among the collateral" and "its entry would not give up its balance"
@@ -407,7 +434,20 @@ export async function readSuiWormholeCustodyDetailed(coinType: string): Promise<
   if (!isSuiCoinType(coinType)) return { reason: "это не тип монеты Move" };
 
   const objectId = await findSuiNativeAsset(coinType);
-  if (!objectId) return {};
+  if (!objectId) {
+    // "Not in the registry" is a claim, and a walk that stopped early cannot
+    // support it. Without this the report went on to say the coin is not
+    // among Wormhole's collateral on the strength of a registry it had read
+    // half of - the same sentence, for the opposite reason.
+    const stats = lastSuiIndexStats();
+    if (!stats.complete) {
+      return {
+        incompleteIndex: true,
+        reason: stats.reason ?? "реестр залогов прочитан не полностью",
+      };
+    }
+    return {};
+  }
 
   let raw: unknown;
   try {
