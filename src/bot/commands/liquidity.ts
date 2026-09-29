@@ -262,6 +262,24 @@ function countByProtocol(
  * the amount, and said to be the same money rather than more of it. Pointing
  * at the row is the whole job: the number was never missing, only unlabelled.
  */
+/**
+ * The same thing in one clause, for the default report.
+ *
+ * The long note answers a question that has actually been asked twice -
+ * "why is Stargate missing" - and it is three sentences of prose under a
+ * report that is already long. The short one keeps the fact that settles
+ * the question and lets the reasoning wait for /info <тикер> подробно.
+ */
+export function stargateNoteShort(balances: BalanceRow[] = []): string {
+  const assets = stargateCoverage().assets.join(", ");
+  const viaLayerZero = balances.filter((b) => b.protocol === "layerzero" && b.amount > 0n);
+  if (viaLayerZero.length === 0) return `пулы только под ${assets}, контракта LayerZero под этот тикер нет.`;
+
+  const biggest = viaLayerZero.reduce((max, b) => (b.amount > max.amount ? b : max));
+  const where = chainMeta(biggest.chainKey)?.label ?? biggest.chainKey;
+  return `пулы только под ${assets}; сам токен он возит через LayerZero — ${where}, выше.`;
+}
+
 export function stargateNote(balances: BalanceRow[] = []): string {
   const assets = stargateCoverage().assets.join(", ");
   const own = `своих пулов у Stargate под этот тикер нет — они есть только под ${assets}.`;
@@ -307,7 +325,11 @@ export function listedChains(token: Pick<TokenInfo, "platforms" | "otherPlatform
   ];
 }
 
-export async function buildLiquidityReport(rawSymbol: string, chainFilter?: string): Promise<string> {
+export async function buildLiquidityReport(
+  rawSymbol: string,
+  chainFilter?: string,
+  verbose = false
+): Promise<string> {
   // Trimmed to a plausible ticker length: the "not found" reply quotes what
   // was asked for, and a 4000-character argument would push that reply past
   // Telegram's own limit, turning a clear answer into a send failure.
@@ -700,6 +722,7 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
   ];
 
   return renderLiquidityReport({
+    verbose,
     symbol: token.symbol,
     name: token.name,
     balances: [...balances, ...solanaRows, ...suiRows],
@@ -762,8 +785,25 @@ export async function buildLiquidityReport(rawSymbol: string, chainFilter?: stri
       // asked about it read identically otherwise.
       meshUnasked: inScope(mesh.unasked).length,
       notFoundNotes: { stargate: stargateNote([...balances, ...solanaRows, ...suiRows]) },
+      notFoundNotesShort: { stargate: stargateNoteShort([...balances, ...solanaRows, ...suiRows]) },
     },
   });
+}
+
+/**
+ * Splits what follows the ticker into a network and a request for the long
+ * form, in either order.
+ *
+ * Shared by /info and /liquidity, and forgiving about the word: somebody
+ * asking for more detail should not have to remember which synonym this bot
+ * chose.
+ */
+export function parseReportArgs(words: string[]): { chainWord?: string; verbose: boolean } {
+  const isVerbose = (w: string) => /^(подробно|подробнее|детально|full|detail|verbose)$/i.test(w);
+  return {
+    chainWord: words.find((w) => w && !isVerbose(w)),
+    verbose: words.some(isVerbose),
+  };
 }
 
 export function registerLiquidityCommand(bot: Telegraf) {
@@ -774,7 +814,8 @@ export function registerLiquidityCommand(bot: Telegraf) {
       await ctx.reply("Укажите тикер. Пример: <code>/liquidity ARB</code>", { parse_mode: "HTML" });
       return;
     }
-    await replyWithLiquidity(ctx, arg, resolveAnyChain(parts[2] ?? "")?.key);
+    const { chainWord, verbose } = parseReportArgs(parts.slice(2));
+    await replyWithLiquidity(ctx, arg, resolveAnyChain(chainWord ?? "")?.key, verbose);
   });
 }
 
@@ -782,14 +823,15 @@ export function registerLiquidityCommand(bot: Telegraf) {
 export async function replyWithLiquidity(
   ctx: Context,
   symbol: string,
-  chainKey?: string
+  chainKey?: string,
+  verbose = false
 ): Promise<void> {
   await ctx.sendChatAction("typing");
   try {
     // One report, several messages. Telegram limits a message, not a reply,
     // and paying that limit out of the report's content is what made a
     // fully checked token look half-checked.
-    for (const part of splitForTelegram(await buildLiquidityReport(symbol, chainKey))) {
+    for (const part of splitForTelegram(await buildLiquidityReport(symbol, chainKey, verbose))) {
       await ctx.reply(part, REPLY_OPTS);
     }
   } catch (err) {

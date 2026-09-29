@@ -226,6 +226,16 @@ export interface ReportInput {
     /** What the chain said, when the reader captured it. */
     reason?: string;
   }>;
+  /**
+   * Print every explanation, not just the facts.
+   *
+   * Off by default. Each sentence the long report carries was added to stop
+   * a real misreading, and together they buried the numbers they were
+   * qualifying: the customer's verdict on the default report was that it is
+   * mostly water. So the default now states what was found and what was
+   * checked, and the reasoning is one word away - /info USDC подробно.
+   */
+  verbose?: boolean;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
     /** Chains CoinGecko listed that this bot supports. */
@@ -246,6 +256,15 @@ export interface ReportInput {
     checkedProtocols?: BridgeProtocol[];
     /** Why a checked bridge found nothing, where the reason is known. */
     notFoundNotes?: Partial<Record<BridgeProtocol, string>>;
+    /**
+     * The same, in one clause, for the default report.
+     *
+     * Both are needed rather than one trimmed: the long note exists because
+     * a correct report kept being read as a missing bridge, and the short
+     * one exists because three sentences per bridge is what made the
+     * customer stop reading the report at all.
+     */
+    notFoundNotesShort?: Partial<Record<BridgeProtocol, string>>;
     /**
      * The one network this report was narrowed to, when it was.
      *
@@ -307,7 +326,11 @@ export interface ReportInput {
  * the chains CoinGecko knows the token on, the warp routes carrying that
  * ticker, and the adapters someone entered by hand.
  */
-function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["supplyOnly"]): string[] {
+function scopeLines(
+  scope: ReportInput["scope"],
+  supplyOnly?: ReportInput["supplyOnly"],
+  verbose = false
+): string[] {
   if (!scope) return [];
   // Each bridge names its own unit: a warp route, an adapter and a shared
   // vault are different things, and the difference is what explains why one
@@ -332,19 +355,27 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
     // one and three quarter million.
     const where = scope.singleChain ? `в этой сети (${esc(scope.singleChain)})` : "под этот тикер";
     lines.push(
-      `Проверены, но своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+      verbose
+        ? `Проверены, но своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+        : `Проверены, своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
     );
+    // The paragraph explaining each one is the report teaching rather than
+    // reporting, and it was most of what the customer called water. The
+    // short form keeps the fact - which pools Stargate does have - and the
+    // reasoning waits for whoever asks for it.
     for (const p of notFound) {
-      const note = scope.notFoundNotes?.[p];
+      const note = verbose ? scope.notFoundNotes?.[p] : scope.notFoundNotesShort?.[p];
       if (note) lines.push(`${BRIDGE_SHORT_LABELS[p]}: ${esc(note)}`);
     }
   }
 
   if (scope.noTokenAddresses) {
     lines.push(
-      "Адреса контракта у этого токена нет ни в одной сети — это собственная монета сети, а не токен. " +
-        "Бот ищет хранилища по адресу токена в каждой сети, поэтому спросить почти нечего: " +
-        "видно только мосты, которые сами называют свой маршрут."
+      verbose
+        ? "Адреса контракта у этого токена нет ни в одной сети — это собственная монета сети, а не токен. " +
+            "Бот ищет хранилища по адресу токена в каждой сети, поэтому спросить почти нечего: " +
+            "видно только мосты, которые сами называют свой маршрут."
+        : "Это собственная монета сети, а не токен: адреса контракта нет нигде, поэтому видно только мосты, которые сами называют маршрут."
     );
   }
   if (scope.supportedChains.length > 0) {
@@ -360,8 +391,8 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
     // yet.
     lines.push(
       scope.chainListIncomplete
-        ? `Эти сети пока не в списке — он ещё достраивается, спросите через пару минут: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
-        : `Этих сетей пока нет в таблице бота, поэтому они не проверялись: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}. Почему — <code>/chains</code>.`
+        ? `Не проверены, список сетей ещё достраивается: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))}.`
+        : `Не проверены, сетей нет в таблице: ${esc(scope.unsupportedPlatforms.slice(0, 8).join(", "))} (<code>/chains</code>).`
     );
   }
   // Only the ones the supply group did not already speak for. A chain whose
@@ -377,7 +408,9 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
   if (stillUnread.length > 0) {
     const named = stillUnread.map(chainName).join(", ");
     lines.push(
-      `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов проверен только Wormhole — его реестр токенов бот читает. Остальных мостов из списка бота там нет вовсе, а собственные мосты сети он пока не читает.`
+      verbose
+        ? `⚠️ В ${stillUnread.length === 1 ? "сети" : "сетях"} ${esc(named)} из мостов проверен только Wormhole — его реестр токенов бот читает. Остальных мостов из списка бота там нет вовсе, а собственные мосты сети он пока не читает.`
+        : `⚠️ ${esc(named)}: проверен только Wormhole, собственные мосты сети бот не читает.`
     );
   }
 
@@ -388,7 +421,7 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
     // an unasked chain is indistinguishable, in the lines above, from a
     // chain LayerZero never reached.
     lines.push(
-      `LayerZero: обход пиров не успел спросить ${scope.meshUnasked} ${plural(scope.meshUnasked, "сеть", "сети", "сетей")} — узел зацепки отвечал слишком медленно. Там может быть хранилище, которого нет в отчёте; повторите команду.`
+      `⚠️ LayerZero: обход не успел спросить ${scope.meshUnasked} ${plural(scope.meshUnasked, "сеть", "сети", "сетей")} — узел отвечал слишком медленно, повторите команду.`
     );
   }
   return lines;
@@ -405,7 +438,8 @@ function scopeLines(scope: ReportInput["scope"], supplyOnly?: ReportInput["suppl
  */
 function supplyOnlyLines(
   supplyOnly: ReportInput["supplyOnly"],
-  bridgesUnread: string[] = []
+  bridgesUnread: string[] = [],
+  verbose = false
 ): string[] {
   if (!supplyOnly || supplyOnly.length === 0) return [];
   const unread = new Set(bridgesUnread);
@@ -435,8 +469,10 @@ function supplyOnlyLines(
       (s) => `${esc(chainName(s.chainKey))} — ${esc(formatAmount(s.amount!, s.decimals!))}`
     );
     lines.push(
-      `ℹ️ Токен выпущен в этих сетях, но ни один отслеживаемый мост там ничего не держит: ${described.join(", ")}.`,
-      "Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя."
+      `ℹ️ Выпущен, мостами из отчёта не держится: ${described.join(", ")}.`,
+      ...(verbose
+        ? ["Значит, он попал туда мостом, которого бот не знает, либо выпущен там сам — вывести его через мосты из этого отчёта нельзя."]
+        : [])
     );
   }
 
@@ -445,9 +481,12 @@ function supplyOnlyLines(
       (s) => `${esc(chainName(s.chainKey))} — ${esc(formatAmount(s.amount!, s.decimals!))}`
     );
     lines.push(
-      `ℹ️ Столько токена выпущено в ${unverified.length === 1 ? "сети" : "сетях"} ${described.join(", ")}. ` +
-        "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. " +
-        "Остальных мостов из списка бота там нет вовсе, но есть собственные мосты сети, и их бот пока не читает."
+      verbose
+        ? `ℹ️ Столько токена выпущено в ${unverified.length === 1 ? "сети" : "сетях"} ${described.join(", ")}. ` +
+            "Из мостов там проверен только Wormhole — этой монеты в его реестре токенов нет. " +
+            "Остальных мостов из списка бота там нет вовсе, но есть собственные мосты сети, и их бот пока не читает."
+        : `ℹ️ Выпущено: ${described.join(", ")}. Из мостов проверен только Wormhole — монеты в его реестре нет; ` +
+            "собственные мосты сети бот не читает."
     );
   }
 
@@ -551,6 +590,11 @@ function sumOf(rows: BalanceRow[]): bigint {
  * is a separate pool, and a withdrawal can only draw on the one it went
  * through. The tail total is shown as context, clearly labelled.
  */
+/** The one line that buys back everything the short report leaves out. */
+function verboseHint(symbol: string): string {
+  return `<i>Пояснения к каждой строке: <code>/info ${esc(symbol)} подробно</code></i>`;
+}
+
 export function renderLiquidityReport(input: ReportInput): string {
   const {
     symbol,
@@ -563,6 +607,7 @@ export function renderLiquidityReport(input: ReportInput): string {
     syntheticHyperlaneChains = [],
     mismatchedAdapters = 0,
     scope,
+    verbose = false,
   } = input;
   // A chain where LayerZero was found holding something cannot also be a
   // chain where LayerZero holds nothing by construction. USDT's report said
@@ -592,14 +637,16 @@ export function renderLiquidityReport(input: ReportInput): string {
       lines.push(
         "",
         `<b>Это омничейн-токен LayerZero (OFT)</b> в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}.`,
-        "У такого токена нет контракта-хранилища: при переводе он сжигается в одной сети и чеканится в другой. Мерить там нечего, и запас ликвидности ему не нужен.",
-        "Ограничение на вывод задаёт не баланс, а настройки самого моста."
+        "У такого токена нет контракта-хранилища: он сжигается в одной сети и чеканится в другой.",
+        ...(verbose
+          ? ["Мерить там нечего, и запас ликвидности ему не нужен. Ограничение на вывод задаёт не баланс, а настройки самого моста."]
+          : [])
       );
     }
     if (syntheticHyperlaneChains.length > 0) {
       lines.push(
         "",
-        `Есть маршруты Hyperlane в сетях ${esc(syntheticHyperlaneChains.map(chainName).join(", "))}, но они синтетические: тоже чеканят supply, а не блокируют его.`
+        `Маршруты Hyperlane в сетях ${esc(syntheticHyperlaneChains.map(chainName).join(", "))} синтетические: чеканят supply, а не блокируют.`
       );
     }
     // Which vaults answered, and answered nothing. A contract that was asked
@@ -616,7 +663,7 @@ export function renderLiquidityReport(input: ReportInput): string {
         "",
         `Проверено, хранилища пусты: ${[...emptyHere.entries()]
           .map(([chainKey, protocols]) => `${esc(chainName(chainKey))} (${esc([...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))})`)
-          .join(", ")}. Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего.`
+          .join(", ")}.` + (verbose ? " Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего." : "")
       );
     }
 
@@ -640,22 +687,22 @@ export function renderLiquidityReport(input: ReportInput): string {
       lines.push(
         "Через известные боту мосты этот токен не заведён.",
         "",
-        "<b>Если он всё-таки ходит через LayerZero</b>, но в реестре OFT его нет, адаптер можно найти руками:",
-        "1. Открыть токен в эксплорере, вкладка Holders.",
-        "2. Контракт с самым большим балансом — обычно и есть адаптер: он держит заблокированный запас.",
-        "3. Проверить его: <code>/info &lt;адрес&gt; &lt;сеть&gt;</code> — бот скажет, адаптер это или нет, сколько в нём лежит и в какие сети он связан.",
+        "Если он всё-таки ходит через LayerZero: открыть токен в эксплорере, вкладка Holders — " +
+          "контракт с самым большим балансом обычно и есть адаптер. Проверить его: " +
+          "<code>/info &lt;адрес&gt; &lt;сеть&gt;</code>.",
         "",
-        "Третий шаг уже отвечает на исходный вопрос. Чтобы тикер находился сам, адрес добавляет владелец бота — пришлите ему найденный контракт.",
-        "Ещё посмотреть: layerzeroscan.com, раздел Applications, и документация самого проекта."
+        "Чтобы тикер находился сам, адрес добавляет владелец бота — пришлите ему найденный контракт.",
+        ...(verbose ? ["Ещё посмотреть: layerzeroscan.com, раздел Applications, и документация самого проекта."] : [])
       );
     }
     if (unreachable.length > 0) {
       lines.push("", `⚠️ Сети, которые не ответили совсем: ${esc(unreachable.join(", "))}.`);
     }
-    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread);
+    const supplyText = supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, verbose);
     if (supplyText.length > 0) lines.push("", ...supplyText);
-    const scopeText = scopeLines(scope, input.supplyOnly);
+    const scopeText = scopeLines(scope, input.supplyOnly, verbose);
     if (scopeText.length > 0) lines.push("", ...scopeText);
+    if (!verbose) lines.push("", verboseHint(symbol));
     return capToTelegramLimit(lines.join("\n"));
   }
 
@@ -691,18 +738,22 @@ export function renderLiquidityReport(input: ReportInput): string {
     // not with a balance. Counting them among the connection failures made
     // the report blame a chain's node for a contract's own shape.
     notes.push(
-      `${notReadable} ${plural(notReadable, "контракт ответил", "контракта ответили", "контрактов ответили")} отказом вместо баланса — ` +
-        "это не сбой связи, а контракт, который не отдаёт баланс этого токена."
+      `${notReadable} ${plural(notReadable, "контракт ответил", "контракта ответили", "контрактов ответили")} отказом вместо баланса` +
+        (verbose ? " — это не сбой связи, а контракт, который не отдаёт баланс этого токена." : ".")
     );
   }
   if (balances.some((b) => b.readsNativeCoin)) {
     notes.push(
-      "Строки с нативной монетой — это пул, который держит саму монету сети, а не её обёрнутую версию: выйдет из него именно монета."
+      verbose
+        ? "Строки с нативной монетой — это пул, который держит саму монету сети, а не её обёрнутую версию: выйдет из него именно монета."
+        : "Строки с нативной монетой: из такого пула выйдет монета сети, а не обёртка."
     );
   }
   if (chains.some(({ rows }) => rows.filter((r) => r.protocol === "hyperlane").length > MAX_ROWS_PER_GROUP)) {
     notes.push(
-      "Маршруты Hyperlane — это отдельные пулы, их балансы нельзя складывать: вывести можно только из того маршрута, через который заходили."
+      verbose
+        ? "Маршруты Hyperlane — это отдельные пулы, их балансы нельзя складывать: вывести можно только из того маршрута, через который заходили."
+        : "Маршруты Hyperlane нельзя складывать — вывод только через свой маршрут."
     );
   }
   if (unreachable.length > 0) {
@@ -713,24 +764,28 @@ export function renderLiquidityReport(input: ReportInput): string {
         return reason ? `${name} — ${reason}` : name;
       })
       .join("; ");
-    notes.push(`⚠️ Не ответили совсем: ${esc(explained)}. Этих сетей в отчёте нет.`);
+    notes.push(
+      `⚠️ Не ответили совсем: ${esc(explained)}.` + (verbose ? " Этих сетей в отчёте нет." : "")
+    );
   }
   if (partial.length > 0) {
     notes.push(
-      `⚠️ Ответили не полностью: ${esc(partial.join(", "))}. Эти сети в отчёте есть, но часть их контрактов пропущена.`
+      `⚠️ Ответили не полностью: ${esc(partial.join(", "))}.` +
+        (verbose ? " Эти сети в отчёте есть, но часть их контрактов пропущена." : "")
     );
   }
   if (mismatchedAdapters > 0) {
     notes.push(
       `${plural(mismatchedAdapters, "Пропущен", "Пропущено", "Пропущено")} ${mismatchedAdapters} ` +
       `${plural(mismatchedAdapters, "адаптер", "адаптера", "адаптеров")}` +
-        ` LayerZero: ${plural(
-          mismatchedAdapters,
-          "он не подтвердил, что держит",
-          "они не подтвердили, что держат",
-          "они не подтвердили, что держат"
-        )}` +
-        " именно этот токен. Подробности: <code>/lzmesh</code>."
+        (verbose
+          ? ` LayerZero: ${plural(
+              mismatchedAdapters,
+              "он не подтвердил, что держит",
+              "они не подтвердили, что держат",
+              "они не подтвердили, что держат"
+            )} именно этот токен. Подробности: <code>/lzmesh</code>.`
+          : " LayerZero: держат не этот токен. <code>/lzmesh</code>")
     );
   }
 
@@ -764,8 +819,9 @@ export function renderLiquidityReport(input: ReportInput): string {
         `${esc(chainName(chainKey))} (${esc([...protocols].map((p) => BRIDGE_SHORT_LABELS[p]).join(", "))})`
     );
     notes.push(
-      `Мост чеканит, а не держит: ${described.join(", ")}. ` +
-        "Хранилища там нет и быть не может — токен сжигается на одной стороне и чеканится на другой."
+      verbose
+        ? `Мост чеканит, а не держит: ${described.join(", ")}. Хранилища там нет и быть не может — токен сжигается на одной стороне и чеканится на другой.`
+        : `Чеканит, не держит: ${described.join(", ")}.`
     );
   }
 
@@ -780,8 +836,9 @@ export function renderLiquidityReport(input: ReportInput): string {
         )})`
     );
     notes.push(
-      `Проверено, хранилища пусты: ${described.join(", ")}. ` +
-        "Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего."
+      verbose
+        ? `Проверено, хранилища пусты: ${described.join(", ")}. Мост туда есть, токена в нём сейчас нет — выводить оттуда нечего.`
+        : `Пусто: ${described.join(", ")}.`
     );
   }
 
@@ -818,23 +875,41 @@ export function renderLiquidityReport(input: ReportInput): string {
       balances.some((b) => b.chainKey === c && b.protocol === "stargate" && b.amount > 0n)
     );
     notes.push(
-      `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
-        "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой." +
+      (verbose
+        ? `Через LayerZero этот токен омничейн (OFT) в сетях: ${esc(nativeOftChains.map(chainName).join(", "))}. ` +
+          "У LayerZero там хранилища нет по устройству: при переводе токен сжигается в одной сети и чеканится в другой."
+        : `OFT LayerZero (чеканится, не хранится): ${esc(nativeOftChains.map(chainName).join(", "))}.`) +
+        // Kept in both: without it a Stargate pool holding money sits one
+        // line under a sentence saying there is no vault on that chain, and
+        // the report reads as contradicting itself.
         (stargateHolds.length > 0
-          ? ` Это про собственный маршрут токена. Пул Stargate — отдельное хранилище на той же LayerZero, и ${
+          ? ` Это про собственный маршрут токена. Пул Stargate — отдельное хранилище, и ${
               stargateHolds.length === 1 ? "в сети" : "в сетях"
-            } ${esc(stargateHolds.map(chainName).join(", "))} он не пуст: оттуда вывести можно, строками выше.`
+            } ${esc(stargateHolds.map(chainName).join(", "))} он не пуст — строками выше.`
           : "") +
         (anchors.length > 0
-          ? ` Заблокированный запас LayerZero лежит в других сетях: ${esc(anchors.map(chainName).join(", "))} — строками выше.`
+          ? verbose
+            ? ` Заблокированный запас LayerZero лежит в других сетях: ${esc(anchors.map(chainName).join(", "))} — строками выше.`
+            : ` Залог LayerZero — ${esc(anchors.map(chainName).join(", "))}, выше.`
           : "") +
-        (alsoEmpty ? " Остальные мосты на этих сетях проверены отдельно — строкой выше." : "")
+        (verbose && alsoEmpty ? " Остальные мосты на этих сетях проверены отдельно — строкой выше." : "")
     );
   }
+  // "How many" and "from where" are one fact in two lines, and the second
+  // is the more useful half. Joined in the short report, kept apart in the
+  // long one where the line has room to breathe.
+  const scopeText = scopeLines(scope, input.supplyOnly, verbose);
+  const sources = !verbose && scopeText[0]?.startsWith("Откуда взялись контракты: ")
+    ? ` (${scopeText.shift()!.slice("Откуда взялись контракты: ".length).replace(/\.$/, "")})`
+    : "";
   const closingNotes = [
-    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread),
-    `Всего проверено контрактов: ${checkedCount}.`,
-    ...scopeLines(scope, input.supplyOnly),
+    ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, verbose),
+    `Всего проверено контрактов: ${checkedCount}${sources}.`,
+    ...scopeText,
+    // Every sentence the short report drops was there for a reason, and the
+    // reader who hits the case it was written for needs one word, not a
+    // support conversation.
+    ...(verbose ? [] : [verboseHint(symbol)]),
   ];
 
   // No budget any more: the report is rendered whole and split across

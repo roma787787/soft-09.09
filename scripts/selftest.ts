@@ -48,6 +48,7 @@ import {
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { verdictFrom } from "../src/services/storage";
+import { parseReportArgs } from "../src/bot/commands/liquidity";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
 import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
@@ -1734,11 +1735,11 @@ const suiSupplyUnverified = renderLiquidityReport({
 });
 check(
   "a chain whose vaults went unread is kept out of the no-bridge-holds-it claim",
-  !/ни один отслеживаемый мост[^.]*Sui/.test(suiSupplyUnverified)
+  !/мостами из отчёта не держится[^\n]*Sui/.test(suiSupplyUnverified)
 );
 check(
   "the chain that WAS checked still carries that claim",
-  /ни один отслеживаемый мост[^.]*Cronos/.test(suiSupplyUnverified)
+  /мостами из отчёта не держится[^\n]*Cronos/.test(suiSupplyUnverified)
 );
 // Four of the five other bridges are not merely unread on Sui - Hyperlane,
 // Stargate, Across and CCIP are not deployed there at all, and LayerZero's
@@ -1869,10 +1870,10 @@ const anchored = renderLiquidityReport({
   attemptsByChain: {},
   nativeOftChains: ["bsc", "ethereum"],
 });
-check("a minting OFT report points at where the collateral is", anchored.includes("Заблокированный запас LayerZero"));
-check("and names the chain holding it", /Заблокированный запас LayerZero[^\n]*Solana/.test(anchored));
+check("a minting OFT report points at where the collateral is", anchored.includes("Залог LayerZero"));
+check("and names the chain holding it", /Залог LayerZero[^\n]*Solana/.test(anchored));
 // With nothing found, there is no anchor to name and no claim to make.
-check("no anchor is claimed when none was found", !oftReport.includes("Заблокированный запас"));
+check("no anchor is claimed when none was found", !/Залог LayerZero|Заблокированный запас/.test(oftReport));
 
 const syntheticReport = renderLiquidityReport({
   symbol: "XYZ",
@@ -1916,7 +1917,8 @@ const scoped = renderLiquidityReport({
     byProtocol: { wormhole: 2, hyperlane: 0, layerzero: 0 },
   },
 });
-check("the report breaks down where its contracts came from", scoped.includes("Откуда взялись контракты"));
+// Short report: the breakdown rides on the count line instead of its own.
+check("the report breaks down where its contracts came from", /проверено контрактов: \d+ \(/.test(scoped));
 check("it names the counts per bridge", scoped.includes("Wormhole — 2 сети"));
 // A bridge that contributed nothing is left out rather than listed as zero:
 // with five bridges, a line of zeroes buries the one number that matters.
@@ -1940,10 +1942,11 @@ const asked = renderLiquidityReport({
     unsupportedPlatforms: [],
     byProtocol: { hyperlane: 1 },
     checkedProtocols: ["wormhole", "hyperlane", "layerzero", "stargate", "across", "ccip"],
-    notFoundNotes: { stargate: "пулы только под USDC, USDT." },
+    notFoundNotes: { stargate: "пулы есть только под USDC и USDT, и это долгая история." },
+    notFoundNotesShort: { stargate: "пулы только под USDC, USDT." },
   },
 });
-check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, но своих хранилищ"));
+check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, своих хранилищ"));
 check("and lists them by name", asked.includes("Stargate") && asked.includes("CCIP"));
 check("it does not list a bridge that did contribute", !/хранилищ[^\n]*Hyperlane/.test(asked));
 check("a known reason for the gap is printed", asked.includes("пулы только под USDC, USDT."));
@@ -2032,6 +2035,7 @@ const oneSkipped = renderLiquidityReport({
   balances: [fakeBalance("ethereum", "hyperlane", 1n)],
   checkedCount: 1, failuresByChain: {}, attemptsByChain: { ethereum: 1 },
   mismatchedAdapters: 1,
+  verbose: true,
 });
 check("one skipped adapter reads in the singular", /он не подтвердил, что держит/.test(oneSkipped));
 const twoSkipped = renderLiquidityReport({
@@ -2039,11 +2043,12 @@ const twoSkipped = renderLiquidityReport({
   balances: [fakeBalance("ethereum", "hyperlane", 1n)],
   checkedCount: 1, failuresByChain: {}, attemptsByChain: { ethereum: 1 },
   mismatchedAdapters: 2,
+  verbose: true,
 });
 check("and two in the plural", /они не подтвердили, что держат/.test(twoSkipped));
 // Without the caller vouching for what it asked, the report must not invent
 // a list of bridges it cannot stand behind.
-check("no such line when the caller did not say what it checked", !scoped.includes("Проверены, но своих хранилищ"));
+check("no such line when the caller did not say what it checked", !scoped.includes("своих хранилищ"));
 
 // --- The registry's Solana shape, verbatim from /lzprobe PENGU --------------
 //
@@ -2389,7 +2394,7 @@ const mintsAlone = renderLiquidityReport({
   attemptsByChain: { ethereum: 1 },
   mintsOnly: [{ chainKey: "solanamainnet", protocol: "ccip" }],
 });
-check("a chain with nothing else is named in the closing note", /Мост чеканит, а не держит/.test(mintsAlone));
+check("a chain with nothing else is named in the closing note", /Чеканит, не держит/.test(mintsAlone));
 // It must never be called an empty vault: an empty vault might fill, a
 // mint-burn deployment never holds anything at all.
 check("and never as a vault standing empty", !/хранилища пусты[^\n]*Solana/.test(mintsAlone));
@@ -3445,7 +3450,12 @@ check("a report that fits stays a single message", splitForTelegram(smallReport)
 // commands would have started truncating itself.
 const helpParts = splitForTelegram(helpText());
 check("the help survives whole however long it grows", helpParts.join("\n") === helpText());
-check("and each of its parts fits a message", helpParts.every((p) => p.length < 4096));
+// Measured the way Telegram measures it: with parse_mode HTML the 4096 cap
+// applies to the text a person sees, not to the markup carrying it. Counting
+// the tags too made a part that fits look like one that does not, the first
+// time a line of help grew a <code> tag.
+const rendered = (p: string) => p.replace(/<[^>]*>/g, "").length;
+check("and each of its parts fits a message", helpParts.every((p) => rendered(p) < 4096), String(Math.max(...helpParts.map(rendered))));
 
 // Discovery only ever added chains to memory, so every restart began without
 // them and answered questions while it rebuilt the table. Two identical USDC
@@ -3741,7 +3751,7 @@ check("duplicates collapse", preferredRouteId(["A/x", "A/x"], "A") === "A/x");
 // there, no tracked bridge held custody there, so the chain produced no row
 // and no mention - and "checked, no bridge there" looked exactly like "not
 // checked", which is the one distinction this bot exists to make.
-const withSupplyOnly = renderLiquidityReport({
+const withSupplyOnlyInput = {
   symbol: "PENGU",
   name: "Pudgy Penguins",
   balances: [
@@ -3762,15 +3772,17 @@ const withSupplyOnly = renderLiquidityReport({
     { chainKey: "abstract", amount: 0n, decimals: 18 },
     { chainKey: "bsc" },
   ],
-});
+};
+const withSupplyOnly = renderLiquidityReport(withSupplyOnlyInput);
+const withSupplyOnlyLong = renderLiquidityReport({ ...withSupplyOnlyInput, verbose: true });
 check("a chain with supply but no custody is named", withSupplyOnly.includes("Robinhood"));
 check("with how much is there", /5\s*000\s*000/.test(withSupplyOnly.replace(/\u00a0/g, " ")));
 // Three different facts used to share one heading, and it read as a
 // contradiction: "the token is on these chains: Mantle (no supply)". LINK's
 // report carried twenty-eight such entries, most of them zeroes, with the
 // ones that mattered buried among them.
-check("a chain with supply is under a heading that says so", /выпущен в этих сетях[^\n]*Robinhood/.test(withSupplyOnly));
-check("a chain with none is not called a chain the token is on", !/выпущен в этих сетях[^\n]*Abstract/.test(withSupplyOnly));
+check("a chain with supply is under a heading that says so", /мостами из отчёта не держится[^\n]*Robinhood/.test(withSupplyOnly));
+check("a chain with none is not called a chain the token is on", !/мостами из отчёта не держится[^\n]*Abstract/.test(withSupplyOnly));
 check("it gets its own plain statement instead", /выпуска нет[^\n]*Abstract/.test(withSupplyOnly), withSupplyOnly);
 check("and one that could not be read is neither", /не прочитался[^\n]*BNB/.test(withSupplyOnly), withSupplyOnly);
 // A group with nothing in it says nothing at all.
@@ -3963,7 +3975,7 @@ check(
 );
 check(
   "and the reader is told it cannot be withdrawn that way",
-  withSupplyOnly.includes("вывести его через мосты из этого отчёта нельзя")
+  withSupplyOnlyLong.includes("вывести его через мосты из этого отчёта нельзя")
 );
 check("the report is still valid HTML", tagsBalanced(withSupplyOnly));
 
@@ -3994,7 +4006,7 @@ const zeroRow = (chainKey: string, protocol: "wormhole" | "across") => ({
   amount: 0n,
   decimals: 18,
 });
-const withEmptyChains = renderLiquidityReport({
+const withEmptyChainsInput = {
   symbol: "PENGU",
   name: "Pudgy Penguins",
   balances: [
@@ -4014,13 +4026,15 @@ const withEmptyChains = renderLiquidityReport({
   failuresByChain: {},
   attemptsByChain: {},
   nativeOftChains: ["abstract"],
-});
+};
+const withEmptyChains = renderLiquidityReport(withEmptyChainsInput);
+const withEmptyChainsLong = renderLiquidityReport({ ...withEmptyChainsInput, verbose: true });
 check("a chain read and found empty is named", withEmptyChains.includes("Robinhood Chain"));
 check("with the bridge that was empty", /Robinhood Chain \(Across\)/.test(withEmptyChains));
 check("and several bridges are listed together", /BNB Chain \(Wormhole, Across\)/.test(withEmptyChains));
 check(
   "and the reader is told the route exists but is empty",
-  withEmptyChains.includes("выводить оттуда нечего")
+  withEmptyChainsLong.includes("выводить оттуда нечего")
 );
 check(
   "a chain that still holds something is not called empty",
@@ -4033,7 +4047,7 @@ check("an omnichain chain is named even when liquidity was found", withEmptyChai
 // names vaults on chains that appear in this list too, and "there is no
 // vault here" beside "here is the vault, it is empty" is the report
 // contradicting itself inside one message.
-check("the omnichain claim is scoped to LayerZero", withEmptyChains.includes("У LayerZero там хранилища нет"));
+check("the omnichain claim is scoped to LayerZero", withEmptyChainsLong.includes("У LayerZero там хранилища нет"));
 
 // And it is never made about a chain where LayerZero was just shown holding
 // something. USDT's report said both about Arbitrum One in one message: an
@@ -4118,7 +4132,7 @@ const nothingCalledEmpty = renderLiquidityReport({
 });
 check("and nothing is claimed empty when nothing was", !nothingCalledEmpty.includes("хранилища пусты"));
 
-const overlapping = renderLiquidityReport({
+const overlappingInput = {
   symbol: "PENGU",
   name: "Pudgy Penguins",
   balances: [
@@ -4136,10 +4150,12 @@ const overlapping = renderLiquidityReport({
   failuresByChain: {},
   attemptsByChain: {},
   nativeOftChains: ["bsc"],
-});
+};
+const overlapping = renderLiquidityReport(overlappingInput);
+const overlappingLong = renderLiquidityReport({ ...overlappingInput, verbose: true });
 check(
   "a chain in both lists is told where to read the other one",
-  overlapping.includes("проверены отдельно")
+  overlappingLong.includes("проверены отдельно")
 );
 const noOverlap = renderLiquidityReport({
   symbol: "PENGU",
@@ -4571,6 +4587,62 @@ check(
   mergeCandidates([{ id: "sanko-real", chainId: 1996, name: "Sanko" }], [], [registryOnly])[0].slug === "sanko-real"
 );
 
+
+// -----------------------------------------------------------------------------
+// The short report
+// -----------------------------------------------------------------------------
+// The customer's verdict on the long one, verbatim: "непонятно зачем столько
+// инфы", "типа слов дохуя". Every sentence it dropped was added to stop a
+// real misreading, so none of them are deleted - they move one word away.
+const wordyInput = {
+  symbol: "TAC",
+  name: "TAC Protocol",
+  balances: [
+    fakeBalance("ethereum", "wormhole", 12_345n),
+    zeroRow("bsc", "across"),
+    zeroRow("optimism", "across"),
+  ],
+  checkedCount: 16,
+  failuresByChain: {},
+  attemptsByChain: {},
+  nativeOftChains: ["avalanche"],
+  supplyOnly: [{ chainKey: "gnosis", amount: 1_557n, decimals: 2 }],
+  scope: {
+    supportedChains: ["Ethereum"],
+    unsupportedPlatforms: [],
+    byProtocol: { wormhole: 8, across: 7 } as Record<string, number>,
+    checkedProtocols: ["wormhole", "across", "stargate"] as any,
+    notFoundNotes: { stargate: "длинное объяснение про пулы Stargate и почему их тут нет" },
+    notFoundNotesShort: { stargate: "пулы только под USDC, USDT." },
+  },
+} as any;
+const brief = renderLiquidityReport(wordyInput);
+const full = renderLiquidityReport({ ...wordyInput, verbose: true });
+
+check("the default report is the shorter one", brief.length < full.length, `${brief.length} vs ${full.length}`);
+// The numbers are the product; the prose is the commentary. So every chain,
+// every bridge and every amount has to survive the trim - what goes is the
+// sentence explaining what the reader is looking at.
+check("it keeps every chain it checked", ["Ethereum", "BNB Chain", "Optimism", "Gnosis"].every((c) => brief.includes(c)), brief);
+check("it keeps the count", brief.includes("16"));
+check("it keeps the bridges that found nothing", brief.includes("Stargate"));
+check("and drops the paragraph explaining them", !brief.includes("длинное объяснение"));
+check("which the long form still carries", full.includes("длинное объяснение"));
+check("the short note takes its place", brief.includes("пулы только под USDC, USDT."));
+// A reader who hits the case a dropped sentence was written for needs one
+// word, not a support conversation.
+check("the short report says where the rest is", /подробно/.test(brief));
+check("and the long one does not offer itself", !/подробно<\/code>/.test(full));
+
+// The word may come before or after the network, and either may be absent.
+check("no arguments is the short report", parseReportArgs([]).verbose === false);
+check("a network alone stays short", parseReportArgs(["base"]).verbose === false);
+check("and is read as the network", parseReportArgs(["base"]).chainWord === "base");
+check("the word alone asks for the long one", parseReportArgs(["подробно"]).verbose === true);
+check("and is not mistaken for a network", parseReportArgs(["подробно"]).chainWord === undefined);
+check("network then word", parseReportArgs(["base", "подробно"]).chainWord === "base" && parseReportArgs(["base", "подробно"]).verbose);
+check("word then network", parseReportArgs(["подробно", "base"]).chainWord === "base" && parseReportArgs(["подробно", "base"]).verbose);
+check("synonyms are accepted", parseReportArgs(["full"]).verbose && parseReportArgs(["детально"]).verbose);
 
 // -----------------------------------------------------------------------------
 // Whether the database outlives the container

@@ -5,7 +5,7 @@ import { detectOnChain } from "../../protocols/registry";
 import { scanAccounting, scanChainsForAddress } from "../../services/chainScan";
 import { getChain, resolveChain, resolveAnyChain } from "../../config/chains";
 import { isAddress } from "viem";
-import { replyWithLiquidity } from "./liquidity";
+import { replyWithLiquidity, parseReportArgs } from "./liquidity";
 import { plural } from "../render";
 import { replyInParts } from "../reply";
 
@@ -78,12 +78,15 @@ export function registerInfoCommand(bot: Telegraf) {
     if (firstArg && !isAddress(firstArg, { strict: false })) {
       // A second word narrows the report to one chain: "/info USDC base"
       // answers the question actually being asked before a transfer.
-      const chain = parts[2] ? resolveAnyChain(parts[2]) : undefined;
-      if (parts[2] && !chain) {
-        await ctx.reply(`Сеть <b>${esc(parts[2])}</b> не подключена. Список: <code>/diag</code>`, REPLY_OPTS);
+      // "подробно" may come before or after the network, and either may be
+      // absent: /info USDC, /info USDC base, /info USDC подробно.
+      const { chainWord, verbose } = parseReportArgs(parts.slice(2));
+      const chain = chainWord ? resolveAnyChain(chainWord) : undefined;
+      if (chainWord && !chain) {
+        await ctx.reply(`Сеть <b>${esc(chainWord)}</b> не подключена. Список: <code>/diag</code>`, REPLY_OPTS);
         return;
       }
-      await replyWithLiquidity(ctx, firstArg, chain?.key);
+      await replyWithLiquidity(ctx, firstArg, chain?.key, verbose);
       return;
     }
 
