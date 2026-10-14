@@ -1365,11 +1365,11 @@ check(
 // The closing notes are what explain a thin report. Budgeting the body
 // first and appending them afterwards meant the cut landed on exactly the
 // lines that say why the report looks the way it does.
-check("a heavy report keeps its closing notes", heavyReport.includes("Всего проверено контрактов"));
+check("a heavy report keeps its closing notes", heavyReport.includes("Проверено контрактов"));
 check("and is not left with the truncation notice instead", !heavyReport.includes("обрезан"));
 check("the heavy report still names several chains", (heavyReport.match(/Сеть:/g) ?? []).length >= 3);
 check("the heavy report summarises the routes it did not print", heavyReport.includes("и ещё"));
-check("the heavy report says how many contracts were checked", heavyReport.includes("проверено контрактов: 137"));
+check("the heavy report says how many contracts were checked", heavyReport.includes("Проверено контрактов: 137"));
 check(
   "the heavy report warns that routes are separate pools",
   heavyReport.includes("нельзя складывать")
@@ -1970,7 +1970,7 @@ check("without sending anyone into the source tree", !trulyNothing.includes("lay
 
 // "Checked 2 contracts" with no explanation invites exactly one question,
 // so the report answers it before it is asked.
-const scoped = renderLiquidityReport({
+const scopedInput = {
   symbol: "GRAM",
   name: "Gram",
   balances: [fakeBalance("ethereum", "wormhole", 49_468_000000n)],
@@ -1982,21 +1982,23 @@ const scoped = renderLiquidityReport({
     unsupportedPlatforms: ["TON"],
     byProtocol: { wormhole: 2, hyperlane: 0, layerzero: 0 },
   },
-});
+};
+const scoped = renderLiquidityReport(scopedInput);
+const scopedLong = renderLiquidityReport({ ...scopedInput, verbose: true });
 // Short report: the breakdown rides on the count line instead of its own.
-check("the report breaks down where its contracts came from", /проверено контрактов: \d+ \(/.test(scoped));
-check("it names the counts per bridge", scoped.includes("Wormhole — 2 сети"));
+check("the report breaks down where its contracts came from", scopedLong.includes("Откуда взялись контракты"));
+check("it names the counts per bridge", scopedLong.includes("Wormhole — 2 сети"));
 // A bridge that contributed nothing is left out rather than listed as zero:
 // with five bridges, a line of zeroes buries the one number that matters.
 check("and leaves out the bridges that contributed nothing", !scoped.includes("Hyperlane — 0"));
-check("it names the networks CoinGecko listed", scoped.includes("Ethereum, BNB Chain"));
+check("it names the networks CoinGecko listed", scopedLong.includes("Ethereum, BNB Chain"));
 check("it names networks outside the bot's coverage", scoped.includes("TON"));
 check("the scoped report still fits the message limit", scoped.length < 4096);
 
 // A bridge that was asked and holds nothing looked exactly like a bridge the
 // bot does not implement, which is how "Stargate carries PENGU" came back as
 // a parsing bug: Stargate's site routes it, Stargate's pools never held it.
-const asked = renderLiquidityReport({
+const askedInput = {
   symbol: "GRAM",
   name: "Gram",
   balances: [fakeBalance("ethereum", "hyperlane", 49_468_000000n)],
@@ -2011,11 +2013,13 @@ const asked = renderLiquidityReport({
     notFoundNotes: { stargate: "пулы есть только под USDC и USDT, и это долгая история." },
     notFoundNotesShort: { stargate: "пулы только под USDC, USDT." },
   },
-});
-check("the report names the bridges it asked and found nothing on", asked.includes("Проверены, своих хранилищ"));
+};
+const asked = renderLiquidityReport(askedInput);
+const askedLong = renderLiquidityReport({ ...askedInput, verbose: true });
+check("the report names the bridges it asked and found nothing on", asked.includes("Хранилищ нет"));
 check("and lists them by name", asked.includes("Stargate") && asked.includes("CCIP"));
 check("it does not list a bridge that did contribute", !/хранилищ[^\n]*Hyperlane/.test(asked));
-check("a known reason for the gap is printed", asked.includes("пулы только под USDC, USDT."));
+check("a known reason for the gap is printed", askedLong.includes("пулы есть только под USDC и USDT"));
 
 // The complaint verbatim: "it does not parse all the bridges, Stargate is
 // there and it only shows Hyperlane". Stargate's site does carry PENGU - and
@@ -2114,7 +2118,7 @@ const twoSkipped = renderLiquidityReport({
 check("and two in the plural", /они не подтвердили, что держат/.test(twoSkipped));
 // Without the caller vouching for what it asked, the report must not invent
 // a list of bridges it cannot stand behind.
-check("no such line when the caller did not say what it checked", !scoped.includes("своих хранилищ"));
+check("no such line when the caller did not say what it checked", !scoped.includes("Хранилищ нет"));
 
 // --- The registry's Solana shape, verbatim from /lzprobe PENGU --------------
 //
@@ -2714,7 +2718,7 @@ const narrowed = renderLiquidityReport({
 check("a one-network report says its gaps are that network's", /в этой сети \(TON\)/.test(narrowed), narrowed);
 check("and not a claim about the ticker everywhere", !/под этот тикер не нашлось/.test(narrowed));
 // The wide report keeps the wide wording, because there it is true.
-const wholeToken = renderLiquidityReport({
+const wholeTokenInput = {
   symbol: "USDT",
   name: "Tether",
   balances: [fakeBalance("ethereum", "layerzero", 1n)],
@@ -2727,8 +2731,12 @@ const wholeToken = renderLiquidityReport({
     byProtocol: { layerzero: 1 },
     checkedProtocols: ["wormhole", "layerzero"],
   },
-});
-check("a whole-token report still speaks for the token", /под этот тикер не нашлось/.test(wholeToken));
+};
+const wholeToken = renderLiquidityReport(wholeTokenInput);
+// The wide report must not borrow the narrow one's wording; saying it in
+// so many words is the long form's job, not the short one's.
+check("a whole-token report never claims to be about one network", !/в этой сети/.test(wholeToken));
+check("and the long form says so outright", /под этот тикер не нашлось/.test(renderLiquidityReport({ ...wholeTokenInput, verbose: true })));
 
 // /track and /info both sweep every chain when no network is named, and they
 // did it with two copies of one loop - which is how one came to be bounded
@@ -3096,6 +3104,9 @@ function scopedWith(hyperlane: number, layerzero: number, omitted = 0): string {
     failuresByChain: {},
     attemptsByChain: {},
     scope: { supportedChains: [], unsupportedPlatforms: [], byProtocol: { wormhole: 1, hyperlane, layerzero } },
+    // The breakdown this measures is the long report's line; the short one
+    // folds it into the count or leaves it out.
+    verbose: true,
   });
 }
 check("one route reads as одна", scopedWith(1, 1).includes("Hyperlane — 1 маршрут,"));
@@ -3503,7 +3514,7 @@ check("and no part is the truncation notice", !wideParts.some((p) => p.includes(
 // header the first, so the reader gets a whole report across messages.
 check("the first part opens the report", wideParts[0].startsWith("Токен:"));
 check("the last part is the report's true tail", wide.endsWith(wideParts[wideParts.length - 1]));
-check("the closing notes survive the split", wideParts.join("\n").includes("Всего проверено контрактов"));
+check("the closing notes survive the split", wideParts.join("\n").includes("Проверено контрактов"));
 check("nothing is lost between parts", wideParts.join("\n") === wide);
 check("every part is valid HTML on its own", wideParts.every(tagsBalanced));
 // A short report is still one message; splitting is not a new default shape.
@@ -4694,7 +4705,7 @@ check("it keeps the count", brief.includes("16"));
 check("it keeps the bridges that found nothing", brief.includes("Stargate"));
 check("and drops the paragraph explaining them", !brief.includes("длинное объяснение"));
 check("which the long form still carries", full.includes("длинное объяснение"));
-check("the short note takes its place", brief.includes("пулы только под USDC, USDT."));
+check("the short report names the bridge but not the paragraph", brief.includes("Stargate") && !brief.includes("пулы только под"));
 // A reader who hits the case a dropped sentence was written for needs one
 // word, not a support conversation.
 check("the short report says where the rest is", /подробно/.test(brief));

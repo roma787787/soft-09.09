@@ -347,7 +347,10 @@ function scopeLines(
     const n = scope.byProtocol[p] ?? 0;
     return `${BRIDGE_SHORT_LABELS[p]} — ${n} ${plural(n, ...BRIDGE_UNITS[p])}`;
   });
-  const lines = parts.length > 0 ? [`Откуда взялись контракты: ${parts.join(", ")}.`] : [];
+  // The per-bridge breakdown explains a small number, which is a question
+  // only some readers have. In the short report it rides on the count line
+  // when it is short enough to, and otherwise waits for "подробно".
+  const lines = verbose && parts.length > 0 ? [`Откуда взялись контракты: ${parts.join(", ")}.`] : [];
 
   const checked = new Set(scope.checkedProtocols ?? []);
   const notFound = BRIDGE_ORDER.filter((p) => checked.has(p) && (scope.byProtocol[p] ?? 0) === 0);
@@ -365,15 +368,23 @@ function scopeLines(
     lines.push(
       verbose
         ? `Проверены, но своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
-        : `Проверены, своих хранилищ ${where} не нашлось: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
+        // "под этот тикер" is the default and goes without saying; the
+        // qualifier only earns its place when the report was narrowed to
+        // one network, where leaving it out would overstate the claim.
+        : `Хранилищ нет${scope.singleChain ? ` ${where}` : ""}: ${notFound.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")}.`
     );
     // The paragraph explaining each one is the report teaching rather than
     // reporting, and it was most of what the customer called water. The
     // short form keeps the fact - which pools Stargate does have - and the
     // reasoning waits for whoever asks for it.
-    for (const p of notFound) {
-      const note = verbose ? scope.notFoundNotes?.[p] : scope.notFoundNotesShort?.[p];
-      if (note) lines.push(`${BRIDGE_SHORT_LABELS[p]}: ${esc(note)}`);
+    // The bridge is named on the line above, which is the fact. Why it has
+    // nothing is a paragraph, and a paragraph per bridge is what the report
+    // was being abandoned over.
+    if (verbose) {
+      for (const p of notFound) {
+        const note = scope.notFoundNotes?.[p];
+        if (note) lines.push(`${BRIDGE_SHORT_LABELS[p]}: ${esc(note)}`);
+      }
     }
   }
 
@@ -386,7 +397,7 @@ function scopeLines(
         : "Это собственная монета сети, а не токен: адреса контракта нет нигде, поэтому видно только мосты, которые сами называют маршрут."
     );
   }
-  if (scope.supportedChains.length > 0) {
+  if (verbose && scope.supportedChains.length > 0) {
     lines.push(`CoinGecko знает токен в сетях: ${esc(scope.supportedChains.join(", "))}.`);
   }
   if (scope.unsupportedPlatforms.length > 0) {
@@ -614,7 +625,7 @@ function sumOf(rows: BalanceRow[]): bigint {
  */
 /** The one line that buys back everything the short report leaves out. */
 function verboseHint(symbol: string): string {
-  return `<i>Пояснения к каждой строке: <code>/info ${esc(symbol)} подробно</code></i>`;
+  return `<i>Почему — <code>/info ${esc(symbol)} подробно</code></i>`;
 }
 
 export function renderLiquidityReport(input: ReportInput): string {
@@ -922,21 +933,19 @@ export function renderLiquidityReport(input: ReportInput): string {
         (verbose && alsoEmpty ? " Остальные мосты на этих сетях проверены отдельно — строкой выше." : "")
     );
   }
-  // "How many" and "from where" are one fact in two lines, and the second
-  // is the more useful half. Joined in the short report, kept apart in the
-  // long one where the line has room to breathe.
   const scopeText = scopeLines(scope, input.supplyOnly, verbose);
-  const sources = !verbose && scopeText[0]?.startsWith("Откуда взялись контракты: ")
-    ? ` (${scopeText.shift()!.slice("Откуда взялись контракты: ".length).replace(/\.$/, "")})`
+  // One closing line instead of four. "Checked 8" and "nothing in Stargate
+  // or CCIP" are the same thought, and the word that buys back everything
+  // left out belongs on the end of it rather than on a line of its own.
+  const tail = !verbose && scopeText[0]?.startsWith("Хранилищ нет")
+    ? ` ${scopeText.shift()!}`
     : "";
   const closingNotes = [
     ...supplyOnlyLines(input.supplyOnly, input.scope?.bridgesUnread, input.scope?.suiIndexIncomplete, verbose),
-    `Всего проверено контрактов: ${checkedCount}${sources}.`,
+    verbose
+      ? `Всего проверено контрактов: ${checkedCount}.`
+      : `Проверено контрактов: ${checkedCount}.${tail} ${verboseHint(symbol)}`,
     ...scopeText,
-    // Every sentence the short report drops was there for a reason, and the
-    // reader who hits the case it was written for needs one word, not a
-    // support conversation.
-    ...(verbose ? [] : [verboseHint(symbol)]),
   ];
 
   // No budget any more: the report is rendered whole and split across
