@@ -650,15 +650,35 @@ export async function buildLiquidityReport(
         "У такого токена хранилища нет: он сжигается в одной сети и чеканится в другой."
       );
     } else {
+      // Only the bridges that were actually asked. "Проверены все мосты,
+      // которые бот знает" is the strongest claim this report can make, and
+      // it was being made unconditionally - including for a ticker with no
+      // token address anywhere, where Wormhole, Across and CCIP were handed
+      // nothing and asked nothing. THEO got that answer.
+      const asked = priceApiUnknown
+        ? protocolsAskedByTickerOnly(chainFilter)
+        : protocolsActuallyChecked(chainFilter, tokenByChain.size);
       lines.push(
         "",
-        `Проверены все мосты, которые бот знает: ${BRIDGE_ORDER.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} — ` +
-          "ни один из них не держит контракта под этот тикер.",
-        // Labelled like every other bridge's note. Unlabelled it started a
-        // line with a lowercase "своих пулов", reading as a sentence the
-        // report had lost the beginning of.
-        `Stargate: ${stargateNote()}`
+        asked.length === BRIDGE_ORDER.length
+          ? `Проверены все мосты, которые бот знает: ${asked.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} — ` +
+              "ни один из них не держит контракта под этот тикер."
+          : `Проверены: ${asked.map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} — хранилища под этот тикер нет ни у одного.`
       );
+      if (priceApiUnknown) {
+        lines.push(
+          "",
+          "⚠️ CoinGecko этот тикер не знает, адреса токена по сетям нет. " +
+            "Поэтому спрошены только мосты, которые ищутся по тикеру; " +
+            `${BRIDGE_ORDER.filter((p) => !asked.includes(p)).map((p) => BRIDGE_SHORT_LABELS[p]).join(", ")} ` +
+            "спрашиваются по адресу — им вопрос задать было нечем.",
+          "",
+          "Если адрес контракта известен — <code>/info &lt;адрес&gt; &lt;сеть&gt;</code> ответит и без CoinGecko."
+        );
+      }
+      // The paragraph about Stargate's own pools is the long form's, like
+      // every other bridge's explanation in this report.
+      if (verbose && asked.includes("stargate")) lines.push(`Stargate: ${stargateNote()}`);
     }
     // A token that lives on Sui must not get a reply that never mentions it.
     // TURBOS is in Wormhole's registry there and this branch said only "no

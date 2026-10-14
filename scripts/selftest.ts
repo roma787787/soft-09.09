@@ -50,7 +50,7 @@ import {
 } from "../src/bridges/ton";
 import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { isOnVolume, verdictFrom } from "../src/services/storage";
-import { protocolsActuallyChecked } from "../src/bridges";
+import { protocolsActuallyChecked, protocolsAskedByTickerOnly } from "../src/bridges";
 import { parseReportArgs } from "../src/bot/commands/liquidity";
 import { pickAmongHomonyms } from "../src/services/coingecko";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
@@ -4710,6 +4710,23 @@ const nothingAtAll = renderLiquidityReport({
 });
 check("zero contracts is not a completed check", nothingAtAll.includes("спрашивать было нечего"), nothingAtAll);
 check("and it still says the price API is the gap", /CoinGecko тикер не знает/.test(nothingAtAll));
+
+// The set the "nothing found" reply is allowed to name. Wormhole is the one
+// that has to be excluded by hand: it sits in ASKED_BY_TICKER because its own
+// registries carry the token on Sui, Aptos and Near - with the coin type the
+// price API supplied, which is exactly what is missing here.
+check(
+  "with no address anywhere, only the ticker-searched bridges count",
+  protocolsAskedByTickerOnly().join(",") === "hyperlane,layerzero,stargate"
+);
+check(
+  "and the chain's own reader still narrows it",
+  protocolsAskedByTickerOnly("sui").length === 0
+);
+check(
+  "a chain that reads warp routes keeps that one",
+  protocolsAskedByTickerOnly("solanamainnet").join(",") === "hyperlane,layerzero"
+);
 
 // -----------------------------------------------------------------------------
 // Which coin a ticker means, when several share it
