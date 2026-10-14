@@ -52,6 +52,7 @@ import { aptosCalls, shapeOfResources } from "../src/bridges/portalNonEvm";
 import { isOnVolume, verdictFrom } from "../src/services/storage";
 import { protocolsActuallyChecked } from "../src/bridges";
 import { parseReportArgs } from "../src/bot/commands/liquidity";
+import { pickAmongHomonyms } from "../src/services/coingecko";
 import { parseCw20, parseDenomDecimals } from "../src/bridges/portalCosmos";
 import { ccipPoolCandidates, holdsCollateral } from "../src/bridges/ccipSvm";
 import { forgetLearnedEndpoints, learnedEndpoints, learnedSummary, learnEndpoints } from "../src/services/extraEndpoints";
@@ -4664,6 +4665,31 @@ check(
   mergeCandidates([{ id: "sanko-real", chainId: 1996, name: "Sanko" }], [], [registryOnly])[0].slug === "sanko-real"
 );
 
+
+// -----------------------------------------------------------------------------
+// Which coin a ticker means, when several share it
+// -----------------------------------------------------------------------------
+// The full coin list is asked only when /search has already failed, which is
+// the low-cap case - so it is exactly where "no candidate has a market cap
+// rank" is likely, and where returning nothing meant reporting a listed
+// token as a typo. A customer hit it on THEO.
+const theos = [
+  { id: "theoriq", symbol: "theo", name: "Theoriq" },
+  { id: "theo-bridged", symbol: "theo", name: "Bridged Theoriq (Wormhole)" },
+];
+check("market cap decides when it can", pickAmongHomonyms(theos, new Map([["theo-bridged", 500]])) === "theo-bridged");
+check(
+  "an unranked tie still answers",
+  pickAmongHomonyms(theos, new Map()) === "theoriq"
+);
+// Deterministic, so the same ticker does not resolve to a different coin on
+// the next report.
+check(
+  "and answers the same way whatever the list order",
+  pickAmongHomonyms([...theos].reverse(), new Map()) === "theoriq"
+);
+check("nothing to choose from is still nothing", pickAmongHomonyms([], new Map()) === undefined);
+check("a single match needs no ranking", pickAmongHomonyms([theos[0]], new Map()) === "theoriq");
 
 // -----------------------------------------------------------------------------
 // The short report

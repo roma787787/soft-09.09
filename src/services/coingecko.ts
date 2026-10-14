@@ -447,7 +447,7 @@ async function coinIdFor(symbol: string): Promise<string | undefined> {
   return id;
 }
 
-interface CoinListEntry {
+export interface CoinListEntry {
   id: string;
   symbol: string;
   name: string;
@@ -555,18 +555,45 @@ async function coinIdFromFullList(symbol: string): Promise<string | undefined> {
   // More than one coin uses this ticker. The full list carries no market cap
   // to settle it, so the same tie-breaker /search already applies is asked
   // for directly, just for these few candidates.
+  let ranks = new Map<string, number>();
   try {
-    const ranks = parseMarketCapRanks(
+    ranks = parseMarketCapRanks(
       await get("/api/v3/coins/markets", { vs_currency: "usd", ids: matches.map((c) => c.id).join(",") })
     );
-    const best = matches
-      .map((c) => ({ id: c.id, rank: ranks.get(c.id) ?? Number.POSITIVE_INFINITY }))
-      .sort((a, b) => a.rank - b.rank)[0];
-    return best.rank !== Number.POSITIVE_INFINITY ? best.id : undefined;
   } catch (err) {
     console.error("[coingecko] не удалось сравнить капитализацию омонимов тикера:", err);
-    return undefined;
   }
+  return pickAmongHomonyms(matches, ranks);
+}
+
+/**
+ * Which of several coins sharing a ticker to report on.
+ *
+ * Market cap first, because the copies outnumber the originals. But a tie
+ * that cannot be broken is not a reason to answer "нет такого тикера": every
+ * candidate here is a coin CoinGecko lists under exactly this ticker, and a
+ * token too small to be ranked - or one whose ranking request was throttled
+ * - is precisely the case the full list was consulted for in the first
+ * place. Giving up there turned a listed token into a typo.
+ *
+ * Unranked, the choice is made on the name rather than at random, so the
+ * same ticker always resolves to the same coin.
+ */
+export function pickAmongHomonyms(
+  matches: CoinListEntry[],
+  ranks: Map<string, number>
+): string | undefined {
+  if (matches.length === 0) return undefined;
+
+  const ranked = matches
+    .filter((c) => ranks.has(c.id))
+    .sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!);
+  if (ranked.length > 0) return ranked[0].id;
+
+  // Nothing to rank by. The shortest name is the most likely original: the
+  // imitations are "Theo Token", "Theo Finance (Wormhole)", "Bridged THEO",
+  // and they are longer than the thing they copy, never shorter.
+  return [...matches].sort((a, b) => a.name.length - b.name.length || a.id.localeCompare(b.id))[0].id;
 }
 
 /**
@@ -733,6 +760,98 @@ export async function checkKey(): Promise<KeyStatus> {
  * contract. CoinGecko only knows the token itself, which is why the bridge
  * side is resolved separately in src/bridges.
  */
+/**
+ * Every step of resolving one ticker, with what each step answered.
+ *
+ * Written because "Тикер THEO не найден на CoinGecko" is the same sentence
+ * for five different situations - the search cap pushed it out, the full
+ * list does not have it, several coins share the ticker and none is ranked,
+ * the coin page failed to parse, a request was throttled - and from a phone
+ * they are indistinguishable. This reports which one happened.
+ */
+export interface TickerTrace {
+  symbol: string;
+  /** Top candidates /search returned, in its own order. */
+  searchHits: Array<{ id: string; symbol: string; name: string; rank?: number }>;
+  searchPick?: string;
+  searchError?: string;
+  /** Only consulted when /search settles nothing. */
+  fullListConsulted: boolean;
+  fullListSize?: number;
+  fullListMatches: Array<{ id: string; symbol: string; name: string }>;
+  fullListError?: string;
+  ranks?: Array<{ id: string; rank: number }>;
+  pick?: string;
+  /** Whether the coin page then produced a usable token. */
+  tokenRead?: boolean;
+  tokenError?: string;
+  platforms?: string[];
+}
+
+export async function traceTicker(symbol: string): Promise<TickerTrace> {
+  const key = symbol.trim().replace(/^\$/, "").slice(0, 32).toUpperCase();
+  const trace: TickerTrace = { symbol: key, searchHits: [], fullListConsulted: false, fullListMatches: [] };
+
+  try {
+    const body = await get("/api/v3/search", { query: key });
+    const coins = (body as { coins?: unknown })?.coins;
+    if (Array.isArray(coins)) {
+      trace.searchHits = coins.slice(0, 8).map((c: any) => ({
+        id: String(c?.id ?? "?"),
+        symbol: String(c?.symbol ?? "?"),
+        name: String(c?.name ?? "?"),
+        rank: typeof c?.market_cap_rank === "number" ? c.market_cap_rank : undefined,
+      }));
+    }
+    trace.searchPick = pickCoin(body, key);
+  } catch (err) {
+    trace.searchError = err instanceof Error ? err.message : String(err);
+  }
+
+  if (!trace.searchPick) {
+    trace.fullListConsulted = true;
+    try {
+      const list = await coinsList();
+      trace.fullListSize = list.length;
+      const wanted = normalise(key);
+      trace.fullListMatches = list
+        .filter((c) => normalise(c.symbol) === wanted)
+        .slice(0, 12)
+        .map((c) => ({ id: c.id, symbol: c.symbol, name: c.name }));
+      if (trace.fullListMatches.length > 1) {
+        try {
+          const ranks = parseMarketCapRanks(
+            await get("/api/v3/coins/markets", {
+              vs_currency: "usd",
+              ids: trace.fullListMatches.map((c) => c.id).join(","),
+            })
+          );
+          trace.ranks = [...ranks].map(([id, rank]) => ({ id, rank }));
+        } catch (err) {
+          trace.fullListError = err instanceof Error ? err.message : String(err);
+        }
+      }
+    } catch (err) {
+      trace.fullListError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  trace.pick = await coinIdFor(key);
+  if (trace.pick) {
+    try {
+      const token = await lookupToken(key);
+      trace.tokenRead = !!token;
+      if (token) {
+        trace.platforms = [...token.platforms, ...token.otherPlatforms].map((p) => p.platformName);
+      }
+    } catch (err) {
+      trace.tokenError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  return trace;
+}
+
 export async function lookupToken(symbol: string): Promise<TokenInfo | undefined> {
   const id = await coinIdFor(symbol);
   // An unknown ticker is a normal answer, not a failure.

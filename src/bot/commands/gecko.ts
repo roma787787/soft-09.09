@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from "telegraf";
-import { checkKey } from "../../services/coingecko";
+import { checkKey, traceTicker } from "../../services/coingecko";
 import { replyInParts } from "../reply";
 
 function esc(s: string): string {
@@ -16,9 +16,63 @@ function esc(s: string): string {
  * looks exactly like a key that does not work, and there was no way to tell
  * the two apart from a phone.
  */
+async function traceLines(symbol: string): Promise<string[]> {
+  const t = await traceTicker(symbol);
+  const lines = [`🦎 <b>Поиск тикера ${esc(t.symbol)}</b>`, ""];
+
+  lines.push("<b>1. Поиск (/search)</b>");
+  if (t.searchError) lines.push(`❌ ошибка: <code>${esc(t.searchError)}</code>`);
+  else if (t.searchHits.length === 0) lines.push("ничего не вернул");
+  else {
+    for (const hit of t.searchHits) {
+      const exact = hit.symbol.toUpperCase() === t.symbol ? " ✅ тикер совпал" : "";
+      lines.push(
+        `· <code>${esc(hit.id)}</code> — ${esc(hit.symbol.toUpperCase())}, ${esc(hit.name)}` +
+          `${hit.rank !== undefined ? `, место ${hit.rank}` : ", без капитализации"}${exact}`
+      );
+    }
+  }
+  lines.push(t.searchPick ? `Выбор: <code>${esc(t.searchPick)}</code>` : "Выбора нет — ни одного точного совпадения.");
+
+  if (t.fullListConsulted) {
+    lines.push("", "<b>2. Полный список монет</b>");
+    if (t.fullListError) lines.push(`❌ <code>${esc(t.fullListError)}</code>`);
+    if (t.fullListSize !== undefined) lines.push(`В списке монет: ${t.fullListSize}`);
+    if (t.fullListMatches.length === 0) lines.push("Совпадений по тикеру нет — CoinGecko такого тикера не знает.");
+    for (const m of t.fullListMatches) {
+      const rank = t.ranks?.find((r) => r.id === m.id)?.rank;
+      lines.push(
+        `· <code>${esc(m.id)}</code> — ${esc(m.name)}${rank !== undefined ? `, место ${rank}` : ", без капитализации"}`
+      );
+    }
+  }
+
+  lines.push("", "<b>Итог</b>");
+  if (!t.pick) {
+    lines.push("❌ Монета не выбрана — отчёт по этому тикеру построить не из чего.");
+  } else {
+    lines.push(`Монета: <code>${esc(t.pick)}</code>`);
+    if (t.tokenError) lines.push(`❌ страница монеты не прочиталась: <code>${esc(t.tokenError)}</code>`);
+    else if (t.tokenRead === false) lines.push("❌ страница монеты прочиталась, но токен из неё не собрался.");
+    else lines.push(`✅ Сети: ${esc(t.platforms?.join(", ") || "ни одной")}`);
+  }
+
+  return lines;
+}
+
 export function registerGeckoCommand(bot: Telegraf) {
   bot.command("gecko", async (ctx: Context) => {
     await ctx.sendChatAction("typing");
+
+    // With a ticker, the question is not about the key. "Тикер не найден"
+    // covers five different failures and names none of them, so this walks
+    // the same lookup the report walks and prints what each step answered.
+    const asked = ((ctx.message as { text?: string } | undefined)?.text ?? "").trim().split(/\s+/)[1];
+    if (asked) {
+      await replyInParts(ctx, (await traceLines(asked)).join("\n"));
+      return;
+    }
+
     const status = await checkKey();
 
     const lines: string[] = ["🦎 <b>CoinGecko</b>", ""];

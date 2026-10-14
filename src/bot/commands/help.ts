@@ -76,6 +76,7 @@ export function helpText(): string {
 <code>/chains</code> — какие сети бот добавил сам и какие отверг.
 <code>/chains sanko</code> — одна сеть: есть ли она в таблице, а если нет — что ответил каждый её узел.
 <code>/gecko</code> — работает ли ключ CoinGecko и сколько квоты осталось.
+<code>/gecko &lt;тикер&gt;</code> — почему тикер не находится: что ответил поиск, что полный список монет, какую монету выбрали.
 <code>/lzprobe &lt;тикер|сеть&gt;</code> — сырой ответ реестра LayerZero: по тикеру или по сети.
 
 Сетей сейчас ${total}: ${CHAINS.length} EVM, ${SVM_CHAINS.length} на VM Solana, ${COSMOS_CHAINS.length} Cosmos, ${OTHER_CHAINS.length + PORTAL_CHAINS.length + 2} прочих. Список рос сам и будет расти дальше, поэтому здесь только счёт — имена показывают <code>/diag</code> и <code>/chains</code>.

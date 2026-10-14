@@ -337,7 +337,15 @@ export async function buildLiquidityReport(
 
   const token = await lookupToken(symbol);
   if (!token) {
-    return `Тикер <b>${esc(symbol)}</b> не найден на CoinGecko. Проверьте написание.`;
+    // Where the search stopped is the whole of what the reader can act on:
+    // a typo, a ticker CoinGecko has not listed, or a lookup that failed
+    // this minute are three different next steps, and one sentence covered
+    // all three.
+    return (
+      `Тикер <b>${esc(symbol)}</b> не найден на CoinGecko.\n\n` +
+      `Проверьте написание, а если тикер верный — <code>/gecko ${esc(symbol)}</code> покажет, ` +
+      "на каком шаге поиск остановился."
+    );
   }
 
   const custodians = resolveCustodians(symbol, token.platforms);
