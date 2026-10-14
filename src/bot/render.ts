@@ -238,6 +238,14 @@ export interface ReportInput {
   verbose?: boolean;
   /** Where the check reached, so a small number is explained, not puzzling. */
   scope?: {
+    /**
+     * True when the price API has never listed this ticker.
+     *
+     * Then there is no token address on any chain, so only the bridges found
+     * by ticker could be asked - and saying nothing about that would let a
+     * partial check read as a complete one.
+     */
+    priceApiUnknown?: boolean;
     /** Chains CoinGecko listed that this bot supports. */
     supportedChains: string[];
     /** Networks CoinGecko listed that this bot does not cover. */
@@ -395,6 +403,13 @@ function scopeLines(
             "Бот ищет хранилища по адресу токена в каждой сети, поэтому спросить почти нечего: " +
             "видно только мосты, которые сами называют свой маршрут."
         : "Это собственная монета сети, а не токен: адреса контракта нет нигде, поэтому видно только мосты, которые сами называют маршрут."
+    );
+  }
+  if (scope.priceApiUnknown) {
+    lines.push(
+      verbose
+        ? "⚠️ CoinGecko этот тикер не знает, поэтому адреса токена по сетям нет. Проверены только мосты, которые ищутся по тикеру — у них контракт сам называет, что держит. Мосты, которые спрашивают по адресу (Wormhole, Across, CCIP), спросить было не о чем."
+        : "⚠️ CoinGecko тикер не знает: проверены только мосты, ищущиеся по тикеру. Wormhole, Across и CCIP спросить было не о чем."
     );
   }
   if (verbose && scope.supportedChains.length > 0) {
@@ -662,7 +677,17 @@ export function renderLiquidityReport(input: ReportInput): string {
   const header = `Токен: <b>${esc(symbol)}</b> — ${esc(name)}`;
 
   if (withLiquidity.length === 0) {
-    const lines = [header, "", `Проверено контрактов: ${checkedCount}. Ни на одном из них токена сейчас нет.`];
+    // Zero contracts checked is not "none of them holds anything": nothing
+    // was found to ask. A ticker the price API has never listed lands here,
+    // and reporting it as a completed check would be the report's own
+    // emptiness passing for an answer about the token.
+    const lines = [
+      header,
+      "",
+      checkedCount === 0
+        ? "Ни одного контракта-хранилища под этот тикер не нашлось — спрашивать было нечего."
+        : `Проверено контрактов: ${checkedCount}. Ни на одном из них токена сейчас нет.`,
+    ];
     // "No balance anywhere" and "bridged by a design that holds nothing" are
     // completely different answers, and only the first means the token is
     // not bridged. Saying so without checking would be plainly wrong.

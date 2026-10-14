@@ -4667,6 +4667,51 @@ check(
 
 
 // -----------------------------------------------------------------------------
+// A ticker the price API has never listed
+// -----------------------------------------------------------------------------
+// /gecko THEO: 22 230 coins listed, not one under that ticker. The report
+// used to stop there, which reports the bot's own sources as the world -
+// Hyperlane's warp routes, LayerZero's OFT registry and Stargate's pools are
+// keyed by ticker and need no address at all.
+const noPriceApi = renderLiquidityReport({
+  symbol: "THEO",
+  name: "THEO",
+  balances: [fakeBalance("ethereum", "layerzero", 5_000_000n)],
+  checkedCount: 1,
+  failuresByChain: {},
+  attemptsByChain: { ethereum: 1 },
+  scope: {
+    supportedChains: [],
+    unsupportedPlatforms: [],
+    byProtocol: { layerzero: 1 },
+    checkedProtocols: ["hyperlane", "layerzero", "stargate"],
+    priceApiUnknown: true,
+  },
+});
+check("a ticker the price API does not know still gets its balances", noPriceApi.includes("5"));
+check("and the report says why it is partial", /CoinGecko тикер не знает/.test(noPriceApi), noPriceApi);
+// The bridges asked by address were handed nothing, so they must not appear
+// as checked and empty - that is the same claim-from-silence this whole
+// report is built to avoid.
+check(
+  "the per-address bridges are not called checked",
+  !/Хранилищ нет[^\n]*(Wormhole|Across|CCIP)/.test(noPriceApi),
+  noPriceApi
+);
+// Nothing found at all is not "checked them all and they are empty" either.
+const nothingAtAll = renderLiquidityReport({
+  symbol: "THEO",
+  name: "THEO",
+  balances: [],
+  checkedCount: 0,
+  failuresByChain: {},
+  attemptsByChain: {},
+  scope: { supportedChains: [], unsupportedPlatforms: [], byProtocol: {}, priceApiUnknown: true },
+});
+check("zero contracts is not a completed check", nothingAtAll.includes("спрашивать было нечего"), nothingAtAll);
+check("and it still says the price API is the gap", /CoinGecko тикер не знает/.test(nothingAtAll));
+
+// -----------------------------------------------------------------------------
 // Which coin a ticker means, when several share it
 // -----------------------------------------------------------------------------
 // The full coin list is asked only when /search has already failed, which is

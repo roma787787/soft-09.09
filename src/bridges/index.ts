@@ -134,6 +134,21 @@ export function protocolsActuallyChecked(
 }
 
 /**
+ * The bridges that need no token address at all.
+ *
+ * Narrower than ASKED_BY_TICKER, which includes Wormhole: Wormhole is listed
+ * there because its own registries carry the token on Sui, Aptos and Near,
+ * where CoinGecko supplied the coin type. With no token address anywhere -
+ * a ticker the price API has never listed - there is nothing to ask it
+ * about, while a warp route, an OFT registry entry and a Stargate pool are
+ * all found by the ticker itself and name the contract they lock.
+ */
+export function protocolsAskedByTickerOnly(chainKey?: string): BridgeProtocol[] {
+  const readable = new Set(protocolsReadableOn(chainKey));
+  return (["hyperlane", "layerzero", "stargate"] as BridgeProtocol[]).filter((p) => readable.has(p));
+}
+
+/**
  * Which bridges the bot can actually read on a given chain.
  *
  * Without this the scope line and the per-chain caveat contradicted each

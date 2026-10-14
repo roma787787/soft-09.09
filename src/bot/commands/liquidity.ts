@@ -12,6 +12,7 @@ import {
   resolveCustodians,
   dedupeCustodians,
   protocolsActuallyChecked,
+  protocolsAskedByTickerOnly,
   tokenByChainFrom,
   withCustodianTokens,
 } from "../../bridges";
@@ -335,18 +336,25 @@ export async function buildLiquidityReport(
   // Telegram's own limit, turning a clear answer into a send failure.
   const symbol = rawSymbol.trim().replace(/^\$/, "").slice(0, 32).toUpperCase();
 
-  const token = await lookupToken(symbol);
-  if (!token) {
-    // Where the search stopped is the whole of what the reader can act on:
-    // a typo, a ticker CoinGecko has not listed, or a lookup that failed
-    // this minute are three different next steps, and one sentence covered
-    // all three.
-    return (
-      `Тикер <b>${esc(symbol)}</b> не найден на CoinGecko.\n\n` +
-      `Проверьте написание, а если тикер верный — <code>/gecko ${esc(symbol)}</code> покажет, ` +
-      "на каком шаге поиск остановился."
-    );
-  }
+  // A ticker the price API has never heard of is not a ticker no bridge
+  // carries. Hyperlane's warp routes, LayerZero's OFT registry and
+  // Stargate's pools are all keyed by symbol and need no token address at
+  // all, so they can still be asked - and an adapter names what it locks
+  // itself, which is the address CoinGecko would have supplied. What is
+  // genuinely lost is every bridge asked per chain by token address:
+  // Wormhole, Across and CCIP.
+  //
+  // /gecko THEO: 22 230 coins listed, not one of them under that ticker.
+  // Answering "проверьте написание" to that is the bot reporting its own
+  // sources as the world.
+  const listedToken = await lookupToken(symbol);
+  const priceApiUnknown = !listedToken;
+  const token: TokenInfo = listedToken ?? {
+    symbol,
+    name: symbol,
+    platforms: [],
+    otherPlatforms: [],
+  };
 
   const custodians = resolveCustodians(symbol, token.platforms);
 
@@ -787,7 +795,12 @@ export async function buildLiquidityReport(
       // bridge as checked where nothing can ask it is the one claim this
       // report must never make - and it was making it four lines above the
       // caveat that said the opposite.
-      checkedProtocols: protocolsActuallyChecked(chainFilter, tokenByChain.size),
+      // With no address for the token anywhere, the per-chain bridges were
+      // handed nothing and must not be reported as having found nothing.
+      checkedProtocols: priceApiUnknown
+        ? protocolsAskedByTickerOnly(chainFilter)
+        : protocolsActuallyChecked(chainFilter, tokenByChain.size),
+      priceApiUnknown,
       // A chain the next report will cover must not be called unchecked in
       // this one; until the scan lands, the list is not something to make
       // claims from.
